@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-09-20T12:27:58.407Z",
+  "generatedAt": "2026-09-20T12:48:24.298Z",
   "assets": [
     {
       "id": "earth-day-sss-2k",
@@ -26,7 +26,69 @@
       "provenanceClass": "observation-derived-visualization",
       "coverageNotes": "全球圆柱投影白昼图，基于 NASA 观测加工，部分缺口补绘。非实时天气。",
       "processingHistory": [
-        "Verified and stored by verify-assets pipeline at 2026-09-20T12:27:56.596Z"
+        "Verified and stored by verify-assets pipeline at 2026-09-20T12:48:21.030Z"
+      ],
+      "credit": "Solar System Scope / INOVE",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "licenseNotes": "CC BY 4.0 商业与非商业可用，需保留署名。",
+      "releaseApproved": true
+    },
+    {
+      "id": "earth-night-sss-2k",
+      "bodyId": "earth",
+      "role": "night",
+      "sourcePage": "https://www.solarsystemscope.com/textures/",
+      "sourceAssetUrl": "https://www.solarsystemscope.com/textures/download/2k_earth_nightmap.jpg",
+      "localPath": "assets/textures/earth/2k_earth_nightmap.jpg",
+      "sourceSha256": "c16fd1bc096ab91a5c5265c6ff9847c43f489f2e2ee790ccdbcbd03251cf3a5a",
+      "derivedSha256": "c16fd1bc096ab91a5c5265c6ff9847c43f489f2e2ee790ccdbcbd03251cf3a5a",
+      "originalWidth": 2048,
+      "originalHeight": 1024,
+      "derivedWidth": 2048,
+      "derivedHeight": 1024,
+      "projection": "equirectangular",
+      "longitudeConvention": "0-to-360-east",
+      "centralMeridianDeg": 0,
+      "northUp": true,
+      "colorInterpretation": "sRGB",
+      "observationBands": [
+        "visible-night-lights"
+      ],
+      "provenanceClass": "observation-derived-visualization",
+      "coverageNotes": "全球夜间城市灯光分布图，基于 Suomi NPP VIIRS 夜间波段加工。",
+      "processingHistory": [
+        "Verified and stored by verify-assets pipeline at 2026-09-20T12:48:23.087Z"
+      ],
+      "credit": "Solar System Scope / INOVE",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "licenseNotes": "CC BY 4.0 商业与非商业可用，需保留署名。",
+      "releaseApproved": true
+    },
+    {
+      "id": "earth-clouds-sss-2k",
+      "bodyId": "earth",
+      "role": "cloud",
+      "sourcePage": "https://www.solarsystemscope.com/textures/",
+      "sourceAssetUrl": "https://www.solarsystemscope.com/textures/download/2k_earth_clouds.jpg",
+      "localPath": "assets/textures/earth/2k_earth_clouds.jpg",
+      "sourceSha256": "fffd7f68d41b37274822150e54a6ef605af1d3ec35624d9f628c3b896bfa42ed",
+      "derivedSha256": "fffd7f68d41b37274822150e54a6ef605af1d3ec35624d9f628c3b896bfa42ed",
+      "originalWidth": 2048,
+      "originalHeight": 1024,
+      "derivedWidth": 2048,
+      "derivedHeight": 1024,
+      "projection": "equirectangular",
+      "longitudeConvention": "0-to-360-east",
+      "centralMeridianDeg": 0,
+      "northUp": true,
+      "colorInterpretation": "sRGB",
+      "observationBands": [
+        "visible-clouds"
+      ],
+      "provenanceClass": "observation-derived-visualization",
+      "coverageNotes": "全球圆柱投影大气云层图，固定时刻观测拼图，独立外层自旋。非实时天气。",
+      "processingHistory": [
+        "Verified and stored by verify-assets pipeline at 2026-09-20T12:48:23.931Z"
       ],
       "credit": "Solar System Scope / INOVE",
       "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
@@ -57,11 +119,42 @@
       "provenanceClass": "processed-observation",
       "coverageNotes": "NASA LRO 探测器相机全球多光谱正射拼图（CGI Moon Kit 2025版）。真实观测拼接。",
       "processingHistory": [
-        "Verified and stored by verify-assets pipeline at 2026-09-20T12:27:58.407Z"
+        "Verified and stored by verify-assets pipeline at 2026-09-20T12:48:23.942Z"
       ],
       "credit": "NASA / GSFC / Arizona State University",
       "licenseUrl": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
       "licenseNotes": "NASA 媒体公开使用指南，教育与非商业公共使用。",
+      "releaseApproved": true
+    },
+    {
+      "id": "stars-bg-sss-2k",
+      "bodyId": "skybox",
+      "role": "color",
+      "sourcePage": "https://www.solarsystemscope.com/textures/",
+      "sourceAssetUrl": "https://www.solarsystemscope.com/textures/download/2k_stars_milky_way.jpg",
+      "localPath": "assets/textures/skybox/2k_stars_milky_way.jpg",
+      "sourceSha256": "ec2240e6f3784d962ab81609b228bfd470e87c86d1fed5e99134d4cd3de24239",
+      "derivedSha256": "ec2240e6f3784d962ab81609b228bfd470e87c86d1fed5e99134d4cd3de24239",
+      "originalWidth": 2048,
+      "originalHeight": 1024,
+      "derivedWidth": 2048,
+      "derivedHeight": 1024,
+      "projection": "equirectangular",
+      "longitudeConvention": "standard",
+      "centralMeridianDeg": 0,
+      "northUp": true,
+      "colorInterpretation": "sRGB",
+      "observationBands": [
+        "visible-stars-panorama"
+      ],
+      "provenanceClass": "observation-derived-visualization",
+      "coverageNotes": "克制的真实银河与恒星深空背景全景图。",
+      "processingHistory": [
+        "Verified and stored by verify-assets pipeline at 2026-09-20T12:48:24.298Z"
+      ],
+      "credit": "Solar System Scope / INOVE",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "licenseNotes": "CC BY 4.0 商业与非商业可用，需保留署名。",
       "releaseApproved": true
     }
   ]

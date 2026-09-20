@@ -141,13 +141,22 @@ export class CameraController {
     this.transitionStartSpherical.copy(this.spherical);
     this.transitionStartTargetPos.copy(this.targetPosition);
 
-    // 计算合理的目标观察距离（基于 FOV 留白构图）
-    // 地球 radius ~6.37 -> dist ~18; 月球 radius ~1.74 -> dist ~6
-    let targetDist = targetId === 'moon' ? 6.0 : 18.0;
+    // 计算合理的目标观察距离（基于 FOV 与屏幕宽高比留白构图，横竖屏自适应）
+    // 确保天体在移动端竖屏与桌面横屏下均占据视口约 45%~60%
+    const vFovRad = THREE.MathUtils.degToRad(this.camera.fov);
+    const hFovRad = 2 * Math.atan(Math.tan(vFovRad / 2) * Math.max(0.2, this.camera.aspect));
+    const limitingFovRad = Math.min(vFovRad, hFovRad);
+
+    const baseRadius = targetId === 'moon' ? 1.737 : 6.371;
+    const targetDist = Math.max(
+      baseRadius * 1.6,
+      (baseRadius / Math.sin(limitingFovRad / 2)) * 1.15
+    );
+
     this.transitionTargetSpherical.set(
       targetDist,
       Math.PI / 2.3,
-      this.spherical.theta + 0.3 // 轻微自然过渡角
+      this.spherical.theta + 0.25 // 轻微自然过渡角
     );
 
     // 目标位置若为月球，则在 render loop 中同步 targetPosition
@@ -163,14 +172,14 @@ export class CameraController {
     this.mode = 'TRANSITION';
     this.targetBodyId = 'earth';
     this.selectedBodyId = 'earth';
-    this.transitionDurationSec = 2.0;
+    this.transitionDurationSec = 2.5;
     this.transitionProgress = 0;
 
     this.transitionStartSpherical.copy(this.spherical);
     this.transitionStartTargetPos.copy(this.targetPosition);
 
     this.transitionTargetTargetPos.set(0, 0, 0);
-    this.transitionTargetSpherical.set(500, Math.PI / 3, Math.PI / 4);
+    this.transitionTargetSpherical.set(550, Math.PI / 3, Math.PI / 4);
   }
 
   /**
@@ -196,9 +205,9 @@ export class CameraController {
         this.mode = 'ORBIT_TARGET';
       }
 
-      // Smooth step easing (3x^2 - 2x^3)
+      // Perlin Smootherstep 极佳丝滑缓动: 6t^5 - 15t^4 + 10t^3 (一阶二阶导数在起终点均为0)
       const t = this.transitionProgress;
-      const easeT = t * t * (3 - 2 * t);
+      const easeT = t * t * t * (t * (t * 6 - 15) + 10);
 
       const targetInfo = getBodyPos(this.targetBodyId);
       this.targetPosition.lerpVectors(this.transitionStartTargetPos, targetInfo.pos, easeT);

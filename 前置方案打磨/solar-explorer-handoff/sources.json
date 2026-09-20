@@ -1,0 +1,192 @@
+{
+  "researchedOn": "2026-09-20",
+  "scope": "公开页面研究；不是逐件资产下载/渲染/法律审查报告",
+  "sources": [
+    {
+      "id": "S01",
+      "title": "NASA Eyes",
+      "url": "https://science.nasa.gov/eyes/",
+      "note": "浏览器中的真实数据可视化与任务/天体探索参考。"
+    },
+    {
+      "id": "S02",
+      "title": "Solar System Scope",
+      "url": "https://www.solarsystemscope.com/",
+      "note": "太阳系导航和产品形态参考；历史页面信息不当作当前技术规范。"
+    },
+    {
+      "id": "S03",
+      "title": "Solar System Scope — Textures",
+      "url": "https://www.solarsystemscope.com/textures/",
+      "note": "贴图、来源处理说明、CC BY 4.0；含增强与补绘，另有 Fictional 区。"
+    },
+    {
+      "id": "S04",
+      "title": "SpaceEngine",
+      "url": "https://spaceengine.org/",
+      "note": "空间旅行和保存位置参考；同时使用真实目录与程序生成，不能把所有地貌当观测。"
+    },
+    {
+      "id": "S05",
+      "title": "Celestia source repository",
+      "url": "https://github.com/CelestiaProject/Celestia",
+      "note": "桌面开源项目；代码 GPL-2.0-or-later，不代表所有附属素材同许可。"
+    },
+    {
+      "id": "S06",
+      "title": "NASA SVS — CGI Moon Kit",
+      "url": "https://svs.gsfc.nasa.gov/4720/",
+      "note": "月球颜色和高程，源编码与处理说明；本次打开2K原图预览。"
+    },
+    {
+      "id": "S07",
+      "title": "NASA — Color Maps of Enceladus 2014 (PIA18435)",
+      "url": "https://science.nasa.gov/photojournal/color-maps-of-enceladus-2014/",
+      "note": "Cassini增强色全球地图；图幅含坐标和页边，需加工。"
+    },
+    {
+      "id": "S08",
+      "title": "NASA — Titan Global Map June 2015 (PIA19658)",
+      "url": "https://science.nasa.gov/photojournal/titan-global-map-june-2015/",
+      "note": "938 nm全球地图；存在该产品的覆盖缺口，含标注，需加工。"
+    },
+    {
+      "id": "S09",
+      "title": "NASA — Titan Facts",
+      "url": "https://science.nasa.gov/saturn/moons/titan/facts/",
+      "note": "厚雾外观、湖泊等基本科学口径；不引用动态卫星总数。"
+    },
+    {
+      "id": "S10",
+      "title": "NASA — Seeing Titan with Infrared Eyes (PIA21923)",
+      "url": "https://science.nasa.gov/photojournal/seeing-titan-with-infrared-eyes/",
+      "note": "可见光和红外差异；六联球体图不能直接当UV纹理。"
+    },
+    {
+      "id": "S11",
+      "title": "JPL legacy texture maps — Jupiter system",
+      "url": "https://maps.jpl.nasa.gov/tmaps/jupiter.html",
+      "note": "木星四大卫星的可追溯旧拼图和处理说明。"
+    },
+    {
+      "id": "S12",
+      "title": "JPL legacy texture maps — Saturn system",
+      "url": "https://maps.jpl.nasa.gov/tmaps/saturn.html",
+      "note": "土卫一等历史观测拼图；其中土星与土卫六条目有明确想象图标签。"
+    },
+    {
+      "id": "S13",
+      "title": "Astronomy Engine official source",
+      "url": "https://github.com/cosinekitty/astronomy",
+      "note": "MIT计算库、矢量/坐标能力及木星主要卫星；具体版本API由实施者核实。"
+    },
+    {
+      "id": "S14",
+      "title": "JPL Horizons API documentation",
+      "url": "https://ssd-api.jpl.nasa.gov/doc/horizons.html",
+      "note": "构建期星历查询的参数、VECTORS、参考系、时间尺度、输出格式。"
+    },
+    {
+      "id": "S15",
+      "title": "JPL SSD/CNEOS API fair use",
+      "url": "https://ssd-api.jpl.nasa.gov/",
+      "note": "串行请求、缓存、退避、User-Agent、禁止网页嵌入API。"
+    },
+    {
+      "id": "S16",
+      "title": "Three.js WebGLRenderer",
+      "url": "https://threejs.org/docs/pages/WebGLRenderer.html",
+      "note": "WebGL2渲染、颜色输出、统计与深度/透明限制。"
+    },
+    {
+      "id": "S17",
+      "title": "Three.js WebGPURenderer",
+      "url": "https://threejs.org/docs/pages/WebGPURenderer.html",
+      "note": "WebGPU与WebGL2后端回退；本方案首发不引入双路线。"
+    },
+    {
+      "id": "S18",
+      "title": "Three.js RingGeometry",
+      "url": "https://threejs.org/docs/pages/RingGeometry.html",
+      "note": "环几何参考；径向UV方案为本项目设计，不认为默认UV自动正确。"
+    },
+    {
+      "id": "S19",
+      "title": "Three.js KTX2Loader",
+      "url": "https://threejs.org/docs/pages/KTX2Loader.html",
+      "note": "Basis/KTX2纹理转码与支持检测。"
+    },
+    {
+      "id": "S20",
+      "title": "Vite getting started",
+      "url": "https://vite.dev/guide/",
+      "note": "初始化模板、环境要求；实施时锁定稳定兼容版本。"
+    },
+    {
+      "id": "S21",
+      "title": "Playwright visual comparisons",
+      "url": "https://playwright.dev/docs/test-snapshots",
+      "note": "截图对比及环境一致性要求。"
+    },
+    {
+      "id": "S22",
+      "title": "NASA 3D Resources",
+      "url": "https://science.nasa.gov/3d-resources/",
+      "note": "进一步查找模型与纹理；不代表目录内文件已逐一审核。"
+    },
+    {
+      "id": "S23",
+      "title": "NASA Images and Media Usage Guidelines",
+      "url": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+      "note": "素材使用、署名和第三方/品牌限制。"
+    },
+    {
+      "id": "S24",
+      "title": "JPL Image Use Policy",
+      "url": "https://www.jpl.nasa.gov/jpl-image-use-policy/",
+      "note": "JPL图片使用政策；逐件审查署名及第三方权利。"
+    },
+    {
+      "id": "S25",
+      "title": "JPL Horizons Lookup API",
+      "url": "https://ssd-api.jpl.nasa.gov/doc/horizons_lookup.html",
+      "note": "按名称和类型核实目标ID；请求成功不代表唯一匹配。"
+    },
+    {
+      "id": "S26",
+      "title": "Cassini VIMS Data Portal — Nantes/Osuna",
+      "url": "https://vims.univ-nantes.fr/",
+      "note": "观测数据、署名和CC BY 4.0；原始立方体不等于可直接贴球的全球纹理。"
+    },
+    {
+      "id": "S27",
+      "title": "JPL Planetary Satellite Physical Parameters",
+      "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+      "note": "卫星物理数据核对入口；实施时记录口径与来源。"
+    },
+    {
+      "id": "S28",
+      "title": "JPL legacy texture maps — Uranus system",
+      "url": "https://maps.jpl.nasa.gov/tmaps/uranus.html",
+      "note": "部分Voyager卫星拼图；父行星条目有示意图，需区分。"
+    },
+    {
+      "id": "S29",
+      "title": "JPL legacy texture maps — Neptune system",
+      "url": "https://maps.jpl.nasa.gov/tmaps/neptune.html",
+      "note": "海卫一历史有限覆盖拼图；海王星条目有想象图。"
+    },
+    {
+      "id": "S30",
+      "title": "Creative Commons Attribution 4.0",
+      "url": "https://creativecommons.org/licenses/by/4.0/deed.en",
+      "note": "署名、许可链接与修改标记等要求。"
+    },
+    {
+      "id": "S31",
+      "title": "NASA 3D Resources repository",
+      "url": "https://github.com/nasa/NASA-3D-Resources",
+      "note": "官方模型/图像目录入口；本包不含该仓库下载或逐件授权审查。"
+    }
+  ]
+}

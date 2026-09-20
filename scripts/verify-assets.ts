@@ -244,11 +244,11 @@ export async function verifyAndDeployAsset(target: {
 }
 
 /**
- * 主执行流程（M0：仅核验地球与月球 2K 贴图）
+ * 主执行流程（M1：核验地球白昼、夜晚、云层、月球与深空星图 2K 贴图）
  */
 export async function main() {
   console.log('====================================================');
-  console.log('🚀 太阳系漫游资产门禁系统：M0 地球/月球核验');
+  console.log('🚀 太阳系漫游资产门禁系统：M1 地球/月球与深空星图核验');
   console.log('====================================================');
 
   const targets = [
@@ -274,6 +274,48 @@ export async function main() {
       licenseNotes: 'CC BY 4.0 商业与非商业可用，需保留署名。',
     },
     {
+      id: 'earth-night-sss-2k',
+      bodyId: 'earth',
+      role: 'night' as const,
+      sourcePage: 'https://www.solarsystemscope.com/textures/',
+      sourceAssetUrl: 'https://www.solarsystemscope.com/textures/download/2k_earth_nightmap.jpg',
+      relativeTargetPath: 'assets/textures/earth/2k_earth_nightmap.jpg',
+      expectedWidth: 2048,
+      expectedHeight: 1024,
+      projection: 'equirectangular' as const,
+      longitudeConvention: '0-to-360-east' as const,
+      centralMeridianDeg: 0,
+      northUp: true,
+      colorInterpretation: 'sRGB' as const,
+      observationBands: ['visible-night-lights'],
+      provenanceClass: 'observation-derived-visualization' as const,
+      coverageNotes: '全球夜间城市灯光分布图，基于 Suomi NPP VIIRS 夜间波段加工。',
+      credit: 'Solar System Scope / INOVE',
+      licenseUrl: 'https://creativecommons.org/licenses/by/4.0/',
+      licenseNotes: 'CC BY 4.0 商业与非商业可用，需保留署名。',
+    },
+    {
+      id: 'earth-clouds-sss-2k',
+      bodyId: 'earth',
+      role: 'cloud' as const,
+      sourcePage: 'https://www.solarsystemscope.com/textures/',
+      sourceAssetUrl: 'https://www.solarsystemscope.com/textures/download/2k_earth_clouds.jpg',
+      relativeTargetPath: 'assets/textures/earth/2k_earth_clouds.jpg',
+      expectedWidth: 2048,
+      expectedHeight: 1024,
+      projection: 'equirectangular' as const,
+      longitudeConvention: '0-to-360-east' as const,
+      centralMeridianDeg: 0,
+      northUp: true,
+      colorInterpretation: 'sRGB' as const,
+      observationBands: ['visible-clouds'],
+      provenanceClass: 'observation-derived-visualization' as const,
+      coverageNotes: '全球圆柱投影大气云层图，固定时刻观测拼图，独立外层自旋。非实时天气。',
+      credit: 'Solar System Scope / INOVE',
+      licenseUrl: 'https://creativecommons.org/licenses/by/4.0/',
+      licenseNotes: 'CC BY 4.0 商业与非商业可用，需保留署名。',
+    },
+    {
       id: 'moon-svs-2025-2k',
       bodyId: 'moon',
       role: 'color' as const,
@@ -293,6 +335,27 @@ export async function main() {
       credit: 'NASA / GSFC / Arizona State University',
       licenseUrl: 'https://www.nasa.gov/nasa-brand-center/images-and-media/',
       licenseNotes: 'NASA 媒体公开使用指南，教育与非商业公共使用。',
+    },
+    {
+      id: 'stars-bg-sss-2k',
+      bodyId: 'skybox',
+      role: 'color' as const,
+      sourcePage: 'https://www.solarsystemscope.com/textures/',
+      sourceAssetUrl: 'https://www.solarsystemscope.com/textures/download/2k_stars_milky_way.jpg',
+      relativeTargetPath: 'assets/textures/skybox/2k_stars_milky_way.jpg',
+      expectedWidth: 2048,
+      expectedHeight: 1024,
+      projection: 'equirectangular' as const,
+      longitudeConvention: 'standard' as const,
+      centralMeridianDeg: 0,
+      northUp: true,
+      colorInterpretation: 'sRGB' as const,
+      observationBands: ['visible-stars-panorama'],
+      provenanceClass: 'observation-derived-visualization' as const,
+      coverageNotes: '克制的真实银河与恒星深空背景全景图。',
+      credit: 'Solar System Scope / INOVE',
+      licenseUrl: 'https://creativecommons.org/licenses/by/4.0/',
+      licenseNotes: 'CC BY 4.0 商业与非商业可用，需保留署名。',
     },
   ];
 

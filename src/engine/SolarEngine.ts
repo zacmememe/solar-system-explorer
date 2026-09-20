@@ -1,16 +1,23 @@
 /**
- * 太阳系渲染主引擎 SolarEngine
+ * 太阳系渲染主引擎 SolarEngine (M1 完整视觉增强版)
  * 遵循 01-REBUILD-PLAN 与 AGENTS.md 约束：
  * 1. WebGLRenderer (WebGL2)，单一 render loop；
- * 2. 区分点击（拾取）与拖动（旋转）；
- * 3. 卫星不挂在行星自转网格下；
- * 4. 支持 WebGL 上下文丢失/恢复。
+ * 2. 地球多层多波段着色（昼夜混合 + 城市灯光 + 独立自旋云层 + 边缘微光）；
+ * 3. 沉浸式真实深空星图背景；
+ * 4. 严格区分点击拾取与旋转拖拽；
+ * 5. 卫星独立公转，不挂在行星自转网格下；
+ * 6. 支持 WebGL 上下文丢失/恢复。
  */
 
 import * as THREE from 'three';
 import { CameraController } from '../camera/CameraController';
 import { BODIES, computeRenderTransform, getMoonPositionKm } from '../astronomy/bodies';
 import { AssetManager } from '../assets/AssetManager';
+import {
+  createEarthSurfaceMaterial,
+  createEarthCloudMaterial,
+  createAtmosphereHaloMaterial,
+} from '../rendering/EarthMaterial';
 import type { BodyId } from '../contracts/body';
 import type { CameraCommand, CameraStateSnapshot } from '../contracts/camera';
 import productionAssetsData from '../../sources/production-assets.json';
@@ -30,6 +37,14 @@ export interface SolarEngineCallbacks {
   onWebGLInfo?: (info: WebGLDiagnosticInfo) => void;
 }
 
+function safeDisposeMaterial(mat: THREE.Material | THREE.Material[]): void {
+  if (Array.isArray(mat)) {
+    mat.forEach((m) => m.dispose());
+  } else {
+    mat.dispose();
+  }
+}
+
 export class SolarEngine {
   private container: HTMLElement;
   private canvas: HTMLCanvasElement;
@@ -39,9 +54,19 @@ export class SolarEngine {
   private cameraController: CameraController;
   private assetManager: AssetManager;
 
-  // 场景天体对象
+  // 场景星空背景
+  private skyboxMesh: THREE.Mesh | null = null;
+
+  // 地球多层对象
   private earthGroup: THREE.Group;
   private earthMesh: THREE.Mesh;
+  private cloudMesh: THREE.Mesh;
+  private haloMesh: THREE.Mesh;
+  private earthMaterial: THREE.ShaderMaterial | null = null;
+  private cloudMaterial: THREE.ShaderMaterial | null = null;
+  private haloMaterial: THREE.ShaderMaterial | null = null;
+
+  // 月球对象
   private moonGroup: THREE.Group;
   private moonMesh: THREE.Mesh;
 
@@ -49,12 +74,17 @@ export class SolarEngine {
   private sunLight: THREE.DirectionalLight;
   private ambientLight: THREE.AmbientLight;
 
+  // 渲染探索选项
+  private showClouds: boolean = true;
+  private teachingLight: boolean = false;
+  private showAtmosphere: boolean = true;
+
   // 动画与时钟
   private isRunning: boolean = true;
   private animFrameId: number = 0;
   private lastTime: number = 0;
   private simTimeHours: number = 0;
-  private timeScale: number = 1.0; // 1 = 正常时间倍速, 0 = 暂停
+  private timeScale: number = 1.0;
   private isPaused: boolean = false;
 
   // 交互控制
@@ -96,49 +126,72 @@ export class SolarEngine {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.0;
+    this.renderer.toneMappingExposure = 1.05;
 
     // 提取诊断信息
     this.extractDiagnostics(context);
 
     // 2. 场景与相机
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x020408); // 克制的深空暗色
 
     this.camera = new THREE.PerspectiveCamera(
       45,
       container.clientWidth / container.clientHeight,
       0.1,
-      5000
+      8000
     );
 
     this.cameraController = new CameraController({ camera: this.camera });
     this.assetManager = new AssetManager();
     this.assetManager.registerManifest((productionAssetsData as any).assets);
 
-    // 3. 构建天体网格
-    // 地球
+    // 3. 构建深空星图背景球体
+    const skyGeo = new THREE.SphereGeometry(4000, 32, 32);
+    const skyMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      side: THREE.BackSide,
+      depthWrite: false,
+    });
+    this.skyboxMesh = new THREE.Mesh(skyGeo, skyMat);
+    this.scene.add(this.skyboxMesh);
+
+    // 4. 构建地球多层网格 (地表 + 云层 + 大气边缘光环)
     const earthTransform = computeRenderTransform([0, 0, 0], [0, 0, 0], BODIES.earth.radiusKm);
-    const earthGeo = new THREE.SphereGeometry(earthTransform.renderRadius, 64, 32);
-    const earthMat = new THREE.MeshStandardMaterial({
+    const earthR = earthTransform.renderRadius;
+
+    // 地表网格 (高精度 64x64 球体)
+    const earthGeo = new THREE.SphereGeometry(earthR, 64, 64);
+    const fallbackMat = new THREE.MeshStandardMaterial({
       roughness: 0.7,
       metalness: 0.1,
-      color: 0xffffff,
+      color: 0x223344,
     });
-    this.earthMesh = new THREE.Mesh(earthGeo, earthMat);
+    this.earthMesh = new THREE.Mesh(earthGeo, fallbackMat);
+
+    // 云层网格 (外浮 1.008 倍半径)
+    const cloudGeo = new THREE.SphereGeometry(earthR * 1.008, 64, 64);
+    const cloudFallbackMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0 });
+    this.cloudMesh = new THREE.Mesh(cloudGeo, cloudFallbackMat);
+
+    // 大气外缘微光网格 (外浮 1.025 倍半径)
+    const haloGeo = new THREE.SphereGeometry(earthR * 1.025, 48, 48);
+    const haloFallbackMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0 });
+    this.haloMesh = new THREE.Mesh(haloGeo, haloFallbackMat);
+
     this.earthGroup = new THREE.Group();
-    // 倾角
     this.earthGroup.rotation.z = THREE.MathUtils.degToRad(BODIES.earth.axialTiltDeg);
     this.earthGroup.add(this.earthMesh);
+    this.earthGroup.add(this.cloudMesh);
+    this.earthGroup.add(this.haloMesh);
     this.scene.add(this.earthGroup);
 
-    // 月球（独立添加在 scene 下，绝不挂在 earthGroup 或 earthMesh 下！）
+    // 5. 构建月球网格（独立添加在 scene 下，绝不挂在 earthGroup 下！）
     const moonInitPos = getMoonPositionKm(0);
     const moonTransform = computeRenderTransform(moonInitPos, [0, 0, 0], BODIES.moon.radiusKm);
-    const moonGeo = new THREE.SphereGeometry(moonTransform.renderRadius, 48, 24);
+    const moonGeo = new THREE.SphereGeometry(moonTransform.renderRadius, 48, 48);
     const moonMat = new THREE.MeshStandardMaterial({
-      roughness: 0.9,
-      metalness: 0.05,
+      roughness: 0.88,
+      metalness: 0.04,
       color: 0xffffff,
     });
     this.moonMesh = new THREE.Mesh(moonGeo, moonMat);
@@ -148,21 +201,21 @@ export class SolarEngine {
     this.moonGroup.add(this.moonMesh);
     this.scene.add(this.moonGroup);
 
-    // 4. 光照配置（模拟真实单侧太阳光，克制暗侧教学补光）
-    this.sunLight = new THREE.DirectionalLight(0xffffff, 2.5);
+    // 6. 光照配置（模拟真实太阳光照）
+    this.sunLight = new THREE.DirectionalLight(0xfff8ee, 2.6);
     this.sunLight.position.set(500, 50, 300);
     this.scene.add(this.sunLight);
 
-    this.ambientLight = new THREE.AmbientLight(0x1a2233, 0.25); // 暗部细节
+    this.ambientLight = new THREE.AmbientLight(0x0a1220, 0.15); // 克制微弱暗部填充
     this.scene.add(this.ambientLight);
 
-    // 5. 绑定事件
+    // 7. 绑定交互事件
     this.bindEvents();
 
-    // 6. 加载地月核验贴图
+    // 8. 异步加载全套 M1 真实贴图并着色
     this.loadInitialTextures();
 
-    // 7. 启动渲染循环
+    // 9. 启动渲染循环
     this.lastTime = performance.now();
     this.animate();
   }
@@ -191,14 +244,46 @@ export class SolarEngine {
   private async loadInitialTextures(): Promise<void> {
     const token = this.cameraController.getSnapshot().commandId;
 
-    // 加载地球贴图
-    const earthTex = await this.assetManager.loadTexture('earth-day-sss-2k', token, () => true);
-    if (earthTex) {
-      (this.earthMesh.material as THREE.MeshStandardMaterial).map = earthTex;
+    // 1. 加载深空星图背景
+    const starsTex = await this.assetManager.loadTexture('stars-bg-sss-2k', token, () => true);
+    if (starsTex && this.skyboxMesh) {
+      (this.skyboxMesh.material as THREE.MeshBasicMaterial).map = starsTex;
+      (this.skyboxMesh.material as THREE.MeshBasicMaterial).needsUpdate = true;
+    }
+
+    // 2. 加载地球白昼与夜景图，创建昼夜晨昏线 Shader 材质
+    const earthDayTex = await this.assetManager.loadTexture('earth-day-sss-2k', token, () => true);
+    const earthNightTex = await this.assetManager.loadTexture('earth-night-sss-2k', token, () => true);
+
+    if (earthDayTex && earthNightTex) {
+      this.earthMaterial = createEarthSurfaceMaterial(earthDayTex, earthNightTex);
+      this.earthMaterial.uniforms.sunDirection.value.copy(this.sunLight.position).normalize();
+      this.earthMaterial.uniforms.teachingLight.value = this.teachingLight ? 1.0 : 0.0;
+      safeDisposeMaterial(this.earthMesh.material);
+      this.earthMesh.material = this.earthMaterial;
+    } else if (earthDayTex) {
+      (this.earthMesh.material as THREE.MeshStandardMaterial).map = earthDayTex;
       (this.earthMesh.material as THREE.MeshStandardMaterial).needsUpdate = true;
     }
 
-    // 加载月球贴图
+    // 3. 加载地球云层图
+    const cloudTex = await this.assetManager.loadTexture('earth-clouds-sss-2k', token, () => true);
+    if (cloudTex) {
+      this.cloudMaterial = createEarthCloudMaterial(cloudTex);
+      this.cloudMaterial.uniforms.sunDirection.value.copy(this.sunLight.position).normalize();
+      safeDisposeMaterial(this.cloudMesh.material);
+      this.cloudMesh.material = this.cloudMaterial;
+      this.cloudMesh.visible = this.showClouds;
+    }
+
+    // 4. 创建地球大气边缘散射光晕
+    this.haloMaterial = createAtmosphereHaloMaterial();
+    this.haloMaterial.uniforms.sunDirection.value.copy(this.sunLight.position).normalize();
+    safeDisposeMaterial(this.haloMesh.material);
+    this.haloMesh.material = this.haloMaterial;
+    this.haloMesh.visible = this.showAtmosphere;
+
+    // 5. 加载月球 NASA LROC 2K 多光谱贴图
     const moonTex = await this.assetManager.loadTexture('moon-svs-2025-2k', token, () => true);
     if (moonTex) {
       (this.moonMesh.material as THREE.MeshStandardMaterial).map = moonTex;
@@ -235,7 +320,7 @@ export class SolarEngine {
   };
 
   private onPointerDown = (e: PointerEvent): void => {
-    if (e.button !== 0) return; // 仅左键响应旋转
+    if (e.button !== 0) return;
     this.isPointerDown = true;
     this.hasDragged = false;
     this.pointerStartX = e.clientX;
@@ -270,7 +355,7 @@ export class SolarEngine {
     if (!this.isPointerDown) return;
     this.isPointerDown = false;
 
-    // 若未触发明显拖拽，则视为点击拾取
+    // 若未触发拖拽，则视为有效点击拾取
     if (!this.hasDragged) {
       this.handlePick(e.clientX, e.clientY);
     }
@@ -315,6 +400,31 @@ export class SolarEngine {
     this.timeScale = scale;
   }
 
+  public setShowClouds(show: boolean): void {
+    this.showClouds = show;
+    this.cloudMesh.visible = show;
+  }
+
+  public setTeachingLight(enable: boolean): void {
+    this.teachingLight = enable;
+    if (this.earthMaterial) {
+      this.earthMaterial.uniforms.teachingLight.value = enable ? 1.0 : 0.0;
+    }
+  }
+
+  public setShowAtmosphere(show: boolean): void {
+    this.showAtmosphere = show;
+    this.haloMesh.visible = show;
+  }
+
+  public isTeachingLight(): boolean {
+    return this.teachingLight;
+  }
+
+  public isShowClouds(): boolean {
+    return this.showClouds;
+  }
+
   private emitSnapshot(): void {
     if (this.callbacks.onCameraSnapshot) {
       this.callbacks.onCameraSnapshot(this.cameraController.getSnapshot());
@@ -329,9 +439,8 @@ export class SolarEngine {
     const deltaSec = Math.min((now - this.lastTime) / 1000, 0.1);
     this.lastTime = now;
 
-    // 1. 模拟时钟推进（若暂停则不累加）
+    // 1. 模拟时钟推进
     if (!this.isPaused) {
-      // 默认 1 真实秒 = 1 模拟小时（在 M0/M1 可调）
       this.simTimeHours += deltaSec * this.timeScale;
     }
 
@@ -340,14 +449,22 @@ export class SolarEngine {
     const earthRotRad = (2 * Math.PI * (this.simTimeHours % BODIES.earth.rotationPeriodHours)) / BODIES.earth.rotationPeriodHours;
     this.earthMesh.rotation.y = earthRotRad;
 
+    // 独立自旋云层：略快于地表（形成大气对流流动效果）
+    this.cloudMesh.rotation.y = earthRotRad * 1.04 + (this.simTimeHours * 0.01);
+
     // 月球公转位置计算
     const moonPosKm = getMoonPositionKm(this.simTimeHours);
     const moonTransform = computeRenderTransform(moonPosKm, [0, 0, 0], BODIES.moon.radiusKm);
     this.moonGroup.position.set(...moonTransform.renderPosition);
 
-    // 月球自转（潮汐锁定近似朝向地球）
+    // 月球潮汐锁定自转
     const moonOrbitAngle = Math.atan2(moonTransform.renderPosition[2], moonTransform.renderPosition[0]);
     this.moonMesh.rotation.y = -moonOrbitAngle;
+
+    // 星空背景球跟随相机位置（保持无尽远景感）
+    if (this.skyboxMesh) {
+      this.skyboxMesh.position.copy(this.camera.position);
+    }
 
     // 3. 更新相机位置与平滑过渡
     this.cameraController.update(deltaSec, (id: BodyId) => {
@@ -377,10 +494,24 @@ export class SolarEngine {
     this.canvas.removeEventListener('wheel', this.onWheel);
 
     this.assetManager.disposeAll();
+
+    if (this.skyboxMesh) {
+      this.skyboxMesh.geometry.dispose();
+      safeDisposeMaterial(this.skyboxMesh.material);
+    }
+
     this.earthMesh.geometry.dispose();
-    (this.earthMesh.material as THREE.Material).dispose();
+    safeDisposeMaterial(this.earthMesh.material);
+
+    this.cloudMesh.geometry.dispose();
+    safeDisposeMaterial(this.cloudMesh.material);
+
+    this.haloMesh.geometry.dispose();
+    safeDisposeMaterial(this.haloMesh.material);
+
     this.moonMesh.geometry.dispose();
-    (this.moonMesh.material as THREE.Material).dispose();
+    safeDisposeMaterial(this.moonMesh.material);
+
     this.renderer.dispose();
 
     if (this.canvas.parentElement) {

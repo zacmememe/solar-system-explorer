@@ -9,25 +9,28 @@ describe('M0 资产门禁与生产清单校验', () => {
   const projectRoot = path.resolve(__dirname, '..');
   const manifestPath = path.join(projectRoot, 'sources', 'production-assets.json');
 
-  it('AST-01: 生产资产清单存在且包含有效地球与月球贴图', () => {
+  it('AST-01: 生产资产清单存在且包含有效地球白昼、夜晚、云层、月球与星空贴图', () => {
     expect(fs.existsSync(manifestPath)).toBe(true);
     const manifest: AssetManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
 
-    expect(manifest.assets.length).toBeGreaterThanOrEqual(2);
+    expect(manifest.assets.length).toBeGreaterThanOrEqual(5);
 
-    const earth = manifest.assets.find((a) => a.bodyId === 'earth');
-    const moon = manifest.assets.find((a) => a.bodyId === 'moon');
+    const earthDay = manifest.assets.find((a) => a.id === 'earth-day-sss-2k');
+    const earthNight = manifest.assets.find((a) => a.id === 'earth-night-sss-2k');
+    const earthClouds = manifest.assets.find((a) => a.id === 'earth-clouds-sss-2k');
+    const moon = manifest.assets.find((a) => a.id === 'moon-svs-2025-2k');
+    const stars = manifest.assets.find((a) => a.id === 'stars-bg-sss-2k');
 
-    expect(earth).toBeDefined();
+    expect(earthDay).toBeDefined();
+    expect(earthNight).toBeDefined();
+    expect(earthClouds).toBeDefined();
     expect(moon).toBeDefined();
+    expect(stars).toBeDefined();
 
-    expect(earth?.derivedWidth).toBe(2048);
-    expect(earth?.derivedHeight).toBe(1024);
-    expect(moon?.derivedWidth).toBe(2048);
-    expect(moon?.derivedHeight).toBe(1024);
+    for (const asset of [earthDay!, earthNight!, earthClouds!, moon!, stars!]) {
+      expect(asset.derivedWidth).toBe(2048);
+      expect(asset.derivedHeight).toBe(1024);
 
-    // 检查本地文件是否真实存在且哈希一致
-    for (const asset of [earth!, moon!]) {
       const localFile = path.join(projectRoot, 'public', asset.localPath);
       expect(fs.existsSync(localFile)).toBe(true);
 
