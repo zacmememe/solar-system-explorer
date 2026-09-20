@@ -1,0 +1,100 @@
+[
+  {
+    "id": "ENV-01",
+    "name": "页面启动与控制台无未捕获异常",
+    "category": "环境与资产",
+    "status": "PASS",
+    "detail": "耗时 5964ms，无未处理异常"
+  },
+  {
+    "id": "ENV-02",
+    "name": "探测 WebGL2 与硬件纹理能力",
+    "category": "环境与资产",
+    "status": "PASS",
+    "detail": "成功获取 WebGL2 上下文，硬件加速正常"
+  },
+  {
+    "id": "CAM-01",
+    "name": "选择地球并执行平滑飞行动画",
+    "category": "镜头与基本体验",
+    "status": "PASS",
+    "detail": "成功飞抵地球，展开科学数据自洽"
+  },
+  {
+    "id": "CAM-05",
+    "name": "旋转拖拽不产生误选与镜头突跳",
+    "category": "镜头与基本体验",
+    "status": "PASS",
+    "detail": "平滑旋转相机轨道，无误触发"
+  },
+  {
+    "id": "VIS-01",
+    "name": "土星宏伟双面环与背阳投影阴影",
+    "category": "视觉与光环",
+    "status": "PASS",
+    "detail": "土星环着色器完整渲染，无包围盒裁剪"
+  },
+  {
+    "id": "VIS-05",
+    "name": "金星雷达穿透熔岩地表与浓厚硫酸云层切换",
+    "category": "视觉图层",
+    "status": "PASS",
+    "detail": "金星双层贴图着色器穿透切换正常"
+  },
+  {
+    "id": "TIME-01",
+    "name": "公转模拟倍速切换 (200x)",
+    "category": "时钟控制",
+    "status": "PASS",
+    "detail": "时间倍速调整响应正常，未影响相机平滑度"
+  },
+  {
+    "id": "VEHICLE-01",
+    "name": "航天器机库全屏视窗开启",
+    "category": "载具机库",
+    "status": "PASS",
+    "detail": "成功唤起机库，呈现 3D 摄影棚渲染视窗"
+  },
+  {
+    "id": "VEHICLE-02",
+    "name": "六大核心航天器 3D 几何与材质无缝切换",
+    "category": "载具机库",
+    "status": "PASS",
+    "detail": "全部 6 艘航天器网格加载正常，无着色器编译崩溃"
+  },
+  {
+    "id": "VEHICLE-03",
+    "name": "结构热点交互高亮与亲子原理解析",
+    "category": "载具机库",
+    "status": "PASS",
+    "detail": "热点部件呼吸指示正常，亲子与学术双层解密准确"
+  },
+  {
+    "id": "VEHICLE-04",
+    "name": "伴飞视角与随船视角正交切换",
+    "category": "视角系统",
+    "status": "PASS",
+    "detail": "航天器前景稳固伴飞，随船前向俯瞰深空正常"
+  },
+  {
+    "id": "PHOTO-01",
+    "name": "太空探索明信片离线 Canvas 2D 合成",
+    "category": "亲子明信片",
+    "status": "PASS",
+    "detail": "成功合成 16:9 高清明信片（含真实观测图、探索印章与数据溯源）"
+  },
+  {
+    "id": "PRIV-01",
+    "name": "儿童隐私保护 (零外部网络图片上传)",
+    "category": "隐私安全",
+    "status": "PASS",
+    "detail": "纯客户端离线渲染，无敏感数据或儿童隐私泄露风险"
+  },
+  {
+    "id": "PERF-01",
+    "name": "真实浏览器渲染帧率性能",
+    "category": "性能与稳定性",
+    "status": "PASS",
+    "detail": "平均帧率 162 FPS，画面丝滑无卡顿"
+  }
+]

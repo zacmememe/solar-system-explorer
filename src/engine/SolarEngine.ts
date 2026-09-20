@@ -831,6 +831,10 @@ export class SolarEngine {
     return this.canvas;
   }
 
+  public renderImmediate(): void {
+    this.renderer.render(this.scene, this.camera);
+  }
+
   private emitSnapshot(): void {
     if (this.callbacks.onCameraSnapshot) {
       this.callbacks.onCameraSnapshot(this.cameraController.getSnapshot());

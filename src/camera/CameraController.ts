@@ -11,7 +11,7 @@
 import * as THREE from 'three';
 import type { BodyId } from '../contracts/body';
 import type { CameraCommand, CameraMode, CameraStateSnapshot } from '../contracts/camera';
-import { BODIES, KM_PER_SCENE_UNIT } from '../astronomy/bodies';
+import { BODIES, getNavDisplayRadius } from '../astronomy/bodies';
 
 export interface CameraControllerOptions {
   camera: THREE.PerspectiveCamera;
@@ -65,8 +65,7 @@ export class CameraController {
    * 处理相机外部命令
    */
   public executeCommand(command: CameraCommand): number {
-    this.currentCommandId++;
-    const token = this.currentCommandId;
+    const token = ++this.currentCommandId;
 
     switch (command.type) {
       case 'select':
@@ -149,23 +148,23 @@ export class CameraController {
     const limitingFovRad = Math.min(vFovRad, hFovRad);
 
     const body = BODIES[targetId];
-    let baseRadius = 6.371;
+    let baseRadius = 1.4;
     if (body) {
       if (body.type === 'star') {
-        baseRadius = 16.0; // 太阳在特写时使用舒适视界尺寸
+        baseRadius = 7.0; // 太阳在特写时使用舒适视界尺寸
       } else {
-        baseRadius = body.radiusKm / KM_PER_SCENE_UNIT;
+        baseRadius = getNavDisplayRadius(body.radiusKm, body.type);
         if (body.ringConfig) {
           baseRadius *= body.ringConfig.outerRadiusRatio;
         }
       }
     }
-    // 保证小卫星不至于过近（至少 1.5 场景单位），巨行星不突破视锥
-    baseRadius = Math.max(1.2, baseRadius);
+    // 保证小卫星不至于过近（至少 0.8 场景单位），巨行星不突破视锥
+    baseRadius = Math.max(0.8, baseRadius);
 
     const targetDist = Math.max(
-      baseRadius * 1.6,
-      (baseRadius / Math.sin(limitingFovRad / 2)) * 1.18
+      baseRadius * 1.5,
+      (baseRadius / Math.sin(limitingFovRad / 2)) * 1.25
     );
 
     this.transitionTargetSpherical.set(

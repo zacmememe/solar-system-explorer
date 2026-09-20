@@ -162,6 +162,7 @@ export const App: React.FC = () => {
   };
 
   const handleGeneratePostcard = async () => {
+    engineRef.current?.renderImmediate();
     const canvas = engineRef.current?.getRendererCanvas();
     if (!canvas) return;
     setIsGeneratingPostcard(true);
