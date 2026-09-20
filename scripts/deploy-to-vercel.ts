@@ -162,6 +162,23 @@ async function main() {
     }
   }
 
+  // 尝试将生产别名指派到 solar-system-explorer-blue.vercel.app
+  try {
+    const aliasRes = await fetch(`https://api.vercel.com/v2/deployments/${deployData.id}/aliases?teamId=${TEAM_ID}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ alias: 'solar-system-explorer-blue.vercel.app' }),
+    });
+    if (aliasRes.ok) {
+      console.log('  👉 成功绑定主别名: https://solar-system-explorer-blue.vercel.app');
+    }
+  } catch {
+    // 忽略别名覆盖已存在错误
+  }
+
   console.log(`\n部署状态: ${deployData.readyState || 'BUILDING/READY'}`);
 }
 

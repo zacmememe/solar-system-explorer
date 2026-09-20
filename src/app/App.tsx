@@ -3,6 +3,11 @@ import { SolarEngine, WebGLDiagnosticInfo } from '../engine/SolarEngine';
 import { BODIES } from '../astronomy/bodies';
 import type { BodyId } from '../contracts/body';
 import type { CameraStateSnapshot } from '../contracts/camera';
+import type { VehicleId, ViewCameraMode } from '../contracts/vehicle';
+import { VEHICLE_CATALOG } from '../vehicles/VehicleCatalog';
+import { HangarModal } from '../vehicles/HangarModal';
+import { PostcardModal } from '../vehicles/PostcardModal';
+import { generateDiscoveryPostcard } from '../utils/postcard';
 import {
   Play,
   Pause,
@@ -16,6 +21,9 @@ import {
   Layers,
   CircleDot,
   Radio,
+  Rocket,
+  Camera,
+  Navigation,
 } from 'lucide-react';
 
 const PLANET_ORDER: BodyId[] = [
@@ -54,6 +62,17 @@ export const App: React.FC = () => {
   const [showAtmosphere, setShowAtmosphere] = useState<boolean>(true);
   const [showOrbits, setShowOrbits] = useState<boolean>(true);
   const [venusRadarMode, setVenusRadarMode] = useState<boolean>(false);
+
+  // 载具与伴飞视角系统
+  const [currentVehicleId, setCurrentVehicleId] = useState<VehicleId | null>('apollo-lm');
+  const [viewCameraMode, setViewCameraMode] = useState<ViewCameraMode>('VEHICLE_FORMATION');
+  const [showHangar, setShowHangar] = useState<boolean>(false);
+
+  // 探索明信片系统
+  const [showPostcardModal, setShowPostcardModal] = useState<boolean>(false);
+  const [postcardDataUrl, setPostcardDataUrl] = useState<string>('');
+  const [isGeneratingPostcard, setIsGeneratingPostcard] = useState<boolean>(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -128,8 +147,54 @@ export const App: React.FC = () => {
     engineRef.current?.setShowVenusSurface(next);
   };
 
+  const handleSelectVehicle = (id: VehicleId) => {
+    setCurrentVehicleId(id);
+    engineRef.current?.setVehicle(id);
+    engineRef.current?.setViewCameraMode('VEHICLE_FORMATION');
+    setViewCameraMode('VEHICLE_FORMATION');
+    const vDef = VEHICLE_CATALOG[id];
+    showToast(`🚀 已登船：${vDef.name}，正在伴飞！`);
+  };
+
+  const handleCameraModeChange = (mode: ViewCameraMode) => {
+    setViewCameraMode(mode);
+    engineRef.current?.setViewCameraMode(mode);
+  };
+
+  const handleGeneratePostcard = async () => {
+    const canvas = engineRef.current?.getRendererCanvas();
+    if (!canvas) return;
+    setIsGeneratingPostcard(true);
+    try {
+      const vDef = currentVehicleId ? VEHICLE_CATALOG[currentVehicleId] : undefined;
+      const url = await generateDiscoveryPostcard({
+        sourceCanvas: canvas,
+        bodyName: activeBody.name,
+        bodyNameEn: activeBody.nameEn,
+        bodyType: activeBody.type === 'star' ? '恒星 Star' : activeBody.type === 'planet' ? '大行星 Planet' : '卫星 Moon',
+        vehicleName: vDef ? vDef.name : undefined,
+        vehicleAgency: vDef ? vDef.agency : undefined,
+        observationTip: activeBody.observationTip,
+        funFact: activeBody.funFact,
+        sourceRef: activeBody.sourceRef,
+      });
+      setPostcardDataUrl(url);
+      setShowPostcardModal(true);
+    } catch (err) {
+      console.error('Failed to generate postcard:', err);
+    } finally {
+      setIsGeneratingPostcard(false);
+    }
+  };
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
+
   const activeBody = BODIES[selectedBodyId] || BODIES.sun;
   const currentMoons = PLANET_MOONS[activeBody.parentId ? activeBody.parentId : activeBody.id] || [];
+  const activeVehicle = currentVehicleId ? VEHICLE_CATALOG[currentVehicleId] : null;
 
   return (
     <div
@@ -146,7 +211,7 @@ export const App: React.FC = () => {
       {/* 3D 渲染画布容器 */}
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
 
-      {/* 顶部标题栏 */}
+      {/* 顶部标题栏与机库入口 */}
       <header
         style={{
           position: 'absolute',
@@ -155,10 +220,10 @@ export const App: React.FC = () => {
           display: 'flex',
           alignItems: 'center',
           gap: 12,
-          background: 'rgba(10, 16, 26, 0.85)',
-          backdropFilter: 'blur(12px)',
+          background: 'rgba(10, 16, 26, 0.88)',
+          backdropFilter: 'blur(16px)',
           padding: '8px 16px',
-          borderRadius: 14,
+          borderRadius: 16,
           border: '1px solid rgba(255, 255, 255, 0.12)',
           boxShadow: '0 4px 24px rgba(0,0,0,0.6)',
           zIndex: 10,
@@ -179,9 +244,46 @@ export const App: React.FC = () => {
                 backgroundColor: '#22c55e',
               }}
             />
-            <span>太阳 · 八大行星 · 土星环 · 核心卫星全覆盖</span>
+            <span>太阳 · 八大行星 · 土星环 · 核心卫星</span>
           </div>
         </div>
+
+        <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,0.15)', margin: '0 4px' }} />
+
+        {/* 航天器机库入口按钮 */}
+        <button
+          onClick={() => setShowHangar(true)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '6px 12px',
+            borderRadius: 10,
+            background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.25) 0%, rgba(3, 105, 161, 0.45) 100%)',
+            border: '1px solid rgba(56, 189, 248, 0.45)',
+            color: '#ffffff',
+            cursor: 'pointer',
+            fontSize: 12,
+            fontWeight: 600,
+            boxShadow: '0 2px 10px rgba(56, 189, 248, 0.25)',
+          }}
+          title="打开航天器机库选择搭乘载具"
+        >
+          <Rocket size={14} color="#38bdf8" />
+          <span>机库 Hangar</span>
+          <span
+            style={{
+              fontSize: 10,
+              padding: '1px 6px',
+              borderRadius: 4,
+              backgroundColor: 'rgba(234, 179, 8, 0.25)',
+              color: '#fde047',
+              border: '1px solid rgba(234, 179, 8, 0.4)',
+            }}
+          >
+            {activeVehicle ? activeVehicle.name : '未登船'}
+          </span>
+        </button>
       </header>
 
       {/* 右上角 WebGL2 硬件与环境诊断卡片 */}
@@ -363,17 +465,84 @@ export const App: React.FC = () => {
           transform: 'translateY(-50%)',
           display: 'flex',
           flexDirection: 'column',
-          gap: 8,
-          background: 'rgba(10, 16, 26, 0.8)',
-          backdropFilter: 'blur(12px)',
+          gap: 6,
+          background: 'rgba(10, 16, 26, 0.85)',
+          backdropFilter: 'blur(16px)',
           padding: '12px 14px',
           borderRadius: 16,
-          border: '1px solid rgba(255, 255, 255, 0.1)',
+          border: '1px solid rgba(255, 255, 255, 0.12)',
           boxShadow: '0 6px 24px rgba(0,0,0,0.5)',
           zIndex: 10,
         }}
       >
         <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+          <Navigation size={13} color="#38bdf8" />
+          <span>飞行视角模式</span>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 4 }}>
+          <button
+            onClick={() => handleCameraModeChange('PLANET_OBSERVE')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '6px 10px',
+              background: viewCameraMode === 'PLANET_OBSERVE' ? 'rgba(56, 189, 248, 0.25)' : 'transparent',
+              border: viewCameraMode === 'PLANET_OBSERVE' ? '1px solid #38bdf8' : '1px solid rgba(255,255,255,0.06)',
+              borderRadius: 8,
+              color: viewCameraMode === 'PLANET_OBSERVE' ? '#ffffff' : '#94a3b8',
+              cursor: 'pointer',
+              fontSize: 11,
+            }}
+            title="自由环绕观察当前天体全景"
+          >
+            <Eye size={13} />
+            <span>行星全景 (Planet)</span>
+          </button>
+
+          <button
+            onClick={() => handleCameraModeChange('VEHICLE_FORMATION')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '6px 10px',
+              background: viewCameraMode === 'VEHICLE_FORMATION' ? 'rgba(234, 179, 8, 0.25)' : 'transparent',
+              border: viewCameraMode === 'VEHICLE_FORMATION' ? '1px solid #eab308' : '1px solid rgba(255,255,255,0.06)',
+              color: viewCameraMode === 'VEHICLE_FORMATION' ? '#fef08a' : '#94a3b8',
+              cursor: 'pointer',
+              fontSize: 11,
+            }}
+            title="飞船在前景右侧伴飞观察"
+          >
+            <Rocket size={13} />
+            <span>伴飞视角 (Formation)</span>
+          </button>
+
+          <button
+            onClick={() => handleCameraModeChange('VEHICLE_ONBOARD')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '6px 10px',
+              background: viewCameraMode === 'VEHICLE_ONBOARD' ? 'rgba(34, 197, 94, 0.25)' : 'transparent',
+              border: viewCameraMode === 'VEHICLE_ONBOARD' ? '1px solid #22c55e' : '1px solid rgba(255,255,255,0.06)',
+              color: viewCameraMode === 'VEHICLE_ONBOARD' ? '#86efac' : '#94a3b8',
+              cursor: 'pointer',
+              fontSize: 11,
+            }}
+            title="第一人称俯瞰随船视角"
+          >
+            <Compass size={13} />
+            <span>随船视角 (Onboard)</span>
+          </button>
+        </div>
+
+        <div style={{ width: '100%', height: 1, background: 'rgba(255,255,255,0.08)', margin: '3px 0' }} />
+
+        <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, margin: '2px 0' }}>
           <Layers size={13} color="#38bdf8" />
           <span>观测图层与工具</span>
         </div>
@@ -384,7 +553,7 @@ export const App: React.FC = () => {
             display: 'flex',
             alignItems: 'center',
             gap: 8,
-            padding: '7px 10px',
+            padding: '6px 10px',
             background: showOrbits ? 'rgba(56, 189, 248, 0.2)' : 'transparent',
             border: showOrbits ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid rgba(255,255,255,0.06)',
             borderRadius: 8,
@@ -404,7 +573,7 @@ export const App: React.FC = () => {
             display: 'flex',
             alignItems: 'center',
             gap: 8,
-            padding: '7px 10px',
+            padding: '6px 10px',
             background: teachingLight ? 'rgba(234, 179, 8, 0.2)' : 'transparent',
             border: teachingLight ? '1px solid rgba(234, 179, 8, 0.4)' : '1px solid rgba(255,255,255,0.06)',
             color: teachingLight ? '#fde047' : '#64748b',
@@ -424,7 +593,7 @@ export const App: React.FC = () => {
             display: 'flex',
             alignItems: 'center',
             gap: 8,
-            padding: '7px 10px',
+            padding: '6px 10px',
             background: showClouds ? 'rgba(56, 189, 248, 0.2)' : 'transparent',
             border: showClouds ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid rgba(255,255,255,0.06)',
             color: showClouds ? '#e2e8f0' : '#64748b',
@@ -444,7 +613,7 @@ export const App: React.FC = () => {
             display: 'flex',
             alignItems: 'center',
             gap: 8,
-            padding: '7px 10px',
+            padding: '6px 10px',
             background: showAtmosphere ? 'rgba(56, 189, 248, 0.2)' : 'transparent',
             border: showAtmosphere ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid rgba(255,255,255,0.06)',
             color: showAtmosphere ? '#e2e8f0' : '#64748b',
@@ -465,20 +634,45 @@ export const App: React.FC = () => {
               display: 'flex',
               alignItems: 'center',
               gap: 8,
-              padding: '7px 10px',
+              padding: '6px 10px',
               background: venusRadarMode ? 'rgba(249, 115, 22, 0.25)' : 'rgba(255, 255, 255, 0.05)',
               border: venusRadarMode ? '1px solid #f97316' : '1px solid rgba(255,255,255,0.08)',
               borderRadius: 8,
               color: venusRadarMode ? '#fb923c' : '#94a3b8',
               cursor: 'pointer',
               fontSize: 11,
-              marginTop: 4,
             }}
           >
             <Radio size={13} />
             <span>雷达穿透地表 ({venusRadarMode ? '开' : '关'})</span>
           </button>
         )}
+
+        <div style={{ width: '100%', height: 1, background: 'rgba(255,255,255,0.08)', margin: '3px 0' }} />
+
+        {/* 记录发现 / 生成探索明信片按钮 */}
+        <button
+          onClick={handleGeneratePostcard}
+          disabled={isGeneratingPostcard}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '8px 10px',
+            background: 'linear-gradient(135deg, rgba(2, 132, 199, 0.3) 0%, rgba(14, 165, 233, 0.45) 100%)',
+            border: '1px solid rgba(56, 189, 248, 0.5)',
+            color: '#38bdf8',
+            borderRadius: 8,
+            cursor: isGeneratingPostcard ? 'wait' : 'pointer',
+            fontSize: 11,
+            fontWeight: 600,
+            boxShadow: '0 2px 8px rgba(56, 189, 248, 0.2)',
+          }}
+          title="将当前 3D 观测画面合成为专属探索明信片并可保存下载"
+        >
+          <Camera size={14} />
+          <span>{isGeneratingPostcard ? '正在截帧中...' : '记录发现 · 探索明信片'}</span>
+        </button>
       </nav>
 
       {/* 核心亲子观察卡片（右下角） */}
@@ -680,6 +874,52 @@ export const App: React.FC = () => {
           {cameraSnapshot?.isTransitioning && <span style={{ color: '#38bdf8', marginLeft: 6 }}>丝滑飞行中...</span>}
         </div>
       </footer>
+
+      {/* 航天器机库全屏模态窗口 */}
+      {showHangar && (
+        <HangarModal
+          currentVehicleId={currentVehicleId}
+          onSelectVehicle={handleSelectVehicle}
+          onClose={() => setShowHangar(false)}
+        />
+      )}
+
+      {/* 探索发现明信片预览与下载窗口 */}
+      {showPostcardModal && (
+        <PostcardModal
+          postcardDataUrl={postcardDataUrl}
+          onClose={() => setShowPostcardModal(false)}
+          bodyName={activeBody.name}
+          vehicleName={activeVehicle ? activeVehicle.name : undefined}
+        />
+      )}
+
+      {/* 交互提示气泡 Toast */}
+      {toastMessage && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 70,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'rgba(15, 23, 42, 0.92)',
+            backdropFilter: 'blur(16px)',
+            border: '1px solid rgba(56, 189, 248, 0.4)',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+            color: '#38bdf8',
+            padding: '8px 18px',
+            borderRadius: 20,
+            fontSize: 12,
+            fontWeight: 600,
+            zIndex: 150,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          <span>{toastMessage}</span>
+        </div>
+      )}
     </div>
   );
 };

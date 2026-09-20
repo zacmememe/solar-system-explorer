@@ -28,6 +28,8 @@ import { createSaturnRingMaterial } from '../rendering/RingMaterial';
 import { createSunMaterial, createSunCoronaMaterial } from '../rendering/SunMaterial';
 import type { BodyId, CelestialBodyData } from '../contracts/body';
 import type { CameraCommand, CameraStateSnapshot } from '../contracts/camera';
+import type { VehicleId, ViewCameraMode } from '../contracts/vehicle';
+import { VehicleMeshBuilder } from '../vehicles/VehicleMeshBuilder';
 import productionAssetsData from '../../sources/production-assets.json';
 
 export interface WebGLDiagnosticInfo {
@@ -106,6 +108,13 @@ export class SolarEngine {
   private sunMaterial: THREE.ShaderMaterial | null = null;
   private sunCoronaMaterial: THREE.ShaderMaterial | null = null;
 
+  // 载具航天器系统
+  private currentVehicleId: VehicleId | null = 'apollo-lm';
+  private vehicleGroup: THREE.Group = new THREE.Group();
+  private currentVehicleMesh: THREE.Group | null = null;
+  private viewCameraMode: ViewCameraMode = 'VEHICLE_FORMATION';
+  private vehicleOrbitAngle: number = 0;
+
   // 动画与时钟
   private isRunning: boolean = true;
   private animFrameId: number = 0;
@@ -148,6 +157,7 @@ export class SolarEngine {
       context,
       antialias: true,
       powerPreference: 'high-performance',
+      preserveDrawingBuffer: true,
     });
     this.renderer.setSize(container.clientWidth, container.clientHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
@@ -192,6 +202,10 @@ export class SolarEngine {
     // 5. 轨道线组
     this.orbitLinesGroup = new THREE.Group();
     this.scene.add(this.orbitLinesGroup);
+
+    // 5.1 载具航天器容器与初始载具
+    this.scene.add(this.vehicleGroup);
+    this.setVehicle(this.currentVehicleId);
 
     // 6. 初始化所有天体对象（包含太阳、八大行星与主要卫星）
     this.initAllBodies();
@@ -774,6 +788,49 @@ export class SolarEngine {
     return this.venusRadarMode;
   }
 
+  public setVehicle(id: VehicleId | null): void {
+    if (this.currentVehicleMesh) {
+      this.vehicleGroup.remove(this.currentVehicleMesh);
+      this.currentVehicleMesh.traverse((obj) => {
+        if ((obj as THREE.Mesh).isMesh) {
+          const mesh = obj as THREE.Mesh;
+          mesh.geometry.dispose();
+          safeDisposeMaterial(mesh.material);
+        }
+      });
+      this.currentVehicleMesh = null;
+    }
+
+    this.currentVehicleId = id;
+    if (!id) return;
+
+    const mesh = VehicleMeshBuilder.buildVehicle(id);
+    const box = new THREE.Box3().setFromObject(mesh);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const maxDim = Math.max(size.x, size.y, size.z, 0.01);
+    mesh.userData = { originalMaxDim: maxDim };
+
+    this.currentVehicleMesh = mesh;
+    this.vehicleGroup.add(mesh);
+  }
+
+  public getCurrentVehicle(): VehicleId | null {
+    return this.currentVehicleId;
+  }
+
+  public setViewCameraMode(mode: ViewCameraMode): void {
+    this.viewCameraMode = mode;
+  }
+
+  public getViewCameraMode(): ViewCameraMode {
+    return this.viewCameraMode;
+  }
+
+  public getRendererCanvas(): HTMLCanvasElement {
+    return this.canvas;
+  }
+
   private emitSnapshot(): void {
     if (this.callbacks.onCameraSnapshot) {
       this.callbacks.onCameraSnapshot(this.cameraController.getSnapshot());
@@ -858,12 +915,96 @@ export class SolarEngine {
       }
     }
 
-    // 3. 星空背景天球跟随相机移动（保持无尽远景感）
+    // 3. 更新载具空间位置与伴飞/随船/绕飞姿态
+    if (this.currentVehicleMesh && this.currentVehicleId) {
+      const origDim = (this.currentVehicleMesh.userData.originalMaxDim as number) || 5.0;
+
+      if (this.viewCameraMode === 'VEHICLE_FORMATION') {
+        this.vehicleGroup.visible = true;
+        // 伴飞视角：航天器稳固置于相机右前下方前景（视觉占比约 18%-22%）
+        const normScale = 0.82 / origDim;
+        this.currentVehicleMesh.scale.setScalar(normScale);
+
+        const camPos = this.camera.position;
+        const camDir = new THREE.Vector3();
+        this.camera.getWorldDirection(camDir);
+        const camRight = new THREE.Vector3().crossVectors(camDir, this.camera.up).normalize();
+        const camUp = this.camera.up.clone().normalize();
+
+        const forwardDist = 2.45;
+        const rightOffset = 0.82;
+        const downOffset = -0.46;
+        const bob = Math.sin(now * 0.002) * 0.012;
+
+        const vPos = camPos.clone()
+          .addScaledVector(camDir, forwardDist)
+          .addScaledVector(camRight, rightOffset)
+          .addScaledVector(camUp, downOffset + bob);
+
+        this.vehicleGroup.position.copy(vPos);
+        this.vehicleGroup.quaternion.copy(this.camera.quaternion);
+        this.vehicleGroup.rotateY(-0.35);
+        this.vehicleGroup.rotateX(0.1);
+      } else if (this.viewCameraMode === 'VEHICLE_ONBOARD') {
+        this.vehicleGroup.visible = true;
+        // 随船视角：前向传感器/机鼻俯瞰观察
+        const normScale = 0.95 / origDim;
+        this.currentVehicleMesh.scale.setScalar(normScale);
+
+        const camPos = this.camera.position;
+        const camDir = new THREE.Vector3();
+        this.camera.getWorldDirection(camDir);
+        const camUp = this.camera.up.clone().normalize();
+
+        const forwardDist = 1.35;
+        const downOffset = -0.44;
+        const vPos = camPos.clone()
+          .addScaledVector(camDir, forwardDist)
+          .addScaledVector(camUp, downOffset);
+
+        this.vehicleGroup.position.copy(vPos);
+        this.vehicleGroup.quaternion.copy(this.camera.quaternion);
+        this.vehicleGroup.rotateX(0.06);
+      } else {
+        // PLANET_OBSERVE: 航天器在当前目标星球轨道优雅巡航
+        const targetId = this.cameraController.getSnapshot().targetBodyId;
+        const targetNode = (targetId ? this.bodyNodes.get(targetId) : null) || this.bodyNodes.get('earth');
+        if (targetNode) {
+          this.vehicleGroup.visible = true;
+          const worldPos = new THREE.Vector3();
+          targetNode.mesh.getWorldPosition(worldPos);
+          const orbitR = targetNode.displayRadius * 1.55;
+          this.vehicleOrbitAngle += deltaSec * 0.25;
+
+          const orbitScale = Math.max(targetNode.displayRadius * 0.09, 0.45) / origDim;
+          this.currentVehicleMesh.scale.setScalar(orbitScale);
+
+          const vx = worldPos.x + Math.cos(this.vehicleOrbitAngle) * orbitR;
+          const vy = worldPos.y + Math.sin(this.vehicleOrbitAngle * 0.8) * (orbitR * 0.2);
+          const vz = worldPos.z + Math.sin(this.vehicleOrbitAngle) * orbitR;
+
+          this.vehicleGroup.position.set(vx, vy, vz);
+
+          const tangent = new THREE.Vector3(
+            -Math.sin(this.vehicleOrbitAngle),
+            0.1,
+            Math.cos(this.vehicleOrbitAngle)
+          ).normalize();
+          this.vehicleGroup.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), tangent);
+        } else {
+          this.vehicleGroup.visible = false;
+        }
+      }
+    } else {
+      this.vehicleGroup.visible = false;
+    }
+
+    // 4. 星空背景天球跟随相机移动（保持无尽远景感）
     if (this.skyboxMesh) {
       this.skyboxMesh.position.copy(this.camera.position);
     }
 
-    // 4. 更新单一相机控制器
+    // 5. 更新单一相机控制器
     this.cameraController.update(deltaSec, (id: BodyId) => {
       const node = this.bodyNodes.get(id);
       if (!node) {
@@ -885,7 +1026,7 @@ export class SolarEngine {
       };
     });
 
-    // 5. 渲染一帧
+    // 6. 渲染一帧
     this.renderer.render(this.scene, this.camera);
   };
 
@@ -899,6 +1040,16 @@ export class SolarEngine {
     this.canvas.removeEventListener('wheel', this.onWheel);
 
     this.assetManager.disposeAll();
+
+    if (this.currentVehicleMesh) {
+      this.currentVehicleMesh.traverse((obj) => {
+        if ((obj as THREE.Mesh).isMesh) {
+          const mesh = obj as THREE.Mesh;
+          mesh.geometry.dispose();
+          safeDisposeMaterial(mesh.material);
+        }
+      });
+    }
 
     if (this.skyboxMesh) {
       this.skyboxMesh.geometry.dispose();
