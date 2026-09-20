@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "verify-assets": "tsx scripts/verify-assets.ts"
+    "verify-assets": "tsx scripts/verify-assets.ts",
+    "deploy": "tsx scripts/deploy-to-vercel.ts"
   },
   "dependencies": {
     "lucide-react": "^0.454.0",
