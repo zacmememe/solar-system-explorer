@@ -28,6 +28,7 @@ import { createSaturnRingMaterial } from '../rendering/RingMaterial';
 import { createSunMaterial, createSunCoronaMaterial } from '../rendering/SunMaterial';
 import type { BodyId, CelestialBodyData } from '../contracts/body';
 import type { CameraCommand, CameraStateSnapshot } from '../contracts/camera';
+import productionAssetsData from '../../sources/production-assets.json';
 
 export interface WebGLDiagnosticInfo {
   isWebGL2: boolean;
@@ -101,8 +102,6 @@ export class SolarEngine {
   private venusRadarMode: boolean = false;
 
   // 纹理缓存
-  private venusAtmosphereTex: THREE.Texture | null = null;
-  private venusSurfaceTex: THREE.Texture | null = null;
   private saturnRingMaterial: THREE.ShaderMaterial | null = null;
   private sunMaterial: THREE.ShaderMaterial | null = null;
   private sunCoronaMaterial: THREE.ShaderMaterial | null = null;
@@ -173,8 +172,9 @@ export class SolarEngine {
       camera: this.camera,
     });
 
-    // 资源管理器
+    // 资源管理器并注册全部生产资产
     this.assetManager = new AssetManager();
+    this.assetManager.registerManifest(productionAssetsData.assets as any);
 
     // 3. 构建星空天球背景
     this.setupSkybox();
@@ -443,125 +443,175 @@ export class SolarEngine {
   /**
    * 异步加载与挂载所有高质量 2K 真实生产贴图
    */
+  /**
+   * 异步并行加载与挂载所有高质量 2K 真实生产贴图
+   */
   private async loadInitialTextures(): Promise<void> {
     const token = this.cameraController.getSnapshot().commandId;
 
     // 1. 深空星图背景
-    const starsTex = await this.assetManager.loadTexture('stars-bg-sss-2k', token, () => true);
-    if (starsTex && this.skyboxMesh) {
-      (this.skyboxMesh.material as THREE.MeshBasicMaterial).map = starsTex;
-      (this.skyboxMesh.material as THREE.MeshBasicMaterial).needsUpdate = true;
-    }
+    this.assetManager.loadTexture('stars-bg-sss-2k', token, () => true).then((starsTex) => {
+      if (starsTex && this.skyboxMesh) {
+        (this.skyboxMesh.material as THREE.MeshBasicMaterial).map = starsTex;
+        (this.skyboxMesh.material as THREE.MeshBasicMaterial).needsUpdate = true;
+      }
+    }).catch((e) => console.error('[Texture] Skybox load failed:', e));
 
     // 2. 太阳光球层贴图
-    const sunTex = await this.assetManager.loadTexture('sun-sss-2k', token, () => true);
-    const sunNode = this.bodyNodes.get('sun');
-    if (sunTex && sunNode) {
-      this.sunMaterial = createSunMaterial(sunTex);
-      safeDisposeMaterial(sunNode.mesh.material);
-      sunNode.mesh.material = this.sunMaterial;
-    }
+    this.assetManager.loadTexture('sun-sss-2k', token, () => true).then((sunTex) => {
+      const sunNode = this.bodyNodes.get('sun');
+      if (sunTex && sunNode) {
+        this.sunMaterial = createSunMaterial(sunTex);
+        safeDisposeMaterial(sunNode.mesh.material);
+        sunNode.mesh.material = this.sunMaterial;
+      }
+    }).catch((e) => console.error('[Texture] Sun load failed:', e));
 
     // 3. 地球多层多波段 Shader（白昼 + 夜晚灯光 + 独立云层）
-    const earthDayTex = await this.assetManager.loadTexture('earth-day-sss-2k', token, () => true);
-    const earthNightTex = await this.assetManager.loadTexture('earth-night-sss-2k', token, () => true);
-    const earthCloudsTex = await this.assetManager.loadTexture('earth-clouds-sss-2k', token, () => true);
-    const earthNode = this.bodyNodes.get('earth');
+    Promise.all([
+      this.assetManager.loadTexture('earth-day-sss-2k', token, () => true),
+      this.assetManager.loadTexture('earth-night-sss-2k', token, () => true),
+      this.assetManager.loadTexture('earth-clouds-sss-2k', token, () => true),
+    ]).then(([dayTex, nightTex, cloudsTex]) => {
+      const earthNode = this.bodyNodes.get('earth');
+      if (earthNode && dayTex && nightTex) {
+        this.earthMaterial = createEarthSurfaceMaterial(dayTex, nightTex);
+        const sunDir = earthNode.systemGroup.position.clone().negate().normalize();
+        this.earthMaterial.uniforms.sunDirection.value.copy(sunDir);
+        this.earthMaterial.uniforms.teachingLight.value = this.teachingLight ? 1.0 : 0.0;
+        safeDisposeMaterial(earthNode.mesh.material);
+        earthNode.mesh.material = this.earthMaterial;
+      }
+      if (earthNode && earthNode.cloudMesh && cloudsTex) {
+        this.earthCloudMaterial = createEarthCloudMaterial(cloudsTex);
+        const sunDir = earthNode.systemGroup.position.clone().negate().normalize();
+        this.earthCloudMaterial.uniforms.sunDirection.value.copy(sunDir);
+        safeDisposeMaterial(earthNode.cloudMesh.material);
+        earthNode.cloudMesh.material = this.earthCloudMaterial;
+      }
+    }).catch((e) => console.error('[Texture] Earth load failed:', e));
 
-    if (earthNode && earthDayTex && earthNightTex) {
-      this.earthMaterial = createEarthSurfaceMaterial(earthDayTex, earthNightTex);
-      this.earthMaterial.uniforms.sunDirection.value.copy(earthNode.systemGroup.position).negate().normalize();
-      this.earthMaterial.uniforms.teachingLight.value = this.teachingLight ? 1.0 : 0.0;
-      safeDisposeMaterial(earthNode.mesh.material);
-      earthNode.mesh.material = this.earthMaterial;
-    }
+    // 4. 月球 NASA LROC 正射图与主要撞击坑卫星
+    this.assetManager.loadTexture('moon-svs-2025-2k', token, () => true).then((moonTex) => {
+      if (!moonTex) return;
+      const moonNode = this.bodyNodes.get('moon');
+      if (moonNode) {
+        const mat = moonNode.mesh.material as THREE.MeshStandardMaterial;
+        mat.color.set(0xffffff);
+        mat.map = moonTex;
+        mat.needsUpdate = true;
+      }
 
-    if (earthNode && earthNode.cloudMesh && earthCloudsTex) {
-      this.earthCloudMaterial = createEarthCloudMaterial(earthCloudsTex);
-      this.earthCloudMaterial.uniforms.sunDirection.value.copy(earthNode.systemGroup.position).negate().normalize();
-      safeDisposeMaterial(earthNode.cloudMesh.material);
-      earthNode.cloudMesh.material = this.earthCloudMaterial;
-    }
-
-    // 4. 月球 NASA LROC 正射图
-    const moonTex = await this.assetManager.loadTexture('moon-svs-2025-2k', token, () => true);
-    const moonNode = this.bodyNodes.get('moon');
-    if (moonTex && moonNode) {
-      (moonNode.mesh.material as THREE.MeshStandardMaterial).map = moonTex;
-      (moonNode.mesh.material as THREE.MeshStandardMaterial).needsUpdate = true;
-    }
+      // 给其他密集撞击坑小卫星赋予月球地貌纹理细节
+      const crateredMoons: BodyId[] = ['phobos', 'deimos', 'callisto', 'ganymede'];
+      for (const id of crateredMoons) {
+        const node = this.bodyNodes.get(id);
+        if (node) {
+          const mat = node.mesh.material as THREE.MeshStandardMaterial;
+          mat.map = moonTex;
+          mat.needsUpdate = true;
+        }
+      }
+    }).catch((e) => console.error('[Texture] Moon load failed:', e));
 
     // 5. 金星（大气与穿透地表雷达图）
-    this.venusAtmosphereTex = await this.assetManager.loadTexture('venus-atmosphere-sss-2k', token, () => true);
-    this.venusSurfaceTex = await this.assetManager.loadTexture('venus-surface-sss-2k', token, () => true);
-    const venusNode = this.bodyNodes.get('venus');
-    if (venusNode) {
-      if (this.venusSurfaceTex) {
-        (venusNode.mesh.material as THREE.MeshStandardMaterial).map = this.venusSurfaceTex;
-        (venusNode.mesh.material as THREE.MeshStandardMaterial).needsUpdate = true;
+    Promise.all([
+      this.assetManager.loadTexture('venus-atmosphere-sss-2k', token, () => true),
+      this.assetManager.loadTexture('venus-surface-sss-2k', token, () => true),
+    ]).then(([atmTex, surfTex]) => {
+      const venusNode = this.bodyNodes.get('venus');
+      if (venusNode) {
+        if (surfTex) {
+          const mat = venusNode.mesh.material as THREE.MeshStandardMaterial;
+          mat.color.set(0xffffff);
+          mat.map = surfTex;
+          mat.needsUpdate = true;
+        }
+        if (venusNode.cloudMesh && atmTex) {
+          const atmMat = venusNode.cloudMesh.material as THREE.MeshStandardMaterial;
+          atmMat.color.set(0xffffff);
+          atmMat.map = atmTex;
+          atmMat.needsUpdate = true;
+        }
       }
-      if (venusNode.cloudMesh && this.venusAtmosphereTex) {
-        (venusNode.cloudMesh.material as THREE.MeshStandardMaterial).map = this.venusAtmosphereTex;
-        (venusNode.cloudMesh.material as THREE.MeshStandardMaterial).needsUpdate = true;
-      }
-    }
+    }).catch((e) => console.error('[Texture] Venus load failed:', e));
 
     // 6. 水星与火星
-    const mercuryTex = await this.assetManager.loadTexture('mercury-sss-2k', token, () => true);
-    const mercuryNode = this.bodyNodes.get('mercury');
-    if (mercuryTex && mercuryNode) {
-      (mercuryNode.mesh.material as THREE.MeshStandardMaterial).map = mercuryTex;
-      (mercuryNode.mesh.material as THREE.MeshStandardMaterial).needsUpdate = true;
-    }
+    this.assetManager.loadTexture('mercury-sss-2k', token, () => true).then((mercuryTex) => {
+      const node = this.bodyNodes.get('mercury');
+      if (mercuryTex && node) {
+        const mat = node.mesh.material as THREE.MeshStandardMaterial;
+        mat.color.set(0xffffff);
+        mat.map = mercuryTex;
+        mat.needsUpdate = true;
+      }
+    }).catch((e) => console.error('[Texture] Mercury load failed:', e));
 
-    const marsTex = await this.assetManager.loadTexture('mars-sss-2k', token, () => true);
-    const marsNode = this.bodyNodes.get('mars');
-    if (marsTex && marsNode) {
-      (marsNode.mesh.material as THREE.MeshStandardMaterial).map = marsTex;
-      (marsNode.mesh.material as THREE.MeshStandardMaterial).needsUpdate = true;
-    }
+    this.assetManager.loadTexture('mars-sss-2k', token, () => true).then((marsTex) => {
+      const node = this.bodyNodes.get('mars');
+      if (marsTex && node) {
+        const mat = node.mesh.material as THREE.MeshStandardMaterial;
+        mat.color.set(0xffffff);
+        mat.map = marsTex;
+        mat.needsUpdate = true;
+      }
+    }).catch((e) => console.error('[Texture] Mars load failed:', e));
 
     // 7. 木星
-    const jupiterTex = await this.assetManager.loadTexture('jupiter-sss-2k', token, () => true);
-    const jupiterNode = this.bodyNodes.get('jupiter');
-    if (jupiterTex && jupiterNode) {
-      (jupiterNode.mesh.material as THREE.MeshStandardMaterial).map = jupiterTex;
-      (jupiterNode.mesh.material as THREE.MeshStandardMaterial).needsUpdate = true;
-    }
+    this.assetManager.loadTexture('jupiter-sss-2k', token, () => true).then((jupiterTex) => {
+      const node = this.bodyNodes.get('jupiter');
+      if (jupiterTex && node) {
+        const mat = node.mesh.material as THREE.MeshStandardMaterial;
+        mat.color.set(0xffffff);
+        mat.map = jupiterTex;
+        mat.needsUpdate = true;
+      }
+    }).catch((e) => console.error('[Texture] Jupiter load failed:', e));
 
     // 8. 土星与土星环
-    const saturnTex = await this.assetManager.loadTexture('saturn-sss-2k', token, () => true);
-    const saturnRingsTex = await this.assetManager.loadTexture('saturn-rings-sss-2k', token, () => true);
-    const saturnNode = this.bodyNodes.get('saturn');
-    if (saturnTex && saturnNode) {
-      (saturnNode.mesh.material as THREE.MeshStandardMaterial).map = saturnTex;
-      (saturnNode.mesh.material as THREE.MeshStandardMaterial).needsUpdate = true;
-    }
-    if (saturnRingsTex && saturnNode && saturnNode.ringMesh && saturnNode.data.ringConfig) {
-      this.saturnRingMaterial = createSaturnRingMaterial({
-        innerRadius: saturnNode.displayRadius * saturnNode.data.ringConfig.innerRadiusRatio,
-        outerRadius: saturnNode.displayRadius * saturnNode.data.ringConfig.outerRadiusRatio,
-        ringTexture: saturnRingsTex,
-        planetRadius: saturnNode.displayRadius,
-      });
-      safeDisposeMaterial(saturnNode.ringMesh.material);
-      saturnNode.ringMesh.material = this.saturnRingMaterial;
-    }
+    Promise.all([
+      this.assetManager.loadTexture('saturn-sss-2k', token, () => true),
+      this.assetManager.loadTexture('saturn-rings-sss-2k', token, () => true),
+    ]).then(([saturnTex, saturnRingsTex]) => {
+      const saturnNode = this.bodyNodes.get('saturn');
+      if (saturnTex && saturnNode) {
+        const mat = saturnNode.mesh.material as THREE.MeshStandardMaterial;
+        mat.color.set(0xffffff);
+        mat.map = saturnTex;
+        mat.needsUpdate = true;
+      }
+      if (saturnRingsTex && saturnNode && saturnNode.ringMesh && saturnNode.data.ringConfig) {
+        this.saturnRingMaterial = createSaturnRingMaterial({
+          innerRadius: saturnNode.displayRadius * saturnNode.data.ringConfig.innerRadiusRatio,
+          outerRadius: saturnNode.displayRadius * saturnNode.data.ringConfig.outerRadiusRatio,
+          ringTexture: saturnRingsTex,
+          planetRadius: saturnNode.displayRadius,
+        });
+        safeDisposeMaterial(saturnNode.ringMesh.material);
+        saturnNode.ringMesh.material = this.saturnRingMaterial;
+      }
+    }).catch((e) => console.error('[Texture] Saturn load failed:', e));
 
     // 9. 天王星与海王星
-    const uranusTex = await this.assetManager.loadTexture('uranus-sss-2k', token, () => true);
-    const uranusNode = this.bodyNodes.get('uranus');
-    if (uranusTex && uranusNode) {
-      (uranusNode.mesh.material as THREE.MeshStandardMaterial).map = uranusTex;
-      (uranusNode.mesh.material as THREE.MeshStandardMaterial).needsUpdate = true;
-    }
+    this.assetManager.loadTexture('uranus-sss-2k', token, () => true).then((uranusTex) => {
+      const node = this.bodyNodes.get('uranus');
+      if (uranusTex && node) {
+        const mat = node.mesh.material as THREE.MeshStandardMaterial;
+        mat.color.set(0xffffff);
+        mat.map = uranusTex;
+        mat.needsUpdate = true;
+      }
+    }).catch((e) => console.error('[Texture] Uranus load failed:', e));
 
-    const neptuneTex = await this.assetManager.loadTexture('neptune-sss-2k', token, () => true);
-    const neptuneNode = this.bodyNodes.get('neptune');
-    if (neptuneTex && neptuneNode) {
-      (neptuneNode.mesh.material as THREE.MeshStandardMaterial).map = neptuneTex;
-      (neptuneNode.mesh.material as THREE.MeshStandardMaterial).needsUpdate = true;
-    }
+    this.assetManager.loadTexture('neptune-sss-2k', token, () => true).then((neptuneTex) => {
+      const node = this.bodyNodes.get('neptune');
+      if (neptuneTex && node) {
+        const mat = node.mesh.material as THREE.MeshStandardMaterial;
+        mat.color.set(0xffffff);
+        mat.map = neptuneTex;
+        mat.needsUpdate = true;
+      }
+    }).catch((e) => console.error('[Texture] Neptune load failed:', e));
   }
 
   private bindEvents(): void {
