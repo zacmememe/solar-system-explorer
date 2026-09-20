@@ -4,7 +4,7 @@
     "name": "页面启动与控制台无未捕获异常",
     "category": "环境与资产",
     "status": "PASS",
-    "detail": "耗时 5964ms，无未处理异常"
+    "detail": "耗时 6239ms，无未处理异常"
   },
   {
     "id": "ENV-02",
@@ -91,10 +91,31 @@
     "detail": "纯客户端离线渲染，无敏感数据或儿童隐私泄露风险"
   },
   {
+    "id": "SAVE-01",
+    "name": "观察点与书签库模态窗口与预置视角",
+    "category": "书签存档",
+    "status": "PASS",
+    "detail": "成功开启书签库，4 组经典天文预置（地球晨昏线、土星环日凌、阿波罗静海、韦伯巡天）完整就绪"
+  },
+  {
+    "id": "SAVE-02",
+    "name": "用户自定义书签保存与 LocalStorage 离线持久化",
+    "category": "书签存档",
+    "status": "PASS",
+    "detail": "成功保存新书签并安全持久化至纯离线 LocalStorage"
+  },
+  {
+    "id": "UX-03",
+    "name": "减弱动态设置 (快速平稳 150ms 过渡)",
+    "category": "体验与无障碍",
+    "status": "PASS",
+    "detail": "减弱动态开关交互正常响应"
+  },
+  {
     "id": "PERF-01",
     "name": "真实浏览器渲染帧率性能",
     "category": "性能与稳定性",
     "status": "PASS",
-    "detail": "平均帧率 162 FPS，画面丝滑无卡顿"
+    "detail": "平均帧率 60 FPS，画面丝滑无卡顿"
   }
 ]

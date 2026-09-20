@@ -17,6 +17,11 @@ export interface CameraStateSnapshot {
   maxDistance: number;
   commandId: number;
   isTransitioning: boolean;
+  spherical: {
+    radius: number;
+    phi: number;
+    theta: number;
+  };
 }
 
 export type CameraCommand =
@@ -25,4 +30,11 @@ export type CameraCommand =
   | { type: 'cancelFlight' }
   | { type: 'orbit'; deltaPhi: number; deltaTheta: number }
   | { type: 'zoom'; deltaDist: number }
-  | { type: 'overview' };
+  | { type: 'overview' }
+  | {
+      type: 'restoreBookmark';
+      targetBodyId: BodyId;
+      spherical: { radius: number; phi: number; theta: number };
+      durationSec?: number;
+    };
+

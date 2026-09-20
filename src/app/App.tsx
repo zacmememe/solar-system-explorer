@@ -7,6 +7,8 @@ import type { VehicleId, ViewCameraMode } from '../contracts/vehicle';
 import { VEHICLE_CATALOG } from '../vehicles/VehicleCatalog';
 import { HangarModal } from '../vehicles/HangarModal';
 import { PostcardModal } from '../vehicles/PostcardModal';
+import { BookmarkModal } from './BookmarkModal';
+import type { BookmarkItem } from '../contracts/bookmark';
 import { generateDiscoveryPostcard } from '../utils/postcard';
 import {
   Play,
@@ -24,6 +26,8 @@ import {
   Rocket,
   Camera,
   Navigation,
+  Bookmark,
+  Activity,
 } from 'lucide-react';
 
 const PLANET_ORDER: BodyId[] = [
@@ -62,11 +66,15 @@ export const App: React.FC = () => {
   const [showAtmosphere, setShowAtmosphere] = useState<boolean>(true);
   const [showOrbits, setShowOrbits] = useState<boolean>(true);
   const [venusRadarMode, setVenusRadarMode] = useState<boolean>(false);
+  const [reduceMotion, setReduceMotion] = useState<boolean>(false);
 
   // 载具与伴飞视角系统
   const [currentVehicleId, setCurrentVehicleId] = useState<VehicleId | null>('apollo-lm');
   const [viewCameraMode, setViewCameraMode] = useState<ViewCameraMode>('VEHICLE_FORMATION');
   const [showHangar, setShowHangar] = useState<boolean>(false);
+
+  // 观察点与书签系统
+  const [showBookmarkModal, setShowBookmarkModal] = useState<boolean>(false);
 
   // 探索明信片系统
   const [showPostcardModal, setShowPostcardModal] = useState<boolean>(false);
@@ -82,6 +90,13 @@ export const App: React.FC = () => {
         onSelectBody: (id) => setSelectedBodyId(id),
         onCameraSnapshot: (snap) => setCameraSnapshot(snap),
         onWebGLInfo: (info) => setWebglInfo(info),
+        onContextState: (state) => {
+          if (state === 'lost') {
+            showToast('⚠️ 显卡 WebGL 上下文中断，系统正在全力保护与恢复...');
+          } else if (state === 'restored') {
+            showToast('✨ 3D 渲染管线已恢复！');
+          }
+        },
       });
 
       engineRef.current = engine;
@@ -188,6 +203,44 @@ export const App: React.FC = () => {
     }
   };
 
+  const toggleReduceMotion = () => {
+    const next = !reduceMotion;
+    setReduceMotion(next);
+    engineRef.current?.setReduceMotion(next);
+    showToast(next ? '⚡ 减弱动态模式：已开启（平缓降噪，过渡 150ms）' : '🎬 动效漫游模式：已开启');
+  };
+
+  const handleRestoreBookmark = (bm: BookmarkItem) => {
+    setSelectedBodyId(bm.targetBodyId);
+    if (bm.vehicleId) {
+      setCurrentVehicleId(bm.vehicleId);
+      engineRef.current?.setVehicle(bm.vehicleId);
+    }
+    setViewCameraMode(bm.viewCameraMode);
+    engineRef.current?.setViewCameraMode(bm.viewCameraMode);
+
+    setShowClouds(bm.layers.showClouds);
+    engineRef.current?.setShowClouds(bm.layers.showClouds);
+
+    setShowAtmosphere(bm.layers.showAtmosphere);
+    engineRef.current?.setShowAtmosphere(bm.layers.showAtmosphere);
+
+    setTeachingLight(bm.layers.teachingLight);
+    engineRef.current?.setTeachingLight(bm.layers.teachingLight);
+
+    setShowOrbits(bm.layers.showOrbits);
+    engineRef.current?.setShowOrbits(bm.layers.showOrbits);
+
+    setVenusRadarMode(bm.layers.venusRadarMode);
+    engineRef.current?.setShowVenusSurface(bm.layers.venusRadarMode);
+
+    engineRef.current?.executeCameraCommand({
+      type: 'restoreBookmark',
+      targetBodyId: bm.targetBodyId,
+      spherical: bm.spherical,
+    });
+  };
+
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
@@ -284,6 +337,29 @@ export const App: React.FC = () => {
           >
             {activeVehicle ? activeVehicle.name : '未登船'}
           </span>
+        </button>
+
+        {/* 观察点书签入口按钮 */}
+        <button
+          onClick={() => setShowBookmarkModal(true)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '6px 12px',
+            borderRadius: 10,
+            background: 'rgba(56, 189, 248, 0.15)',
+            border: '1px solid rgba(56, 189, 248, 0.35)',
+            color: '#38bdf8',
+            cursor: 'pointer',
+            fontSize: 12,
+            fontWeight: 600,
+            transition: 'all 0.15s ease',
+          }}
+          title="打开太阳系观察点与书签库"
+        >
+          <Bookmark size={14} />
+          <span>书签 Bookmarks</span>
         </button>
       </header>
 
@@ -649,6 +725,49 @@ export const App: React.FC = () => {
           </button>
         )}
 
+        {/* 减弱动态无障碍设置 */}
+        <button
+          onClick={toggleReduceMotion}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '6px 10px',
+            background: reduceMotion ? 'rgba(168, 85, 247, 0.25)' : 'transparent',
+            border: reduceMotion ? '1px solid rgba(168, 85, 247, 0.5)' : '1px solid rgba(255,255,255,0.06)',
+            color: reduceMotion ? '#c084fc' : '#94a3b8',
+            borderRadius: 8,
+            cursor: 'pointer',
+            fontSize: 11,
+          }}
+          title="减弱视角过渡晃动，镜头平稳就位（150ms 快速过渡）"
+        >
+          <Activity size={13} />
+          <span>减弱动态 ({reduceMotion ? '开' : '关'})</span>
+        </button>
+
+        {/* 观察点与书签库入口 */}
+        <button
+          onClick={() => setShowBookmarkModal(true)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '6px 10px',
+            background: 'rgba(56, 189, 248, 0.12)',
+            border: '1px solid rgba(56, 189, 248, 0.35)',
+            borderRadius: 8,
+            color: '#38bdf8',
+            cursor: 'pointer',
+            fontSize: 11,
+            fontWeight: 600,
+          }}
+          title="打开观察点与书签库"
+        >
+          <Bookmark size={13} />
+          <span>观察点书签 (Bookmarks)</span>
+        </button>
+
         <div style={{ width: '100%', height: 1, background: 'rgba(255,255,255,0.08)', margin: '3px 0' }} />
 
         {/* 记录发现 / 生成探索明信片按钮 */}
@@ -894,6 +1013,25 @@ export const App: React.FC = () => {
           vehicleName={activeVehicle ? activeVehicle.name : undefined}
         />
       )}
+
+      {/* 观察点与书签模态窗口 */}
+      <BookmarkModal
+        isOpen={showBookmarkModal}
+        onClose={() => setShowBookmarkModal(false)}
+        onRestoreBookmark={handleRestoreBookmark}
+        currentSnapshot={cameraSnapshot}
+        currentBodyId={selectedBodyId}
+        currentVehicleId={currentVehicleId}
+        currentViewCameraMode={viewCameraMode}
+        currentLayers={{
+          showClouds,
+          showAtmosphere,
+          teachingLight,
+          showOrbits,
+          venusRadarMode,
+        }}
+        onToast={showToast}
+      />
 
       {/* 交互提示气泡 Toast */}
       {toastMessage && (

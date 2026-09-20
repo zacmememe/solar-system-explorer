@@ -41,7 +41,7 @@ export function createEarthSurfaceMaterial(
 
       void main() {
         vUv = uv;
-        vNormal = normalize(normalMatrix * normal);
+        vNormal = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
         vec4 worldPos = modelMatrix * vec4(position, 1.0);
         vWorldPosition = worldPos.xyz;
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
@@ -61,7 +61,7 @@ export function createEarthSurfaceMaterial(
         vec3 dayColor = texture2D(dayTexture, vUv).rgb;
         vec3 nightLights = texture2D(nightTexture, vUv).rgb * vec3(1.3, 1.1, 0.85); // 温暖的城市灯光色温
 
-        // 表面法线与太阳方向的夹角余弦
+        // 表面法线与太阳方向的夹角余弦 (世界坐标空间)
         vec3 normSunDir = normalize(sunDirection);
         float dotNL = dot(vNormal, normSunDir);
 
@@ -112,7 +112,7 @@ export function createEarthCloudMaterial(cloudTex: THREE.Texture): THREE.ShaderM
 
       void main() {
         vUv = uv;
-        vNormal = normalize(normalMatrix * normal);
+        vNormal = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }
     `,
@@ -148,39 +148,50 @@ export function createEarthCloudMaterial(cloudTex: THREE.Texture): THREE.ShaderM
 
 /**
  * 大气外层光晕光环材质 (Atmospheric Halo)
+ * 支持不同行星根据其真实大气成分与散射谱线定制
  */
-export function createAtmosphereHaloMaterial(): THREE.ShaderMaterial {
+export function createAtmosphereHaloMaterial(
+  color: number | THREE.Color = 0x38bdf8,
+  power: number = 2.8,
+  maxOpacity: number = 0.75
+): THREE.ShaderMaterial {
+  const glowCol = color instanceof THREE.Color ? color : new THREE.Color(color);
+
   return new THREE.ShaderMaterial({
     uniforms: {
-      glowColor: { value: new THREE.Color(0x38bdf8) },
+      glowColor: { value: glowCol },
       sunDirection: { value: new THREE.Vector3(500, 50, 300).normalize() },
+      power: { value: power },
+      maxOpacity: { value: maxOpacity },
     },
     vertexShader: `
-      varying vec3 vNormal;
-      varying vec3 vPosition;
+      varying vec3 vViewNormal;
+      varying vec3 vWorldNormal;
 
       void main() {
-        vNormal = normalize(normalMatrix * normal);
-        vPosition = position;
+        vViewNormal = normalize(normalMatrix * normal);
+        vWorldNormal = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }
     `,
     fragmentShader: `
       uniform vec3 glowColor;
       uniform vec3 sunDirection;
+      uniform float power;
+      uniform float maxOpacity;
 
-      varying vec3 vNormal;
-      varying vec3 vPosition;
+      varying vec3 vViewNormal;
+      varying vec3 vWorldNormal;
 
       void main() {
-        // 菲涅尔强度：边缘越强
-        float intensity = pow(0.68 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 2.8);
+        // 菲涅尔边缘探测 (视线空间)
+        float intensity = pow(max(0.72 - dot(vViewNormal, vec3(0.0, 0.0, 1.0)), 0.0), power);
         if (intensity <= 0.0) discard;
 
-        // 向日面光晕较强，背日面减弱
-        float sunFactor = max(dot(vNormal, normalize(sunDirection)), 0.0) * 0.75 + 0.25;
+        // 向日面光晕较强，背日面减弱但保持微弱深空漫射 (世界空间太阳照射角)
+        float sunFactor = max(dot(vWorldNormal, normalize(sunDirection)), 0.0) * 0.75 + 0.25;
 
-        gl_FragColor = vec4(glowColor * sunFactor, intensity * 0.7);
+        gl_FragColor = vec4(glowColor * sunFactor, intensity * maxOpacity);
       }
     `,
     side: THREE.BackSide,

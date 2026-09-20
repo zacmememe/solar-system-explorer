@@ -43,9 +43,19 @@ export class CameraController {
   // 命令令牌，防止异步与旧动画干扰
   private currentCommandId: number = 0;
 
+  private reduceMotion: boolean = false;
+
   constructor(options: CameraControllerOptions) {
     this.camera = options.camera;
     this.updateCameraTransform();
+  }
+
+  public setReduceMotion(enabled: boolean): void {
+    this.reduceMotion = enabled;
+  }
+
+  public isReduceMotion(): boolean {
+    return this.reduceMotion;
   }
 
   public getSnapshot(): CameraStateSnapshot {
@@ -58,6 +68,11 @@ export class CameraController {
       maxDistance: this.maxDistance,
       commandId: this.currentCommandId,
       isTransitioning: this.isTransitioning,
+      spherical: {
+        radius: this.spherical.radius,
+        phi: this.spherical.phi,
+        theta: this.spherical.theta,
+      },
     };
   }
 
@@ -72,9 +87,11 @@ export class CameraController {
         this.selectedBodyId = command.bodyId;
         break;
 
-      case 'flyTo':
-        this.initiateFlight(command.bodyId, command.durationSec ?? 2.5, token);
+      case 'flyTo': {
+        const dur = command.durationSec ?? (this.reduceMotion ? 0.15 : 2.5);
+        this.initiateFlight(command.bodyId, dur, token);
         break;
+      }
 
       case 'cancelFlight':
         this.cancelFlight();
@@ -102,9 +119,17 @@ export class CameraController {
         this.updateCameraTransform();
         break;
 
-      case 'overview':
-        this.initiateOverviewFlight(token);
+      case 'overview': {
+        const dur = this.reduceMotion ? 0.15 : 2.5;
+        this.initiateOverviewFlight(token, dur);
         break;
+      }
+
+      case 'restoreBookmark': {
+        const dur = command.durationSec ?? (this.reduceMotion ? 0.15 : 2.5);
+        this.initiateBookmarkFlight(command.targetBodyId, command.spherical, dur, token);
+        break;
+      }
     }
 
     return token;
@@ -177,14 +202,14 @@ export class CameraController {
   /**
    * 启动飞向太阳系全景（Overview）
    */
-  private initiateOverviewFlight(token: number): void {
+  private initiateOverviewFlight(token: number, durationSec: number = 2.5): void {
     if (token !== this.currentCommandId) return;
 
     this.isTransitioning = true;
     this.mode = 'TRANSITION';
     this.targetBodyId = 'sun';
     this.selectedBodyId = 'sun';
-    this.transitionDurationSec = 2.5;
+    this.transitionDurationSec = Math.max(0.1, durationSec);
     this.transitionProgress = 0;
 
     this.transitionStartSpherical.copy(this.spherical);
@@ -192,6 +217,34 @@ export class CameraController {
 
     this.transitionTargetTargetPos.set(0, 0, 0);
     this.transitionTargetSpherical.set(280, Math.PI / 3.2, Math.PI / 4);
+  }
+
+  /**
+   * 启动恢复书签/观察点飞行动画
+   */
+  private initiateBookmarkFlight(
+    targetId: BodyId,
+    targetSpherical: { radius: number; phi: number; theta: number },
+    durationSec: number,
+    token: number
+  ): void {
+    if (token !== this.currentCommandId) return;
+
+    this.isTransitioning = true;
+    this.mode = 'TRANSITION';
+    this.targetBodyId = targetId;
+    this.selectedBodyId = targetId;
+    this.transitionDurationSec = Math.max(0.1, durationSec);
+    this.transitionProgress = 0;
+
+    this.transitionStartSpherical.copy(this.spherical);
+    this.transitionStartTargetPos.copy(this.targetPosition);
+
+    this.transitionTargetSpherical.set(
+      targetSpherical.radius,
+      targetSpherical.phi,
+      targetSpherical.theta
+    );
   }
 
   /**

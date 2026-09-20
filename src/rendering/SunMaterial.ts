@@ -90,13 +90,15 @@ export function createSunCoronaMaterial(): THREE.ShaderMaterial {
 
       void main() {
         vec3 viewDir = normalize(vViewPosition);
-        float rim = 1.0 - max(dot(vNormal, viewDir), 0.0);
-        float pulse = 0.85 + 0.15 * sin(time * 2.0);
-        float alpha = pow(rim, 2.5) * 0.8 * pulse;
+        // 在球体背侧边缘，法线与视线切向正交，abs(dot) 接近 0；中心处接近 1
+        float d = abs(dot(vNormal, viewDir));
+        float rim = pow(max(1.0 - d, 0.0), 3.2);
+        float pulse = 0.88 + 0.12 * sin(time * 2.0);
+        float alpha = rim * pulse * 0.95;
 
-        if (alpha < 0.01) discard;
+        if (alpha < 0.005) discard;
 
-        gl_FragColor = vec4(coronaColor * 1.5, alpha);
+        gl_FragColor = vec4(coronaColor * 1.8, alpha);
       }
     `,
     side: THREE.BackSide,
