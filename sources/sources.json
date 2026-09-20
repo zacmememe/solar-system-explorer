@@ -1,0 +1,54 @@
+{
+  "researchedOn": "2026-09-20",
+  "scope": "官方与一手来源索引；真实科学数据与贴图来源声明",
+  "sources": [
+    {
+      "id": "S01",
+      "title": "NASA Eyes",
+      "url": "https://science.nasa.gov/eyes/",
+      "note": "浏览器中的真实数据可视化与任务/天体探索参考。"
+    },
+    {
+      "id": "S02",
+      "title": "Solar System Scope",
+      "url": "https://www.solarsystemscope.com/",
+      "note": "太阳系导航和产品形态参考。"
+    },
+    {
+      "id": "S03",
+      "title": "Solar System Scope — Textures",
+      "url": "https://www.solarsystemscope.com/textures/",
+      "note": "贴图、来源处理说明、CC BY 4.0；含增强与补绘，署名 INOVE。"
+    },
+    {
+      "id": "S06",
+      "title": "NASA SVS — CGI Moon Kit",
+      "url": "https://svs.gsfc.nasa.gov/4720/",
+      "note": "月球颜色和高程，2025/2026 年新版彩色底图，LROC WAC 拼接。"
+    },
+    {
+      "id": "S07",
+      "title": "NASA — Color Maps of Enceladus 2014 (PIA18435)",
+      "url": "https://science.nasa.gov/photojournal/color-maps-of-enceladus-2014/",
+      "note": "Cassini 增强色全球地图；图幅含坐标和页边，需加工。"
+    },
+    {
+      "id": "S08",
+      "title": "NASA — Titan Global Map June 2015 (PIA19658)",
+      "url": "https://science.nasa.gov/photojournal/titan-global-map-june-2015/",
+      "note": "938 nm 全球地图；灰度近红外，含标题和坐标刻度，需加工。"
+    },
+    {
+      "id": "S14",
+      "title": "JPL Horizons API documentation",
+      "url": "https://ssd-api.jpl.nasa.gov/doc/horizons.html",
+      "note": "构建期星历查询的参数、VECTORS、参考系、时间尺度、输出格式。"
+    },
+    {
+      "id": "S16",
+      "title": "Three.js WebGLRenderer",
+      "url": "https://threejs.org/docs/pages/WebGLRenderer.html",
+      "note": "WebGL2 渲染、颜色输出、统计与深度/透明限制。"
+    }
+  ]
+}

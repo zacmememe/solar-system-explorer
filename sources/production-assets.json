@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-20T12:27:58.407Z",
+  "assets": [
+    {
+      "id": "earth-day-sss-2k",
+      "bodyId": "earth",
+      "role": "color",
+      "sourcePage": "https://www.solarsystemscope.com/textures/",
+      "sourceAssetUrl": "https://www.solarsystemscope.com/textures/download/2k_earth_daymap.jpg",
+      "localPath": "assets/textures/earth/2k_earth_daymap.jpg",
+      "sourceSha256": "767ee1dc6eb3802699bfccf6f264880f8acd0b80de3191cd24984fe279b07b7c",
+      "derivedSha256": "767ee1dc6eb3802699bfccf6f264880f8acd0b80de3191cd24984fe279b07b7c",
+      "originalWidth": 2048,
+      "originalHeight": 1024,
+      "derivedWidth": 2048,
+      "derivedHeight": 1024,
+      "projection": "equirectangular",
+      "longitudeConvention": "0-to-360-east",
+      "centralMeridianDeg": 0,
+      "northUp": true,
+      "colorInterpretation": "sRGB",
+      "observationBands": [
+        "visible-light-reconstructed"
+      ],
+      "provenanceClass": "observation-derived-visualization",
+      "coverageNotes": "全球圆柱投影白昼图，基于 NASA 观测加工，部分缺口补绘。非实时天气。",
+      "processingHistory": [
+        "Verified and stored by verify-assets pipeline at 2026-09-20T12:27:56.596Z"
+      ],
+      "credit": "Solar System Scope / INOVE",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "licenseNotes": "CC BY 4.0 商业与非商业可用，需保留署名。",
+      "releaseApproved": true
+    },
+    {
+      "id": "moon-svs-2025-2k",
+      "bodyId": "moon",
+      "role": "color",
+      "sourcePage": "https://svs.gsfc.nasa.gov/4720/",
+      "sourceAssetUrl": "https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/lroc_color_2k.jpg",
+      "localPath": "assets/textures/moon/lroc_color_2k.jpg",
+      "sourceSha256": "f7130a1822681fa7512d7dcfd40db8c10b9ba4f06777910348698260ed7a2170",
+      "derivedSha256": "f7130a1822681fa7512d7dcfd40db8c10b9ba4f06777910348698260ed7a2170",
+      "originalWidth": 2048,
+      "originalHeight": 1024,
+      "derivedWidth": 2048,
+      "derivedHeight": 1024,
+      "projection": "equirectangular",
+      "longitudeConvention": "0-to-360-east",
+      "centralMeridianDeg": 0,
+      "northUp": true,
+      "colorInterpretation": "sRGB",
+      "observationBands": [
+        "visible-color-lroc-wac"
+      ],
+      "provenanceClass": "processed-observation",
+      "coverageNotes": "NASA LRO 探测器相机全球多光谱正射拼图（CGI Moon Kit 2025版）。真实观测拼接。",
+      "processingHistory": [
+        "Verified and stored by verify-assets pipeline at 2026-09-20T12:27:58.407Z"
+      ],
+      "credit": "NASA / GSFC / Arizona State University",
+      "licenseUrl": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+      "licenseNotes": "NASA 媒体公开使用指南，教育与非商业公共使用。",
+      "releaseApproved": true
+    }
+  ]
+}
