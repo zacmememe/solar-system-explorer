@@ -14,23 +14,46 @@ import {
   Sun,
   Sparkles,
   Layers,
+  CircleDot,
+  Radio,
 } from 'lucide-react';
+
+const PLANET_ORDER: BodyId[] = [
+  'sun',
+  'mercury',
+  'venus',
+  'earth',
+  'mars',
+  'jupiter',
+  'saturn',
+  'uranus',
+  'neptune',
+];
+
+const PLANET_MOONS: Record<string, BodyId[]> = {
+  earth: ['moon'],
+  mars: ['phobos', 'deimos'],
+  jupiter: ['io', 'europa', 'ganymede', 'callisto'],
+  saturn: ['titan', 'enceladus'],
+};
 
 export const App: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<SolarEngine | null>(null);
 
-  const [selectedBodyId, setSelectedBodyId] = useState<BodyId>('earth');
+  const [selectedBodyId, setSelectedBodyId] = useState<BodyId>('sun');
   const [cameraSnapshot, setCameraSnapshot] = useState<CameraStateSnapshot | null>(null);
   const [webglInfo, setWebglInfo] = useState<WebGLDiagnosticInfo | null>(null);
   const [isPaused, setIsPaused] = useState<boolean>(false);
-  const [timeScale, setTimeScale] = useState<number>(1.0);
+  const [timeScale, setTimeScale] = useState<number>(50.0); // 太阳系行星默认 50x 便于观察公转动态
   const [showDetails, setShowDetails] = useState<boolean>(false);
 
-  // M1 图层与观察模式开关
+  // 观察模式开关
   const [showClouds, setShowClouds] = useState<boolean>(true);
   const [teachingLight, setTeachingLight] = useState<boolean>(false);
   const [showAtmosphere, setShowAtmosphere] = useState<boolean>(true);
+  const [showOrbits, setShowOrbits] = useState<boolean>(true);
+  const [venusRadarMode, setVenusRadarMode] = useState<boolean>(false);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -43,6 +66,7 @@ export const App: React.FC = () => {
       });
 
       engineRef.current = engine;
+      engine.setTimeScale(50.0);
 
       return () => {
         engine.dispose();
@@ -53,17 +77,13 @@ export const App: React.FC = () => {
     }
   }, []);
 
-  const handleSelect = (id: BodyId) => {
-    setSelectedBodyId(id);
-    engineRef.current?.executeCameraCommand({ type: 'select', bodyId: id });
-  };
-
   const handleFlyTo = (id: BodyId) => {
     setSelectedBodyId(id);
     engineRef.current?.executeCameraCommand({ type: 'flyTo', bodyId: id });
   };
 
   const handleOverview = () => {
+    setSelectedBodyId('sun');
     engineRef.current?.executeCameraCommand({ type: 'overview' });
   };
 
@@ -96,7 +116,20 @@ export const App: React.FC = () => {
     engineRef.current?.setShowAtmosphere(next);
   };
 
-  const activeBody = BODIES[selectedBodyId] || BODIES.earth;
+  const toggleOrbits = () => {
+    const next = !showOrbits;
+    setShowOrbits(next);
+    engineRef.current?.setShowOrbits(next);
+  };
+
+  const toggleVenusRadar = () => {
+    const next = !venusRadarMode;
+    setVenusRadarMode(next);
+    engineRef.current?.setShowVenusSurface(next);
+  };
+
+  const activeBody = BODIES[selectedBodyId] || BODIES.sun;
+  const currentMoons = PLANET_MOONS[activeBody.parentId ? activeBody.parentId : activeBody.id] || [];
 
   return (
     <div
@@ -117,14 +150,14 @@ export const App: React.FC = () => {
       <header
         style={{
           position: 'absolute',
-          top: 16,
-          left: 16,
+          top: 14,
+          left: 14,
           display: 'flex',
           alignItems: 'center',
           gap: 12,
-          background: 'rgba(10, 16, 26, 0.82)',
+          background: 'rgba(10, 16, 26, 0.85)',
           backdropFilter: 'blur(12px)',
-          padding: '10px 16px',
+          padding: '8px 16px',
           borderRadius: 14,
           border: '1px solid rgba(255, 255, 255, 0.12)',
           boxShadow: '0 4px 24px rgba(0,0,0,0.6)',
@@ -134,7 +167,7 @@ export const App: React.FC = () => {
         <Compass size={22} color="#38bdf8" />
         <div>
           <h1 style={{ margin: 0, fontSize: 15, fontWeight: 700, letterSpacing: '0.04em' }}>
-            太阳系漫游 · 地月探索
+            太阳系漫游 · 亲子探索
           </h1>
           <div style={{ fontSize: 11, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 6 }}>
             <span
@@ -146,7 +179,7 @@ export const App: React.FC = () => {
                 backgroundColor: '#22c55e',
               }}
             />
-            <span>M1 完整视觉：昼夜晨昏线 · 城市夜灯 · 动态云层 · 深空星图</span>
+            <span>太阳 · 八大行星 · 土星环 · 核心卫星全覆盖</span>
           </div>
         </div>
       </header>
@@ -155,21 +188,21 @@ export const App: React.FC = () => {
       <div
         style={{
           position: 'absolute',
-          top: 16,
-          right: 16,
-          background: 'rgba(10, 16, 26, 0.82)',
+          top: 14,
+          right: 14,
+          background: 'rgba(10, 16, 26, 0.85)',
           backdropFilter: 'blur(12px)',
-          padding: '10px 14px',
+          padding: '8px 12px',
           borderRadius: 12,
           border: '1px solid rgba(255, 255, 255, 0.1)',
           fontSize: 11,
-          lineHeight: 1.5,
+          lineHeight: 1.45,
           color: '#94a3b8',
-          maxWidth: 270,
+          maxWidth: 250,
           zIndex: 10,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#38bdf8', fontWeight: 600, marginBottom: 4 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#38bdf8', fontWeight: 600, marginBottom: 3 }}>
           <ShieldCheck size={14} />
           <span>WebGL2 渲染与显卡状态</span>
         </div>
@@ -184,7 +217,144 @@ export const App: React.FC = () => {
         )}
       </div>
 
-      {/* 左侧目的地选择栏 */}
+      {/* 顶部中央：太阳系全景行星快速导航条 */}
+      <nav
+        style={{
+          position: 'absolute',
+          top: 14,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          background: 'rgba(10, 16, 26, 0.88)',
+          backdropFilter: 'blur(16px)',
+          padding: '6px 10px',
+          borderRadius: 30,
+          border: '1px solid rgba(255, 255, 255, 0.12)',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+          maxWidth: '92vw',
+          overflowX: 'auto',
+          zIndex: 10,
+        }}
+      >
+        <button
+          onClick={handleOverview}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 5,
+            padding: '5px 12px',
+            background: cameraSnapshot?.mode === 'TRANSITION' && selectedBodyId === 'sun'
+              ? 'rgba(56, 189, 248, 0.3)'
+              : 'rgba(255, 255, 255, 0.05)',
+            border: '1px solid rgba(255, 255, 255, 0.12)',
+            borderRadius: 20,
+            color: '#38bdf8',
+            cursor: 'pointer',
+            fontSize: 12,
+            fontWeight: 600,
+            whiteSpace: 'nowrap',
+          }}
+          title="俯瞰整个太阳系全景"
+        >
+          <Eye size={13} />
+          <span>全景 Overview</span>
+        </button>
+
+        <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.15)', margin: '0 2px' }} />
+
+        {PLANET_ORDER.map((id) => {
+          const body = BODIES[id];
+          if (!body) return null;
+          const isSelected = selectedBodyId === id || (activeBody.parentId === id);
+
+          return (
+            <button
+              key={id}
+              onClick={() => handleFlyTo(id)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: '5px 10px',
+                background: isSelected ? 'rgba(56, 189, 248, 0.28)' : 'transparent',
+                border: isSelected ? '1px solid #38bdf8' : '1px solid transparent',
+                borderRadius: 18,
+                color: isSelected ? '#ffffff' : '#cbd5e1',
+                cursor: 'pointer',
+                fontSize: 12,
+                fontWeight: isSelected ? 600 : 400,
+                whiteSpace: 'nowrap',
+                transition: 'all 0.18s ease',
+              }}
+            >
+              <div
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  backgroundColor: body.colorHex ? `#${body.colorHex.toString(16).padStart(6, '0')}` : '#fff',
+                  boxShadow: isSelected ? '0 0 8px #38bdf8' : 'none',
+                }}
+              />
+              <span>{body.name}</span>
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* 卫星次级选择悬浮条（当前行星有卫星时展现） */}
+      {currentMoons.length > 0 && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 66,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            background: 'rgba(15, 23, 42, 0.85)',
+            backdropFilter: 'blur(12px)',
+            padding: '4px 12px',
+            borderRadius: 20,
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            zIndex: 10,
+          }}
+        >
+          <span style={{ fontSize: 10, color: '#94a3b8', marginRight: 4 }}>🛰️ 卫星:</span>
+          {currentMoons.map((satId) => {
+            const sat = BODIES[satId];
+            if (!sat) return null;
+            const isSelected = selectedBodyId === satId;
+
+            return (
+              <button
+                key={satId}
+                onClick={() => handleFlyTo(satId)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  padding: '3px 8px',
+                  background: isSelected ? 'rgba(56, 189, 248, 0.35)' : 'rgba(255, 255, 255, 0.05)',
+                  border: isSelected ? '1px solid #38bdf8' : '1px solid transparent',
+                  borderRadius: 12,
+                  color: isSelected ? '#ffffff' : '#94a3b8',
+                  fontSize: 11,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <span>{sat.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* 左侧探索工具栏（图层与观察辅助开关） */}
       <nav
         style={{
           position: 'absolute',
@@ -193,163 +363,131 @@ export const App: React.FC = () => {
           transform: 'translateY(-50%)',
           display: 'flex',
           flexDirection: 'column',
-          gap: 10,
+          gap: 8,
+          background: 'rgba(10, 16, 26, 0.8)',
+          backdropFilter: 'blur(12px)',
+          padding: '12px 14px',
+          borderRadius: 16,
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          boxShadow: '0 6px 24px rgba(0,0,0,0.5)',
           zIndex: 10,
         }}
       >
+        <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+          <Layers size={13} color="#38bdf8" />
+          <span>观测图层与工具</span>
+        </div>
+
         <button
-          onClick={() => handleSelect('earth')}
+          onClick={toggleOrbits}
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 10,
-            padding: '10px 18px',
-            background: selectedBodyId === 'earth' ? 'rgba(56, 189, 248, 0.25)' : 'rgba(15, 23, 42, 0.65)',
-            border: selectedBodyId === 'earth' ? '1.5px solid #38bdf8' : '1px solid rgba(255,255,255,0.1)',
-            borderRadius: 12,
-            color: '#fff',
+            gap: 8,
+            padding: '7px 10px',
+            background: showOrbits ? 'rgba(56, 189, 248, 0.2)' : 'transparent',
+            border: showOrbits ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid rgba(255,255,255,0.06)',
+            borderRadius: 8,
+            color: showOrbits ? '#e2e8f0' : '#64748b',
             cursor: 'pointer',
-            fontSize: 13,
-            fontWeight: selectedBodyId === 'earth' ? 600 : 400,
-            backdropFilter: 'blur(8px)',
-            transition: 'all 0.2s',
+            fontSize: 11,
           }}
+          title="开启或关闭行星公转轨道线"
         >
-          <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: '#38bdf8', boxShadow: '0 0 8px #38bdf8' }} />
-          <span>地球 Earth</span>
+          <CircleDot size={13} />
+          <span>公转轨道 ({showOrbits ? '显示' : '隐藏'})</span>
         </button>
 
         <button
-          onClick={() => handleSelect('moon')}
+          onClick={toggleTeachingLight}
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 10,
-            padding: '10px 18px',
-            background: selectedBodyId === 'moon' ? 'rgba(56, 189, 248, 0.25)' : 'rgba(15, 23, 42, 0.65)',
-            border: selectedBodyId === 'moon' ? '1.5px solid #38bdf8' : '1px solid rgba(255,255,255,0.1)',
-            borderRadius: 12,
-            color: '#fff',
+            gap: 8,
+            padding: '7px 10px',
+            background: teachingLight ? 'rgba(234, 179, 8, 0.2)' : 'transparent',
+            border: teachingLight ? '1px solid rgba(234, 179, 8, 0.4)' : '1px solid rgba(255,255,255,0.06)',
+            color: teachingLight ? '#fde047' : '#64748b',
+            borderRadius: 8,
             cursor: 'pointer',
-            fontSize: 13,
-            fontWeight: selectedBodyId === 'moon' ? 600 : 400,
-            backdropFilter: 'blur(8px)',
-            transition: 'all 0.2s',
+            fontSize: 11,
           }}
+          title="微量照亮背阴暗部，方便孩子辨识背面地形"
         >
-          <div style={{ width: 9, height: 9, borderRadius: '50%', backgroundColor: '#cbd5e1', boxShadow: '0 0 6px #cbd5e1' }} />
-          <span>月球 Moon</span>
+          <Sun size={13} />
+          <span>教学补光 ({teachingLight ? '开' : '关'})</span>
         </button>
 
         <button
-          onClick={handleOverview}
+          onClick={toggleClouds}
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 10,
-            padding: '10px 18px',
-            background: 'rgba(15, 23, 42, 0.65)',
-            border: '1px solid rgba(255,255,255,0.1)',
-            borderRadius: 12,
-            color: '#94a3b8',
+            gap: 8,
+            padding: '7px 10px',
+            background: showClouds ? 'rgba(56, 189, 248, 0.2)' : 'transparent',
+            border: showClouds ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid rgba(255,255,255,0.06)',
+            color: showClouds ? '#e2e8f0' : '#64748b',
+            borderRadius: 8,
             cursor: 'pointer',
-            fontSize: 13,
-            backdropFilter: 'blur(8px)',
-            transition: 'all 0.2s',
+            fontSize: 11,
           }}
+          title="切换地球云层"
         >
-          <Eye size={14} />
-          <span>地月全景</span>
+          <Cloud size={13} />
+          <span>大气云层 ({showClouds ? '开' : '关'})</span>
         </button>
 
-        {/* M1 探索图层工具栏（仅在查看地球时特别实用） */}
-        {selectedBodyId === 'earth' && (
-          <div
+        <button
+          onClick={toggleAtmosphere}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '7px 10px',
+            background: showAtmosphere ? 'rgba(56, 189, 248, 0.2)' : 'transparent',
+            border: showAtmosphere ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid rgba(255,255,255,0.06)',
+            color: showAtmosphere ? '#e2e8f0' : '#64748b',
+            borderRadius: 8,
+            cursor: 'pointer',
+            fontSize: 11,
+          }}
+        >
+          <Sparkles size={13} />
+          <span>边缘微光 ({showAtmosphere ? '开' : '关'})</span>
+        </button>
+
+        {/* 金星雷达地表穿透模式切换 */}
+        {selectedBodyId === 'venus' && (
+          <button
+            onClick={toggleVenusRadar}
             style={{
-              marginTop: 8,
-              padding: '10px 12px',
-              background: 'rgba(10, 16, 26, 0.75)',
-              backdropFilter: 'blur(10px)',
-              borderRadius: 12,
-              border: '1px solid rgba(255, 255, 255, 0.08)',
               display: 'flex',
-              flexDirection: 'column',
-              gap: 6,
+              alignItems: 'center',
+              gap: 8,
+              padding: '7px 10px',
+              background: venusRadarMode ? 'rgba(249, 115, 22, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+              border: venusRadarMode ? '1px solid #f97316' : '1px solid rgba(255,255,255,0.08)',
+              borderRadius: 8,
+              color: venusRadarMode ? '#fb923c' : '#94a3b8',
+              cursor: 'pointer',
+              fontSize: 11,
+              marginTop: 4,
             }}
           >
-            <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
-              <Layers size={11} />
-              <span>地球观察图层</span>
-            </div>
-
-            <button
-              onClick={toggleClouds}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                background: showClouds ? 'rgba(56, 189, 248, 0.2)' : 'transparent',
-                border: showClouds ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid rgba(255,255,255,0.06)',
-                color: showClouds ? '#e2e8f0' : '#64748b',
-                padding: '5px 8px',
-                borderRadius: 6,
-                fontSize: 11,
-                cursor: 'pointer',
-              }}
-            >
-              <Cloud size={12} />
-              <span>云层 ({showClouds ? '已开启' : '隐藏'})</span>
-            </button>
-
-            <button
-              onClick={toggleTeachingLight}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                background: teachingLight ? 'rgba(234, 179, 8, 0.2)' : 'transparent',
-                border: teachingLight ? '1px solid rgba(234, 179, 8, 0.4)' : '1px solid rgba(255,255,255,0.06)',
-                color: teachingLight ? '#fde047' : '#64748b',
-                padding: '5px 8px',
-                borderRadius: 6,
-                fontSize: 11,
-                cursor: 'pointer',
-              }}
-              title="微量照亮黑夜面，方便看清大陆轮廓"
-            >
-              <Sun size={12} />
-              <span>教学提亮 ({teachingLight ? '开' : '关'})</span>
-            </button>
-
-            <button
-              onClick={toggleAtmosphere}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                background: showAtmosphere ? 'rgba(56, 189, 248, 0.2)' : 'transparent',
-                border: showAtmosphere ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid rgba(255,255,255,0.06)',
-                color: showAtmosphere ? '#e2e8f0' : '#64748b',
-                padding: '5px 8px',
-                borderRadius: 6,
-                fontSize: 11,
-                cursor: 'pointer',
-              }}
-            >
-              <Sparkles size={12} />
-              <span>大气微光 ({showAtmosphere ? '开' : '关'})</span>
-            </button>
-          </div>
+            <Radio size={13} />
+            <span>雷达穿透地表 ({venusRadarMode ? '开' : '关'})</span>
+          </button>
         )}
       </nav>
 
-      {/* 核心观察卡片（右下角） */}
+      {/* 核心亲子观察卡片（右下角） */}
       <aside
         style={{
           position: 'absolute',
           right: 16,
           bottom: 74,
-          width: 320,
+          width: 330,
           background: 'rgba(10, 16, 26, 0.88)',
           backdropFilter: 'blur(16px)',
           padding: '16px 20px',
@@ -374,7 +512,7 @@ export const App: React.FC = () => {
               border: '1px solid rgba(56, 189, 248, 0.3)',
             }}
           >
-            真实观测贴图
+            {activeBody.type === 'star' ? '恒星 Star' : activeBody.type === 'planet' ? '大行星 Planet' : '卫星 Moon'}
           </span>
         </div>
 
@@ -388,13 +526,31 @@ export const App: React.FC = () => {
             fontSize: 12,
             lineHeight: 1.5,
             color: '#e2e8f0',
-            marginBottom: 12,
+            marginBottom: 8,
           }}
         >
           💡 <strong>观察发现：</strong>{activeBody.observationTip}
         </div>
 
-        {/* 飞往这里按钮（主动操作触发飞行） */}
+        {/* 趣味冷知识 */}
+        {activeBody.funFact && (
+          <div
+            style={{
+              background: 'rgba(234, 179, 8, 0.12)',
+              borderLeft: '3px solid #eab308',
+              padding: '7px 12px',
+              borderRadius: 6,
+              fontSize: 11,
+              lineHeight: 1.45,
+              color: '#fef08a',
+              marginBottom: 12,
+            }}
+          >
+            ✨ <strong>趣味冷知识：</strong>{activeBody.funFact}
+          </div>
+        )}
+
+        {/* 飞往这里按钮 */}
         <button
           onClick={() => handleFlyTo(activeBody.id)}
           style={{
@@ -415,10 +571,10 @@ export const App: React.FC = () => {
             transition: 'background-color 0.2s',
           }}
         >
-          <span>飞往这里 (Fly To)</span>
+          <span>飞往这里 (Fly To {activeBody.name})</span>
         </button>
 
-        {/* 家长可展开的科学数据与来源 */}
+        {/* 家长展开科学数据 */}
         <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
           <button
             onClick={() => setShowDetails(!showDetails)}
@@ -441,8 +597,15 @@ export const App: React.FC = () => {
           {showDetails && (
             <div style={{ marginTop: 8, fontSize: 11, color: '#94a3b8', lineHeight: 1.6 }}>
               <div>平均物理半径: <span style={{ color: '#e2e8f0' }}>{activeBody.radiusKm.toLocaleString()} km</span></div>
-              <div>自转周期: <span style={{ color: '#e2e8f0' }}>{activeBody.rotationPeriodHours} 小时</span></div>
-              <div>公转周期: <span style={{ color: '#e2e8f0' }}>{activeBody.orbitPeriodDays} 天</span></div>
+              {activeBody.rotationPeriodHours !== 0 && (
+                <div>自转周期: <span style={{ color: '#e2e8f0' }}>{activeBody.rotationPeriodHours} 小时</span></div>
+              )}
+              {activeBody.orbitPeriodDays > 0 && (
+                <div>公转周期: <span style={{ color: '#e2e8f0' }}>{activeBody.orbitPeriodDays} 天</span></div>
+              )}
+              {activeBody.orbitSemiMajorAxisKm > 0 && (
+                <div>轨道距离: <span style={{ color: '#e2e8f0' }}>{(activeBody.orbitSemiMajorAxisKm / 10000).toFixed(0)} 万公里 ({(activeBody.orbitSemiMajorAxisKm / 149598023).toFixed(2)} AU)</span></div>
+              )}
               <div>数据与贴图来源: <span style={{ color: '#38bdf8' }}>{activeBody.sourceRef}</span></div>
               <p style={{ margin: '6px 0 0 0', color: '#cbd5e1', fontSize: 11 }}>{activeBody.description}</p>
             </div>
@@ -490,8 +653,8 @@ export const App: React.FC = () => {
         </button>
 
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <span style={{ color: '#64748b' }}>倍速:</span>
-          {[0.5, 1, 5, 20].map((speed) => (
+          <span style={{ color: '#64748b' }}>公转倍速:</span>
+          {[1, 10, 50, 200, 1000].map((speed) => (
             <button
               key={speed}
               onClick={() => changeSpeed(speed)}
@@ -514,7 +677,7 @@ export const App: React.FC = () => {
 
         <div style={{ color: '#64748b', fontSize: 11 }}>
           相机模式: <strong style={{ color: '#e2e8f0' }}>{cameraSnapshot?.mode || 'ORBIT_TARGET'}</strong>
-          {cameraSnapshot?.isTransitioning && <span style={{ color: '#38bdf8', marginLeft: 6 }}>平滑飞行中...</span>}
+          {cameraSnapshot?.isTransitioning && <span style={{ color: '#38bdf8', marginLeft: 6 }}>丝滑飞行中...</span>}
         </div>
       </footer>
     </div>

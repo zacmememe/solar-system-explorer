@@ -11,6 +11,7 @@
 import * as THREE from 'three';
 import type { BodyId } from '../contracts/body';
 import type { CameraCommand, CameraMode, CameraStateSnapshot } from '../contracts/camera';
+import { BODIES, KM_PER_SCENE_UNIT } from '../astronomy/bodies';
 
 export interface CameraControllerOptions {
   camera: THREE.PerspectiveCamera;
@@ -147,10 +148,24 @@ export class CameraController {
     const hFovRad = 2 * Math.atan(Math.tan(vFovRad / 2) * Math.max(0.2, this.camera.aspect));
     const limitingFovRad = Math.min(vFovRad, hFovRad);
 
-    const baseRadius = targetId === 'moon' ? 1.737 : 6.371;
+    const body = BODIES[targetId];
+    let baseRadius = 6.371;
+    if (body) {
+      if (body.type === 'star') {
+        baseRadius = 16.0; // 太阳在特写时使用舒适视界尺寸
+      } else {
+        baseRadius = body.radiusKm / KM_PER_SCENE_UNIT;
+        if (body.ringConfig) {
+          baseRadius *= body.ringConfig.outerRadiusRatio;
+        }
+      }
+    }
+    // 保证小卫星不至于过近（至少 1.5 场景单位），巨行星不突破视锥
+    baseRadius = Math.max(1.2, baseRadius);
+
     const targetDist = Math.max(
       baseRadius * 1.6,
-      (baseRadius / Math.sin(limitingFovRad / 2)) * 1.15
+      (baseRadius / Math.sin(limitingFovRad / 2)) * 1.18
     );
 
     this.transitionTargetSpherical.set(
@@ -158,20 +173,18 @@ export class CameraController {
       Math.PI / 2.3,
       this.spherical.theta + 0.25 // 轻微自然过渡角
     );
-
-    // 目标位置若为月球，则在 render loop 中同步 targetPosition
   }
 
   /**
-   * 启动飞向地月全景
+   * 启动飞向太阳系全景（Overview）
    */
   private initiateOverviewFlight(token: number): void {
     if (token !== this.currentCommandId) return;
 
     this.isTransitioning = true;
     this.mode = 'TRANSITION';
-    this.targetBodyId = 'earth';
-    this.selectedBodyId = 'earth';
+    this.targetBodyId = 'sun';
+    this.selectedBodyId = 'sun';
     this.transitionDurationSec = 2.5;
     this.transitionProgress = 0;
 
@@ -179,7 +192,7 @@ export class CameraController {
     this.transitionStartTargetPos.copy(this.targetPosition);
 
     this.transitionTargetTargetPos.set(0, 0, 0);
-    this.transitionTargetSpherical.set(550, Math.PI / 3, Math.PI / 4);
+    this.transitionTargetSpherical.set(280, Math.PI / 3.2, Math.PI / 4);
   }
 
   /**

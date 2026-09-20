@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-09-20T12:48:24.298Z",
+  "generatedAt": "2026-09-20T13:03:12.049Z",
   "assets": [
     {
       "id": "earth-day-sss-2k",
@@ -26,7 +26,7 @@
       "provenanceClass": "observation-derived-visualization",
       "coverageNotes": "全球圆柱投影白昼图，基于 NASA 观测加工，部分缺口补绘。非实时天气。",
       "processingHistory": [
-        "Verified and stored by verify-assets pipeline at 2026-09-20T12:48:21.030Z"
+        "Verified and stored by verify-assets pipeline at 2026-09-20T13:03:06.076Z"
       ],
       "credit": "Solar System Scope / INOVE",
       "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
@@ -57,7 +57,7 @@
       "provenanceClass": "observation-derived-visualization",
       "coverageNotes": "全球夜间城市灯光分布图，基于 Suomi NPP VIIRS 夜间波段加工。",
       "processingHistory": [
-        "Verified and stored by verify-assets pipeline at 2026-09-20T12:48:23.087Z"
+        "Verified and stored by verify-assets pipeline at 2026-09-20T13:03:06.081Z"
       ],
       "credit": "Solar System Scope / INOVE",
       "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
@@ -88,7 +88,7 @@
       "provenanceClass": "observation-derived-visualization",
       "coverageNotes": "全球圆柱投影大气云层图，固定时刻观测拼图，独立外层自旋。非实时天气。",
       "processingHistory": [
-        "Verified and stored by verify-assets pipeline at 2026-09-20T12:48:23.931Z"
+        "Verified and stored by verify-assets pipeline at 2026-09-20T13:03:06.085Z"
       ],
       "credit": "Solar System Scope / INOVE",
       "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
@@ -119,7 +119,7 @@
       "provenanceClass": "processed-observation",
       "coverageNotes": "NASA LRO 探测器相机全球多光谱正射拼图（CGI Moon Kit 2025版）。真实观测拼接。",
       "processingHistory": [
-        "Verified and stored by verify-assets pipeline at 2026-09-20T12:48:23.942Z"
+        "Verified and stored by verify-assets pipeline at 2026-09-20T13:03:06.088Z"
       ],
       "credit": "NASA / GSFC / Arizona State University",
       "licenseUrl": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
@@ -150,9 +150,319 @@
       "provenanceClass": "observation-derived-visualization",
       "coverageNotes": "克制的真实银河与恒星深空背景全景图。",
       "processingHistory": [
-        "Verified and stored by verify-assets pipeline at 2026-09-20T12:48:24.298Z"
+        "Verified and stored by verify-assets pipeline at 2026-09-20T13:03:06.091Z"
       ],
       "credit": "Solar System Scope / INOVE",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "licenseNotes": "CC BY 4.0 商业与非商业可用，需保留署名。",
+      "releaseApproved": true
+    },
+    {
+      "id": "sun-sss-2k",
+      "bodyId": "sun",
+      "role": "color",
+      "sourcePage": "https://www.solarsystemscope.com/textures/",
+      "sourceAssetUrl": "https://www.solarsystemscope.com/textures/download/2k_sun.jpg",
+      "localPath": "assets/textures/sun/2k_sun.jpg",
+      "sourceSha256": "ff0f076ba65e03b5ab518451bc96699325be38e3ccbdd5869ee1c00f3a0c8816",
+      "derivedSha256": "ff0f076ba65e03b5ab518451bc96699325be38e3ccbdd5869ee1c00f3a0c8816",
+      "originalWidth": 2048,
+      "originalHeight": 1024,
+      "derivedWidth": 2048,
+      "derivedHeight": 1024,
+      "projection": "equirectangular",
+      "longitudeConvention": "0-to-360-east",
+      "centralMeridianDeg": 0,
+      "northUp": true,
+      "colorInterpretation": "sRGB",
+      "observationBands": [
+        "visible-light-reconstructed"
+      ],
+      "provenanceClass": "observation-derived-visualization",
+      "coverageNotes": "太阳光球层表面视觉图，包含米粒组织与太阳黑子示意。",
+      "processingHistory": [
+        "Verified and stored by verify-assets pipeline at 2026-09-20T13:03:08.541Z"
+      ],
+      "credit": "Solar System Scope / INOVE",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "licenseNotes": "CC BY 4.0 商业与非商业可用，需保留署名。",
+      "releaseApproved": true
+    },
+    {
+      "id": "mercury-sss-2k",
+      "bodyId": "mercury",
+      "role": "color",
+      "sourcePage": "https://www.solarsystemscope.com/textures/",
+      "sourceAssetUrl": "https://www.solarsystemscope.com/textures/download/2k_mercury.jpg",
+      "localPath": "assets/textures/mercury/2k_mercury.jpg",
+      "sourceSha256": "5a5c80607f643496bac9a631e71957def35ed788895f18b678ac849c2b38e48a",
+      "derivedSha256": "5a5c80607f643496bac9a631e71957def35ed788895f18b678ac849c2b38e48a",
+      "originalWidth": 2048,
+      "originalHeight": 1024,
+      "derivedWidth": 2048,
+      "derivedHeight": 1024,
+      "projection": "equirectangular",
+      "longitudeConvention": "0-to-360-east",
+      "centralMeridianDeg": 0,
+      "northUp": true,
+      "colorInterpretation": "sRGB",
+      "observationBands": [
+        "visible-light-reconstructed"
+      ],
+      "provenanceClass": "observation-derived-visualization",
+      "coverageNotes": "基于信使号 (MESSENGER) 探测数据加工的水星全球撞击坑地形纹理。",
+      "processingHistory": [
+        "Verified and stored by verify-assets pipeline at 2026-09-20T13:03:09.218Z"
+      ],
+      "credit": "Solar System Scope / INOVE / NASA",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "licenseNotes": "CC BY 4.0 商业与非商业可用，需保留署名。",
+      "releaseApproved": true
+    },
+    {
+      "id": "venus-atmosphere-sss-2k",
+      "bodyId": "venus",
+      "role": "color",
+      "sourcePage": "https://www.solarsystemscope.com/textures/",
+      "sourceAssetUrl": "https://www.solarsystemscope.com/textures/download/2k_venus_atmosphere.jpg",
+      "localPath": "assets/textures/venus/2k_venus_atmosphere.jpg",
+      "sourceSha256": "225012ad4911730605c4e189ca2a3bf674fce50cc48aab4102b936b47d6991ac",
+      "derivedSha256": "225012ad4911730605c4e189ca2a3bf674fce50cc48aab4102b936b47d6991ac",
+      "originalWidth": 2048,
+      "originalHeight": 1024,
+      "derivedWidth": 2048,
+      "derivedHeight": 1024,
+      "projection": "equirectangular",
+      "longitudeConvention": "0-to-360-east",
+      "centralMeridianDeg": 0,
+      "northUp": true,
+      "colorInterpretation": "sRGB",
+      "observationBands": [
+        "visible-light-reconstructed"
+      ],
+      "provenanceClass": "observation-derived-visualization",
+      "coverageNotes": "金星致密二氧化碳云层厚重大气外观。",
+      "processingHistory": [
+        "Verified and stored by verify-assets pipeline at 2026-09-20T13:03:09.538Z"
+      ],
+      "credit": "Solar System Scope / INOVE",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "licenseNotes": "CC BY 4.0 商业与非商业可用，需保留署名。",
+      "releaseApproved": true
+    },
+    {
+      "id": "venus-surface-sss-2k",
+      "bodyId": "venus",
+      "role": "color",
+      "sourcePage": "https://www.solarsystemscope.com/textures/",
+      "sourceAssetUrl": "https://www.solarsystemscope.com/textures/download/2k_venus_surface.jpg",
+      "localPath": "assets/textures/venus/2k_venus_surface.jpg",
+      "sourceSha256": "dbe5db1c794a8ab4cbf7dd6bf193540c400fc833ce1e6cc399318aa68026278b",
+      "derivedSha256": "dbe5db1c794a8ab4cbf7dd6bf193540c400fc833ce1e6cc399318aa68026278b",
+      "originalWidth": 2048,
+      "originalHeight": 1024,
+      "derivedWidth": 2048,
+      "derivedHeight": 1024,
+      "projection": "equirectangular",
+      "longitudeConvention": "0-to-360-east",
+      "centralMeridianDeg": 0,
+      "northUp": true,
+      "colorInterpretation": "sRGB",
+      "observationBands": [
+        "radar-altimetry-reconstructed"
+      ],
+      "provenanceClass": "observation-derived-visualization",
+      "coverageNotes": "麦哲伦号 (Magellan) 合成孔径雷达穿透测绘的金星岩浆岩与火山平原地表。",
+      "processingHistory": [
+        "Verified and stored by verify-assets pipeline at 2026-09-20T13:03:09.963Z"
+      ],
+      "credit": "Solar System Scope / INOVE / NASA",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "licenseNotes": "CC BY 4.0 商业与非商业可用，需保留署名。",
+      "releaseApproved": true
+    },
+    {
+      "id": "mars-sss-2k",
+      "bodyId": "mars",
+      "role": "color",
+      "sourcePage": "https://www.solarsystemscope.com/textures/",
+      "sourceAssetUrl": "https://www.solarsystemscope.com/textures/download/2k_mars.jpg",
+      "localPath": "assets/textures/mars/2k_mars.jpg",
+      "sourceSha256": "2d187f3e77a98eaa8cea5f4cc722f633c122ef170b9e94ace6b5fb6cbc3f8e01",
+      "derivedSha256": "2d187f3e77a98eaa8cea5f4cc722f633c122ef170b9e94ace6b5fb6cbc3f8e01",
+      "originalWidth": 2048,
+      "originalHeight": 1024,
+      "derivedWidth": 2048,
+      "derivedHeight": 1024,
+      "projection": "equirectangular",
+      "longitudeConvention": "0-to-360-east",
+      "centralMeridianDeg": 0,
+      "northUp": true,
+      "colorInterpretation": "sRGB",
+      "observationBands": [
+        "visible-light-reconstructed"
+      ],
+      "provenanceClass": "observation-derived-visualization",
+      "coverageNotes": "火星全球氧化铁地表、极地冰盖与水手号峡谷。",
+      "processingHistory": [
+        "Verified and stored by verify-assets pipeline at 2026-09-20T13:03:10.335Z"
+      ],
+      "credit": "Solar System Scope / INOVE / NASA",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "licenseNotes": "CC BY 4.0 商业与非商业可用，需保留署名。",
+      "releaseApproved": true
+    },
+    {
+      "id": "jupiter-sss-2k",
+      "bodyId": "jupiter",
+      "role": "color",
+      "sourcePage": "https://www.solarsystemscope.com/textures/",
+      "sourceAssetUrl": "https://www.solarsystemscope.com/textures/download/2k_jupiter.jpg",
+      "localPath": "assets/textures/jupiter/2k_jupiter.jpg",
+      "sourceSha256": "b0f04d005350252636b0e3396fc592548cbd9e9126b269d32d5c6abd4b0e4f2b",
+      "derivedSha256": "b0f04d005350252636b0e3396fc592548cbd9e9126b269d32d5c6abd4b0e4f2b",
+      "originalWidth": 2048,
+      "originalHeight": 1024,
+      "derivedWidth": 2048,
+      "derivedHeight": 1024,
+      "projection": "equirectangular",
+      "longitudeConvention": "0-to-360-east",
+      "centralMeridianDeg": 0,
+      "northUp": true,
+      "colorInterpretation": "sRGB",
+      "observationBands": [
+        "visible-light-reconstructed"
+      ],
+      "provenanceClass": "observation-derived-visualization",
+      "coverageNotes": "木星全球条带云层与大红斑风暴，基于卡西尼与旅行者探测器数据加工。",
+      "processingHistory": [
+        "Verified and stored by verify-assets pipeline at 2026-09-20T13:03:10.798Z"
+      ],
+      "credit": "Solar System Scope / INOVE / NASA",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "licenseNotes": "CC BY 4.0 商业与非商业可用，需保留署名。",
+      "releaseApproved": true
+    },
+    {
+      "id": "saturn-sss-2k",
+      "bodyId": "saturn",
+      "role": "color",
+      "sourcePage": "https://www.solarsystemscope.com/textures/",
+      "sourceAssetUrl": "https://www.solarsystemscope.com/textures/download/2k_saturn.jpg",
+      "localPath": "assets/textures/saturn/2k_saturn.jpg",
+      "sourceSha256": "54a900ca9bf7ab62e70f862852759abdf342e6d6436a95a2fe9ebdb6bcd3bbac",
+      "derivedSha256": "54a900ca9bf7ab62e70f862852759abdf342e6d6436a95a2fe9ebdb6bcd3bbac",
+      "originalWidth": 2048,
+      "originalHeight": 1024,
+      "derivedWidth": 2048,
+      "derivedHeight": 1024,
+      "projection": "equirectangular",
+      "longitudeConvention": "0-to-360-east",
+      "centralMeridianDeg": 0,
+      "northUp": true,
+      "colorInterpretation": "sRGB",
+      "observationBands": [
+        "visible-light-reconstructed"
+      ],
+      "provenanceClass": "observation-derived-visualization",
+      "coverageNotes": "土星淡黄色柔和大气条带球体。",
+      "processingHistory": [
+        "Verified and stored by verify-assets pipeline at 2026-09-20T13:03:11.107Z"
+      ],
+      "credit": "Solar System Scope / INOVE / NASA",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "licenseNotes": "CC BY 4.0 商业与非商业可用，需保留署名。",
+      "releaseApproved": true
+    },
+    {
+      "id": "saturn-rings-sss-2k",
+      "bodyId": "saturn",
+      "role": "color",
+      "sourcePage": "https://www.solarsystemscope.com/textures/",
+      "sourceAssetUrl": "https://www.solarsystemscope.com/textures/download/2k_saturn_ring_alpha.png",
+      "localPath": "assets/textures/saturn/2k_saturn_ring_alpha.png",
+      "sourceSha256": "4b0644b2f3ef259fd0bfaedd9dc52f9e7d9738f65f50363e8c4dd19f650d7334",
+      "derivedSha256": "4b0644b2f3ef259fd0bfaedd9dc52f9e7d9738f65f50363e8c4dd19f650d7334",
+      "originalWidth": 2048,
+      "originalHeight": 125,
+      "derivedWidth": 2048,
+      "derivedHeight": 125,
+      "projection": "equirectangular",
+      "longitudeConvention": "standard",
+      "centralMeridianDeg": 0,
+      "northUp": true,
+      "colorInterpretation": "sRGB",
+      "observationBands": [
+        "visible-light-alpha"
+      ],
+      "provenanceClass": "observation-derived-visualization",
+      "coverageNotes": "土星主环径向透明度与颜色条带图，包含卡西尼环缝。",
+      "processingHistory": [
+        "Verified and stored by verify-assets pipeline at 2026-09-20T13:03:11.394Z"
+      ],
+      "credit": "Solar System Scope / INOVE / NASA",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "licenseNotes": "CC BY 4.0 商业与非商业可用，需保留署名。",
+      "releaseApproved": true
+    },
+    {
+      "id": "uranus-sss-2k",
+      "bodyId": "uranus",
+      "role": "color",
+      "sourcePage": "https://www.solarsystemscope.com/textures/",
+      "sourceAssetUrl": "https://www.solarsystemscope.com/textures/download/2k_uranus.jpg",
+      "localPath": "assets/textures/uranus/2k_uranus.jpg",
+      "sourceSha256": "d15239d46f82d3ea13d2b260b5b29b2a382f42f2916dae0694d0387b1204a09d",
+      "derivedSha256": "d15239d46f82d3ea13d2b260b5b29b2a382f42f2916dae0694d0387b1204a09d",
+      "originalWidth": 2048,
+      "originalHeight": 1024,
+      "derivedWidth": 2048,
+      "derivedHeight": 1024,
+      "projection": "equirectangular",
+      "longitudeConvention": "0-to-360-east",
+      "centralMeridianDeg": 0,
+      "northUp": true,
+      "colorInterpretation": "sRGB",
+      "observationBands": [
+        "visible-light-reconstructed"
+      ],
+      "provenanceClass": "observation-derived-visualization",
+      "coverageNotes": "天王星淡青色甲烷富集大气表面。",
+      "processingHistory": [
+        "Verified and stored by verify-assets pipeline at 2026-09-20T13:03:11.690Z"
+      ],
+      "credit": "Solar System Scope / INOVE / NASA",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "licenseNotes": "CC BY 4.0 商业与非商业可用，需保留署名。",
+      "releaseApproved": true
+    },
+    {
+      "id": "neptune-sss-2k",
+      "bodyId": "neptune",
+      "role": "color",
+      "sourcePage": "https://www.solarsystemscope.com/textures/",
+      "sourceAssetUrl": "https://www.solarsystemscope.com/textures/download/2k_neptune.jpg",
+      "localPath": "assets/textures/neptune/2k_neptune.jpg",
+      "sourceSha256": "cb42ea82709741d28b0af44d8b283cbc6dbd0c521a7f0e1e1e010ade00977df6",
+      "derivedSha256": "cb42ea82709741d28b0af44d8b283cbc6dbd0c521a7f0e1e1e010ade00977df6",
+      "originalWidth": 2048,
+      "originalHeight": 1024,
+      "derivedWidth": 2048,
+      "derivedHeight": 1024,
+      "projection": "equirectangular",
+      "longitudeConvention": "0-to-360-east",
+      "centralMeridianDeg": 0,
+      "northUp": true,
+      "colorInterpretation": "sRGB",
+      "observationBands": [
+        "visible-light-reconstructed"
+      ],
+      "provenanceClass": "observation-derived-visualization",
+      "coverageNotes": "海王星深湛蓝动态狂暴风暴大气。",
+      "processingHistory": [
+        "Verified and stored by verify-assets pipeline at 2026-09-20T13:03:12.049Z"
+      ],
+      "credit": "Solar System Scope / INOVE / NASA",
       "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
       "licenseNotes": "CC BY 4.0 商业与非商业可用，需保留署名。",
       "releaseApproved": true
