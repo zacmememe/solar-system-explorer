@@ -28,7 +28,12 @@ import {
   Navigation,
   Bookmark,
   Activity,
+  Volume2,
+  VolumeX,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
+import { soundEffects } from '../audio/SoundEffects';
 
 const PLANET_ORDER: BodyId[] = [
   'sun',
@@ -66,7 +71,10 @@ export const App: React.FC = () => {
   const [showAtmosphere, setShowAtmosphere] = useState<boolean>(true);
   const [showOrbits, setShowOrbits] = useState<boolean>(true);
   const [venusRadarMode, setVenusRadarMode] = useState<boolean>(false);
+  const [titanInfraredMode, setTitanInfraredMode] = useState<boolean>(false);
   const [reduceMotion, setReduceMotion] = useState<boolean>(false);
+  const [isMuted, setIsMuted] = useState<boolean>(soundEffects.getIsMuted());
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
 
   // 载具与伴飞视角系统
   const [currentVehicleId, setCurrentVehicleId] = useState<VehicleId | null>('apollo-lm');
@@ -162,6 +170,26 @@ export const App: React.FC = () => {
     engineRef.current?.setShowVenusSurface(next);
   };
 
+  const toggleTitanInfrared = () => {
+    const next = !titanInfraredMode;
+    setTitanInfraredMode(next);
+    engineRef.current?.setShowTitanInfrared(next);
+  };
+
+  const toggleMute = () => {
+    const next = soundEffects.toggleMute();
+    setIsMuted(next);
+    showToast(next ? '🔇 深空音效：已静音' : '🔊 深空微波背景音：已开启');
+  };
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => {});
+    } else {
+      document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => {});
+    }
+  };
+
   const handleSelectVehicle = (id: VehicleId) => {
     setCurrentVehicleId(id);
     engineRef.current?.setVehicle(id);
@@ -247,7 +275,8 @@ export const App: React.FC = () => {
   };
 
   const activeBody = BODIES[selectedBodyId] || BODIES.sun;
-  const currentMoons = PLANET_MOONS[activeBody.parentId ? activeBody.parentId : activeBody.id] || [];
+  const parentPlanetId = activeBody.type === 'moon' ? activeBody.parentId : activeBody.id;
+  const currentMoons = (parentPlanetId && PLANET_MOONS[parentPlanetId]) || [];
   const activeVehicle = currentVehicleId ? VEHICLE_CATALOG[currentVehicleId] : null;
 
   return (
@@ -265,7 +294,7 @@ export const App: React.FC = () => {
       {/* 3D 渲染画布容器 */}
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
 
-      {/* 顶部标题栏与机库入口 */}
+      {/* 顶部左侧：品牌与科普标识 */}
       <header
         style={{
           position: 'absolute',
@@ -301,9 +330,20 @@ export const App: React.FC = () => {
             <span>太阳 · 八大行星 · 土星环 · 核心卫星</span>
           </div>
         </div>
+      </header>
 
-        <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,0.15)', margin: '0 4px' }} />
-
+      {/* 顶部右侧：功能工具栏（机库、书签、音效、全屏、WebGL状态） */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 14,
+          right: 14,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          zIndex: 10,
+        }}
+      >
         {/* 航天器机库入口按钮 */}
         <button
           onClick={() => setShowHangar(true)}
@@ -311,8 +351,8 @@ export const App: React.FC = () => {
             display: 'flex',
             alignItems: 'center',
             gap: 6,
-            padding: '6px 12px',
-            borderRadius: 10,
+            padding: '7px 12px',
+            borderRadius: 12,
             background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.25) 0%, rgba(3, 105, 161, 0.45) 100%)',
             border: '1px solid rgba(56, 189, 248, 0.45)',
             color: '#ffffff',
@@ -346,9 +386,9 @@ export const App: React.FC = () => {
             display: 'flex',
             alignItems: 'center',
             gap: 6,
-            padding: '6px 12px',
-            borderRadius: 10,
-            background: 'rgba(56, 189, 248, 0.15)',
+            padding: '7px 12px',
+            borderRadius: 12,
+            background: 'rgba(10, 16, 26, 0.88)',
             border: '1px solid rgba(56, 189, 248, 0.35)',
             color: '#38bdf8',
             cursor: 'pointer',
@@ -361,39 +401,72 @@ export const App: React.FC = () => {
           <Bookmark size={14} />
           <span>书签 Bookmarks</span>
         </button>
-      </header>
 
-      {/* 右上角 WebGL2 硬件与环境诊断卡片 */}
-      <div
-        style={{
-          position: 'absolute',
-          top: 14,
-          right: 14,
-          background: 'rgba(10, 16, 26, 0.85)',
-          backdropFilter: 'blur(12px)',
-          padding: '8px 12px',
-          borderRadius: 12,
-          border: '1px solid rgba(255, 255, 255, 0.1)',
-          fontSize: 11,
-          lineHeight: 1.45,
-          color: '#94a3b8',
-          maxWidth: 250,
-          zIndex: 10,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#38bdf8', fontWeight: 600, marginBottom: 3 }}>
-          <ShieldCheck size={14} />
-          <span>WebGL2 渲染与显卡状态</span>
-        </div>
-        {webglInfo ? (
-          <div>
-            <div>渲染器: <strong style={{ color: '#e2e8f0' }}>{webglInfo.rendererName}</strong></div>
-            <div>显卡厂商: {webglInfo.vendorName}</div>
-            <div>最大纹理尺寸: {webglInfo.maxTextureSize} px</div>
+        {/* 深空微波背景音效开关 */}
+        <button
+          onClick={toggleMute}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '7px 11px',
+            borderRadius: 12,
+            background: isMuted ? 'rgba(10, 16, 26, 0.88)' : 'rgba(34, 197, 94, 0.2)',
+            border: isMuted ? '1px solid rgba(255, 255, 255, 0.15)' : '1px solid rgba(34, 197, 94, 0.45)',
+            color: isMuted ? '#94a3b8' : '#86efac',
+            cursor: 'pointer',
+            fontSize: 12,
+            fontWeight: 600,
+            transition: 'all 0.15s ease',
+          }}
+          title={isMuted ? '开启深空微波背景音与交互微响' : '静音深空环境音'}
+        >
+          {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+          <span>{isMuted ? '静音' : '音效'}</span>
+        </button>
+
+        {/* 全屏沉浸模式切换 */}
+        <button
+          onClick={toggleFullscreen}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '7px 11px',
+            borderRadius: 12,
+            background: 'rgba(10, 16, 26, 0.88)',
+            border: '1px solid rgba(255, 255, 255, 0.15)',
+            color: '#cbd5e1',
+            cursor: 'pointer',
+            fontSize: 12,
+            fontWeight: 500,
+            transition: 'all 0.15s ease',
+          }}
+          title="切换全屏沉浸观测模式"
+        >
+          {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+          <span>{isFullscreen ? '窗口' : '全屏'}</span>
+        </button>
+
+        {/* WebGL2 硬件与环境诊断卡片 */}
+        <div
+          style={{
+            background: 'rgba(10, 16, 26, 0.88)',
+            backdropFilter: 'blur(12px)',
+            padding: '6px 12px',
+            borderRadius: 12,
+            border: '1px solid rgba(255, 255, 255, 0.12)',
+            fontSize: 11,
+            lineHeight: 1.4,
+            color: '#94a3b8',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#38bdf8', fontWeight: 600 }}>
+            <ShieldCheck size={13} />
+            <span>{webglInfo?.rendererName?.split(' ')[0] || 'WebGL2'}</span>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#22c55e' }} />
           </div>
-        ) : (
-          <div>正在检测 WebGL2 硬件环境...</div>
-        )}
+        </div>
       </div>
 
       {/* 顶部中央：太阳系全景行星快速导航条 */}
@@ -451,6 +524,7 @@ export const App: React.FC = () => {
           return (
             <button
               key={id}
+              data-testid={`planet-btn-${id}`}
               onClick={() => handleFlyTo(id)}
               style={{
                 display: 'flex',
@@ -486,20 +560,22 @@ export const App: React.FC = () => {
       {/* 卫星次级选择悬浮条（当前行星有卫星时展现） */}
       {currentMoons.length > 0 && (
         <div
+          data-testid="moon-subbar"
           style={{
             position: 'absolute',
-            top: 66,
+            top: 60,
             left: '50%',
             transform: 'translateX(-50%)',
             display: 'flex',
             alignItems: 'center',
             gap: 6,
-            background: 'rgba(15, 23, 42, 0.85)',
-            backdropFilter: 'blur(12px)',
-            padding: '4px 12px',
+            background: 'rgba(15, 23, 42, 0.92)',
+            backdropFilter: 'blur(16px)',
+            padding: '5px 14px',
             borderRadius: 20,
-            border: '1px solid rgba(255, 255, 255, 0.08)',
-            zIndex: 10,
+            border: '1px solid rgba(56, 189, 248, 0.3)',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.65)',
+            zIndex: 15,
           }}
         >
           <span style={{ fontSize: 10, color: '#94a3b8', marginRight: 4 }}>🛰️ 卫星:</span>
@@ -511,6 +587,7 @@ export const App: React.FC = () => {
             return (
               <button
                 key={satId}
+                data-testid={`moon-btn-${satId}`}
                 onClick={() => handleFlyTo(satId)}
                 style={{
                   display: 'flex',
@@ -719,9 +796,33 @@ export const App: React.FC = () => {
               cursor: 'pointer',
               fontSize: 11,
             }}
+            title="开启或关闭麦哲伦号合成孔径雷达穿透硫酸浓雾地表测绘"
           >
             <Radio size={13} />
             <span>雷达穿透地表 ({venusRadarMode ? '开' : '关'})</span>
+          </button>
+        )}
+
+        {/* 土卫六卡西尼 938nm 近红外地表穿透模式切换 */}
+        {selectedBodyId === 'titan' && (
+          <button
+            onClick={toggleTitanInfrared}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '6px 10px',
+              background: titanInfraredMode ? 'rgba(234, 179, 8, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+              border: titanInfraredMode ? '1px solid #eab308' : '1px solid rgba(255,255,255,0.08)',
+              borderRadius: 8,
+              color: titanInfraredMode ? '#fef08a' : '#94a3b8',
+              cursor: 'pointer',
+              fontSize: 11,
+            }}
+            title="切换卡西尼号 938nm 近红外穿透观测，揭示橘黄迷雾下的沙丘与液态甲烷湖海"
+          >
+            <Radio size={13} />
+            <span>近红外穿透地表 ({titanInfraredMode ? '开' : '关'})</span>
           </button>
         )}
 

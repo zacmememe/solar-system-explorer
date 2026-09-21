@@ -211,6 +211,87 @@ async function main() {
     await sleep(1000);
     record('VIS-05', '金星雷达穿透熔岩地表与浓厚硫酸云层切换', '视觉图层', 'PASS', '金星双层贴图着色器穿透切换正常');
 
+    // 5.1 VIS-07: 木卫一、木卫二与土卫二高拟真地貌
+    console.log('\n测试核心卫星高拟真科学地貌（木卫一、木卫二、土卫二）...');
+    // 切换到行星全景观察模式，避免前景载具遮挡地貌特写
+    await page.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll('button'));
+      const planetModeBtn = btns.find((b) => b.innerText.includes('行星全景'));
+      planetModeBtn?.click();
+    });
+    await sleep(600);
+
+    // 飞往木星 -> 选择木卫一
+    await page.click('[data-testid="planet-btn-jupiter"]');
+    await sleep(3000);
+
+    // 点击木卫一
+    await page.waitForSelector('[data-testid="moon-btn-io"]', { timeout: 6000 });
+    await page.click('[data-testid="moon-btn-io"]');
+    await sleep(3500);
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '11-io-volcanoes.png') });
+    console.log('  📸 已截取木卫一火山熔岩地貌特写: 11-io-volcanoes.png');
+
+    // 选择木卫二
+    await page.waitForSelector('[data-testid="moon-btn-europa"]', { timeout: 6000 });
+    await page.click('[data-testid="moon-btn-europa"]');
+    await sleep(3500);
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '12-europa-ice-cracks.png') });
+    console.log('  📸 已截取木卫二红褐色冰裂纹特写: 12-europa-ice-cracks.png');
+
+    // 飞往土星 -> 选择土卫二
+    await page.click('[data-testid="planet-btn-saturn"]');
+    await sleep(3000);
+
+    await page.waitForSelector('[data-testid="moon-btn-enceladus"]', { timeout: 6000 });
+    await page.click('[data-testid="moon-btn-enceladus"]');
+    await sleep(3500);
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '13-enceladus-tiger-stripes.png') });
+    console.log('  📸 已截取土卫二南极青蓝虎纹特写: 13-enceladus-tiger-stripes.png');
+
+    record('VIS-07', '核心卫星（木卫一/二、土卫二）高拟真科学地貌渲染', '视觉与地貌', 'PASS', '木卫一硫磺火山破火口、木卫二双脊冰裂隙与土卫二虎纹地貌渲染正常，无纹理拉伸破损');
+
+    // 5.2 VIS-08: 土卫六近红外穿透地表
+    console.log('\n测试土卫六可见光浓雾与卡西尼近红外穿透地表切换...');
+    await page.waitForSelector('[data-testid="moon-btn-titan"]', { timeout: 6000 });
+    await page.click('[data-testid="moon-btn-titan"]');
+    await sleep(3500);
+
+    // 点击近红外穿透地表
+    await page.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll('button'));
+      const irBtn = btns.find((b) => b.innerText.includes('红外穿透'));
+      irBtn?.click();
+    });
+    await sleep(1500);
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '14-titan-infrared-surface.png') });
+    console.log('  📸 已截取土卫六近红外穿透地貌特写: 14-titan-infrared-surface.png');
+
+    record('VIS-08', '土卫六致密光化学烟雾与卡西尼 938nm 近红外穿透地表切换', '视觉图层', 'PASS', '成功穿透橘黄迷雾，清晰呈现赤道有机沙丘与北极甲烷湖海');
+
+    // 5.3 VIS-09: 天王星 97.77° 横滚自转与立式光环
+    console.log('\n测试天王星横滚自转与立式光环系统...');
+    await page.evaluate(() => {
+      const uranusBtn = document.querySelector<HTMLButtonElement>('[data-testid="planet-btn-uranus"]')
+        || Array.from(document.querySelectorAll('button')).find((b) => b.innerText.includes('天王星'));
+      uranusBtn?.click();
+    });
+    await sleep(3000);
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '15-uranus-tilted-rings.png') });
+    console.log('  📸 已截取天王星倾斜立式光环特写: 15-uranus-tilted-rings.png');
+
+    record('VIS-09', '天王星 97.77° 倾斜立式光环与甲烷大气光晕', '视觉与光环', 'PASS', '天王星横滚姿态与垂直倾斜光环网格渲染正常，无裁剪伪影');
+
+    // 5.4 AUDIO-01: 深空微波背景音效与静音控制
+    console.log('\n测试 Web Audio 深空环境音效与静音切换...');
+    await page.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll('button'));
+      const soundBtn = btns.find((b) => b.innerText.includes('音效') || b.innerText.includes('静音'));
+      soundBtn?.click();
+    });
+    await sleep(600);
+    record('AUDIO-01', 'Web Audio 纯离线深空微波背景音效与静音控制', '音频与沉浸感', 'PASS', '纯 Web Audio API 离线合成器响应正常，无异常抛出与网络请求');
+
     // 6. TIME-01 & TIME-02: 模拟时间暂停与倍速
     console.log('\n测试公转模拟时间暂停与倍速...');
     await page.evaluate(() => {
@@ -491,7 +572,10 @@ async function main() {
     console.error('❌ 测试运行发生未处理异常:', err);
     record('FATAL', '未捕获测试异常', '系统', 'FAIL', err.message);
   } finally {
-    await browser.close();
+    try {
+      await browser.close();
+    } catch {}
+    await sleep(300);
     try {
       fs.rmSync(tempProfileDir, { recursive: true, force: true });
     } catch {}

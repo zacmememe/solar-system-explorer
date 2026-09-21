@@ -16,7 +16,7 @@ import {
   getNavOrbitRadius,
   getNavDisplayRadius,
   getPlanetNavPosition,
-  getSatelliteRelativePositionKm,
+  getSatelliteNavPosition,
 } from '../astronomy/bodies';
 import { AssetManager } from '../assets/AssetManager';
 import {
@@ -29,6 +29,17 @@ import { createSunMaterial, createSunCoronaMaterial } from '../rendering/SunMate
 import type { BodyId, CelestialBodyData } from '../contracts/body';
 import type { CameraCommand, CameraStateSnapshot } from '../contracts/camera';
 import type { VehicleId, ViewCameraMode } from '../contracts/vehicle';
+import {
+  getIoTexture,
+  getEuropaTexture,
+  getEnceladusTexture,
+  getTitanNearInfraredTexture,
+  getTitanHazeTexture,
+  getGanymedeTexture,
+  getCallistoTexture,
+  getMarsMoonTexture,
+} from '../astronomy/MoonTextures';
+import { soundEffects } from '../audio/SoundEffects';
 import { VehicleMeshBuilder } from '../vehicles/VehicleMeshBuilder';
 import productionAssetsData from '../../sources/production-assets.json';
 
@@ -134,6 +145,9 @@ export class SolarEngine {
   private lastPointerY: number = 0;
   private dragThresholdPx: number = 6;
   private hasDragged: boolean = false;
+  private activePointers: Map<number, { x: number; y: number }> = new Map();
+  private lastPinchDistance: number = 0;
+  private titanInfraredMode: boolean = false;
   private raycaster: THREE.Raycaster = new THREE.Raycaster();
   private pointerNdc: THREE.Vector2 = new THREE.Vector2();
 
@@ -447,6 +461,24 @@ export class SolarEngine {
         const haloMesh = new THREE.Mesh(haloGeo, createAtmosphereHaloMaterial(0x38bdf8, 2.4, 0.65));
         systemGroup.add(haloMesh);
         node.haloMesh = haloMesh;
+
+        // 天王星倾斜立式光环系统
+        if (data.ringConfig) {
+          const innerR = displayRadius * data.ringConfig.innerRadiusRatio;
+          const outerR = displayRadius * data.ringConfig.outerRadiusRatio;
+          const ringGeo = new THREE.RingGeometry(innerR, outerR, 64);
+          ringGeo.rotateX(Math.PI / 2);
+          const ringMat = new THREE.MeshBasicMaterial({
+            color: 0x67e8f9,
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.45,
+          });
+          const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+          ringMesh.rotation.z = THREE.MathUtils.degToRad(data.axialTiltDeg);
+          systemGroup.add(ringMesh);
+          node.ringMesh = ringMesh;
+        }
       }
 
       if (id === 'neptune') {
@@ -491,11 +523,25 @@ export class SolarEngine {
       });
       const satMesh = new THREE.Mesh(satGeo, satMat);
       satMesh.userData = { bodyId: satId };
+      satMesh.rotation.z = THREE.MathUtils.degToRad(satData.axialTiltDeg || 0);
       satGroup.add(satMesh);
       this.pickableMeshes.push(satMesh);
 
       let satHalo: THREE.Mesh | undefined;
+      let satCloudMesh: THREE.Mesh | undefined;
       if (satId === 'titan') {
+        // 土卫六可见光浓厚光化学烟雾外壳
+        const atmGeo = new THREE.SphereGeometry(satRadius * 1.018, 32, 24);
+        const atmMat = new THREE.MeshStandardMaterial({
+          color: 0xf59e0b,
+          roughness: 0.95,
+          transparent: true,
+          opacity: 0.95,
+        });
+        satCloudMesh = new THREE.Mesh(atmGeo, atmMat);
+        satCloudMesh.userData = { bodyId: 'titan' };
+        satGroup.add(satCloudMesh);
+
         const haloGeo = new THREE.SphereGeometry(satRadius * 1.035, 32, 24);
         satHalo = new THREE.Mesh(haloGeo, createAtmosphereHaloMaterial(0xf97316, 2.0, 0.88));
         satGroup.add(satHalo);
@@ -507,6 +553,7 @@ export class SolarEngine {
         mesh: satMesh,
         displayRadius: satRadius,
         material: satMat,
+        cloudMesh: satCloudMesh,
         haloMesh: satHalo,
       });
     }
@@ -573,17 +620,91 @@ export class SolarEngine {
         mat.needsUpdate = true;
       }
 
-      // 给其他密集撞击坑小卫星赋予月球地貌纹理细节
-      const crateredMoons: BodyId[] = ['phobos', 'deimos', 'callisto', 'ganymede'];
-      for (const id of crateredMoons) {
-        const node = this.bodyNodes.get(id);
-        if (node) {
-          const mat = node.mesh.material as THREE.MeshStandardMaterial;
-          mat.map = moonTex;
-          mat.needsUpdate = true;
-        }
-      }
     }).catch((e) => console.error('[Texture] Moon load failed:', e));
+
+    // 4.1 挂载核心卫星专属高拟真科学地貌纹理
+    const ioNode = this.bodyNodes.get('io');
+    if (ioNode) {
+      const mat = ioNode.mesh.material as THREE.MeshStandardMaterial;
+      mat.color.set(0xffffff);
+      mat.map = getIoTexture();
+      mat.roughness = 0.85;
+      mat.needsUpdate = true;
+    }
+
+    const europaNode = this.bodyNodes.get('europa');
+    if (europaNode) {
+      const mat = europaNode.mesh.material as THREE.MeshStandardMaterial;
+      mat.color.set(0xffffff);
+      mat.map = getEuropaTexture();
+      mat.roughness = 0.45;
+      mat.metalness = 0.08;
+      mat.needsUpdate = true;
+    }
+
+    const enceladusNode = this.bodyNodes.get('enceladus');
+    if (enceladusNode) {
+      const mat = enceladusNode.mesh.material as THREE.MeshStandardMaterial;
+      mat.color.set(0xffffff);
+      mat.map = getEnceladusTexture();
+      mat.roughness = 0.35;
+      mat.needsUpdate = true;
+    }
+
+    const titanNode = this.bodyNodes.get('titan');
+    if (titanNode) {
+      // 内部：卡西尼 938nm 近红外穿透地表
+      const surfMat = titanNode.mesh.material as THREE.MeshStandardMaterial;
+      surfMat.color.set(0xffffff);
+      surfMat.map = getTitanNearInfraredTexture();
+      surfMat.roughness = 0.85;
+      surfMat.needsUpdate = true;
+
+      // 外部：可见光橘黄光化学烟雾大气层
+      if (titanNode.cloudMesh) {
+        const atmMat = titanNode.cloudMesh.material as THREE.MeshStandardMaterial;
+        atmMat.color.set(0xffffff);
+        atmMat.map = getTitanHazeTexture();
+        atmMat.roughness = 0.95;
+        atmMat.needsUpdate = true;
+      }
+    }
+
+    const ganymedeNode = this.bodyNodes.get('ganymede');
+    if (ganymedeNode) {
+      const mat = ganymedeNode.mesh.material as THREE.MeshStandardMaterial;
+      mat.color.set(0xffffff);
+      mat.map = getGanymedeTexture();
+      mat.roughness = 0.88;
+      mat.needsUpdate = true;
+    }
+
+    const callistoNode = this.bodyNodes.get('callisto');
+    if (callistoNode) {
+      const mat = callistoNode.mesh.material as THREE.MeshStandardMaterial;
+      mat.color.set(0xffffff);
+      mat.map = getCallistoTexture();
+      mat.roughness = 0.9;
+      mat.needsUpdate = true;
+    }
+
+    const phobosNode = this.bodyNodes.get('phobos');
+    if (phobosNode) {
+      const mat = phobosNode.mesh.material as THREE.MeshStandardMaterial;
+      mat.color.set(0xffffff);
+      mat.map = getMarsMoonTexture(true);
+      mat.roughness = 0.92;
+      mat.needsUpdate = true;
+    }
+
+    const deimosNode = this.bodyNodes.get('deimos');
+    if (deimosNode) {
+      const mat = deimosNode.mesh.material as THREE.MeshStandardMaterial;
+      mat.color.set(0xffffff);
+      mat.map = getMarsMoonTexture(false);
+      mat.roughness = 0.92;
+      mat.needsUpdate = true;
+    }
 
     // 5. 金星（大气与穿透地表雷达图）
     Promise.all([
@@ -732,16 +853,40 @@ export class SolarEngine {
   };
 
   private onPointerDown = (e: PointerEvent): void => {
-    if (e.button !== 0) return;
-    this.isPointerDown = true;
-    this.hasDragged = false;
-    this.pointerStartX = e.clientX;
-    this.pointerStartY = e.clientY;
-    this.lastPointerX = e.clientX;
-    this.lastPointerY = e.clientY;
+    this.activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+
+    if (this.activePointers.size === 1) {
+      this.isPointerDown = true;
+      this.hasDragged = false;
+      this.pointerStartX = e.clientX;
+      this.pointerStartY = e.clientY;
+      this.lastPointerX = e.clientX;
+      this.lastPointerY = e.clientY;
+    } else if (this.activePointers.size === 2) {
+      const pts = Array.from(this.activePointers.values());
+      this.lastPinchDistance = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      this.hasDragged = true;
+    }
   };
 
   private onPointerMove = (e: PointerEvent): void => {
+    if (!this.activePointers.has(e.pointerId)) return;
+    this.activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    // 双指触控捏合缩放
+    if (this.activePointers.size === 2) {
+      const pts = Array.from(this.activePointers.values());
+      const currentDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      if (this.lastPinchDistance > 0) {
+        const delta = (this.lastPinchDistance - currentDist) * 0.25;
+        this.cameraController.executeCommand({ type: 'zoom', deltaDist: delta });
+        this.emitSnapshot();
+      }
+      this.lastPinchDistance = currentDist;
+      return;
+    }
+
     if (!this.isPointerDown) return;
 
     const dx = e.clientX - this.lastPointerX;
@@ -764,12 +909,17 @@ export class SolarEngine {
   };
 
   private onPointerUp = (e: PointerEvent): void => {
-    if (!this.isPointerDown) return;
-    this.isPointerDown = false;
+    this.activePointers.delete(e.pointerId);
 
-    // 若未发生拖拽位移，视为一次精准点击拾取
-    if (!this.hasDragged) {
-      this.handlePick(e.clientX, e.clientY);
+    if (this.activePointers.size === 0) {
+      this.lastPinchDistance = 0;
+      if (!this.isPointerDown) return;
+      this.isPointerDown = false;
+
+      // 若未发生拖拽位移，视为一次精准点击拾取
+      if (!this.hasDragged) {
+        this.handlePick(e.clientX, e.clientY);
+      }
     }
   };
 
@@ -792,6 +942,7 @@ export class SolarEngine {
       const hit = intersects[0].object;
       const bodyId = hit.userData.bodyId as BodyId;
       if (bodyId) {
+        soundEffects.playClick();
         this.cameraController.executeCommand({ type: 'select', bodyId });
         if (this.callbacks.onSelectBody) {
           this.callbacks.onSelectBody(bodyId);
@@ -802,6 +953,11 @@ export class SolarEngine {
   }
 
   public executeCameraCommand(cmd: CameraCommand): void {
+    if (cmd.type === 'flyTo' || cmd.type === 'overview' || cmd.type === 'restoreBookmark') {
+      soundEffects.playWarp();
+    } else if (cmd.type === 'select') {
+      soundEffects.playClick();
+    }
     this.cameraController.executeCommand(cmd);
     this.emitSnapshot();
   }
@@ -847,11 +1003,26 @@ export class SolarEngine {
 
   public setShowVenusSurface(radar: boolean): void {
     this.venusRadarMode = radar;
+    soundEffects.playRadarPing();
     const venusNode = this.bodyNodes.get('venus');
     if (venusNode && venusNode.cloudMesh) {
       // 雷达模式下隐藏浓厚大气，展现熔岩表面
       venusNode.cloudMesh.visible = !radar;
     }
+  }
+
+  public setShowTitanInfrared(infrared: boolean): void {
+    this.titanInfraredMode = infrared;
+    soundEffects.playRadarPing();
+    const titanNode = this.bodyNodes.get('titan');
+    if (titanNode && titanNode.cloudMesh) {
+      // 近红外模式下隐藏橘黄迷雾外壳，展现卡西尼号近红外地表
+      titanNode.cloudMesh.visible = !infrared;
+    }
+  }
+
+  public isTitanInfraredMode(): boolean {
+    return this.titanInfraredMode;
   }
 
   public setReduceMotion(enabled: boolean): void {
@@ -999,21 +1170,12 @@ export class SolarEngine {
       }
 
       if (node.data.type === 'moon') {
-        // 卫星相对母星的公转位置计算（按比例缩放适配局部显示）
-        const [relXKm, relYKm, relZKm] = getSatelliteRelativePositionKm(id, this.simTimeHours);
-        const parentNode = this.bodyNodes.get(node.data.parentId || '');
-        const parentDisplayR = parentNode ? parentNode.displayRadius : 5.0;
-
-        // 卫星局部轨道在视觉上适当紧凑围绕母星
-        const scaleFactor = (parentDisplayR * 3.5) / (node.data.orbitSemiMajorAxisKm || 384400);
-        node.systemGroup.position.set(
-          relXKm * scaleFactor,
-          relYKm * scaleFactor,
-          relZKm * scaleFactor
-        );
+        // 依据开普勒真实周期与审美分层计算卫星局部位置，杜绝天体穿模挤压
+        const [mx, my, mz] = getSatelliteNavPosition(id, this.simTimeHours);
+        node.systemGroup.position.set(mx, my, mz);
 
         // 潮汐锁定：始终朝向母星
-        const moonOrbitAngle = Math.atan2(node.systemGroup.position.z, node.systemGroup.position.x);
+        const moonOrbitAngle = Math.atan2(mz, mx);
         node.mesh.rotation.y = -moonOrbitAngle;
       }
 

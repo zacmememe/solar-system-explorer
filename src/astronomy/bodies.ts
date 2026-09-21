@@ -216,7 +216,7 @@ export const BODIES: Record<string, CelestialBodyData> = {
     orbitPeriodDays: 3.551,
     orbitalInclinationDeg: 0.47,
     colorHex: 0xd1d5db,
-    observationTip: '木卫一像一个雪白的大冰球，表面布满一道道纵横交错的红褐色冰裂痕！',
+    observationTip: '木卫二像一个雪白的大冰球，表面布满一道道纵横交错的红褐色冰裂痕！',
     description: '木卫二冰层下深藏着一个深度达上百公里的全球液态水海洋，水量甚至超过地球所有海洋的总和，是科学家寻找地外生命最充满希望的天体之一。',
     funFact: '科学家推测木卫二冰下海洋深处的温暖海底火山口，可能正在孕育着奇异的地外生命！',
     colorAssetId: 'moon-svs-2025-2k',
@@ -312,7 +312,7 @@ export const BODIES: Record<string, CelestialBodyData> = {
     type: 'moon',
     parentId: 'saturn',
     radiusKm: 252.1,
-    axialTiltDeg: 0,
+    axialTiltDeg: 28.5,
     rotationPeriodHours: 32.88,
     orbitSemiMajorAxisKm: 238000,
     orbitPeriodDays: 1.370,
@@ -338,6 +338,11 @@ export const BODIES: Record<string, CelestialBodyData> = {
     orbitalInclinationDeg: 0.77,
     colorHex: 0x06b6d4,
     hasAtmosphere: true,
+    ringConfig: {
+      innerRadiusRatio: 1.45,
+      outerRadiusRatio: 2.15,
+      textureAssetId: 'uranus-rings',
+    },
     observationTip: '天王星是一颗淡青色的冰巨星，它是全太阳系最懒的星球——“躺着”绕太阳打滚！',
     description: '天王星是一颗富含水、氨和甲烷冰的冰巨星，大气中的甲烷吸收红光使它呈现淡雅的青绿色。其自转轴倾角高达 97.77°，几乎横躺在公转轨道面上横滚运行。',
     funFact: '因为天王星是躺着自转的，它的南极和北极各自有长达 42 年的极昼和 42 年的连续黑夜！',
@@ -434,8 +439,19 @@ export function getNavDisplayRadius(radiusKm: number, type: string): number {
   return 0.6; // 小卫星
 }
 
+const PLANET_INITIAL_PHASES: Record<string, number> = {
+  mercury: 4.40,
+  venus: 3.16,
+  earth: 1.75,
+  mars: 6.20,
+  jupiter: 0.59,
+  saturn: 0.87,
+  uranus: 5.48,
+  neptune: 5.30,
+};
+
 /**
- * 计算行星绕太阳公转的导航坐标（含轨道倾角）
+ * 计算行星绕太阳公转的导航坐标（含轨道倾角与自然黄道初相）
  */
 export function getPlanetNavPosition(
   bodyId: BodyId,
@@ -448,7 +464,8 @@ export function getPlanetNavPosition(
 
   const orbitRadius = getNavOrbitRadius(body.orbitSemiMajorAxisKm);
   const periodHours = body.orbitPeriodDays * 24.0;
-  const angleRad = ((2.0 * Math.PI) / periodHours) * simTimeHours;
+  const initialPhase = PLANET_INITIAL_PHASES[bodyId] || 0;
+  const angleRad = ((2.0 * Math.PI) / periodHours) * simTimeHours + initialPhase;
   const inclinationRad = ((body.orbitalInclinationDeg || 0) * Math.PI) / 180.0;
 
   const x = orbitRadius * Math.cos(angleRad);
@@ -470,6 +487,56 @@ export function getMoonPositionKm(timeHours: number): [number, number, number] {
   const x = distanceKm * Math.cos(angleRad);
   const y = distanceKm * Math.sin(angleRad) * Math.sin(inclinationRad);
   const z = distanceKm * Math.sin(angleRad) * Math.cos(inclinationRad);
+
+  return [x, y, z];
+}
+
+const SATELLITE_INITIAL_PHASES: Record<string, number> = {
+  moon: 0.6,
+  phobos: 0.3,
+  deimos: 3.5,
+  io: 0.8,
+  europa: 2.4,
+  ganymede: 4.1,
+  callisto: 5.6,
+  titan: 1.2,
+  enceladus: 4.5,
+};
+
+/**
+ * 局部场景坐标系下卫星相对母星的视觉位置（单位：场景 3D 单位）
+ * 依据开普勒真实物理周期、真实轨道倾角与审美缩放，
+ * 既保证空间上层次分明绝不相互穿模，又忠实呈现开普勒公转动态
+ */
+export function getSatelliteNavPosition(
+  satelliteId: BodyId,
+  timeHours: number
+): [number, number, number] {
+  const sat = BODIES[satelliteId];
+  if (!sat || !sat.parentId || sat.orbitPeriodDays <= 0) {
+    return [0, 0, 0];
+  }
+
+  const parent = BODIES[sat.parentId];
+  const parentR = parent ? getNavDisplayRadius(parent.radiusKm, parent.type) : 3.0;
+
+  // 基础净距：行星半径加上额外安全观察间距（避免被光环或大气遮挡）
+  const baseClearance = parent?.ringConfig
+    ? parentR * (parent.ringConfig.outerRadiusRatio + 0.45)
+    : parentR * 1.6;
+
+  // 依据真实半长轴平滑幂次扩展，卫星从内到外错落有致
+  const normDist = Math.pow((sat.orbitSemiMajorAxisKm || 100000) / 100000, 0.62);
+  const visualOrbitR = baseClearance + normDist * (parentR * 1.15);
+
+  const periodHours = sat.orbitPeriodDays * 24.0;
+  const initialPhase = SATELLITE_INITIAL_PHASES[satelliteId] || 0;
+  const angleRad = ((2.0 * Math.PI) / periodHours) * timeHours + initialPhase;
+  const incRad = ((sat.orbitalInclinationDeg || 0) * Math.PI) / 180.0;
+
+  const x = visualOrbitR * Math.cos(angleRad);
+  const y = visualOrbitR * Math.sin(angleRad) * Math.sin(incRad);
+  const z = visualOrbitR * Math.sin(angleRad) * Math.cos(incRad);
 
   return [x, y, z];
 }
