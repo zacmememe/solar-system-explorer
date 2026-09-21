@@ -729,3 +729,789 @@ export function getMarsMoonTexture(isPhobos: boolean): THREE.Texture {
   if (isPhobos) return (phobosTexCache = tex);
   return (deimosTexCache = tex);
 }
+
+// ---------------------------------------------------------------------------
+// 8. 木卫五 (Amalthea) — 极度拉长的深红天体与高反照率撞击斜坡
+// ---------------------------------------------------------------------------
+let amaltheaTexCache: THREE.Texture | null = null;
+export function getAmaltheaTexture(): THREE.Texture {
+  if (amaltheaTexCache) return amaltheaTexCache;
+  if (typeof document === 'undefined') return (amaltheaTexCache = createFallbackTexture(185, 28, 28));
+
+  const W = 512, H = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return new THREE.CanvasTexture(canvas);
+
+  const imgData = ctx.createImageData(W, H);
+  const data = imgData.data;
+
+  for (let y = 0; y < H; y++) {
+    const phi = (0.5 - y / H) * Math.PI;
+    const cosP = Math.cos(phi);
+    const sinP = Math.sin(phi);
+
+    for (let x = 0; x < W; x++) {
+      const theta = (x / W - 0.5) * 2 * Math.PI;
+      const px = cosP * Math.cos(theta);
+      const py = sinP;
+      const pz = cosP * Math.sin(theta);
+
+      const n1 = fbm3D(px * 8.0, py * 8.0, pz * 8.0, 4);
+      // 深红色铁镁质与硫化物沉降色调
+      let r = 160 + (n1 - 0.5) * 45;
+      let g = 38 + (n1 - 0.5) * 24;
+      let b = 30 + (n1 - 0.5) * 20;
+
+      // 撞击斜坡裸露的亮绿色/黄白色冰质斑块
+      if (n1 > 0.68) {
+        const spot = (n1 - 0.68) / 0.32;
+        r = r * (1 - spot) + 210 * spot;
+        g = g * (1 - spot) + 195 * spot;
+        b = b * (1 - spot) + 140 * spot;
+      }
+
+      const idx = (y * W + x) * 4;
+      data[idx] = Math.min(255, Math.max(0, Math.round(r)));
+      data[idx + 1] = Math.min(255, Math.max(0, Math.round(g)));
+      data[idx + 2] = Math.min(255, Math.max(0, Math.round(b)));
+      data[idx + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return (amaltheaTexCache = tex);
+}
+
+// ---------------------------------------------------------------------------
+// 9. 土卫一 (Mimas) — 死星巨型赫歇尔 (Herschel) 撞击坑
+// ---------------------------------------------------------------------------
+let mimasTexCache: THREE.Texture | null = null;
+export function getMimasTexture(): THREE.Texture {
+  if (mimasTexCache) return mimasTexCache;
+  if (typeof document === 'undefined') return (mimasTexCache = createFallbackTexture(203, 213, 225));
+
+  const W = 512, H = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return new THREE.CanvasTexture(canvas);
+
+  const imgData = ctx.createImageData(W, H);
+  const data = imgData.data;
+  const herschelCenter = latLonToVec3(1.0, -110.0); // 赤道西经 110 度
+
+  for (let y = 0; y < H; y++) {
+    const phi = (0.5 - y / H) * Math.PI;
+    const cosP = Math.cos(phi);
+    const sinP = Math.sin(phi);
+
+    for (let x = 0; x < W; x++) {
+      const theta = (x / W - 0.5) * 2 * Math.PI;
+      const px = cosP * Math.cos(theta);
+      const py = sinP;
+      const pz = cosP * Math.sin(theta);
+
+      const nCraters = fbm3D(px * 12.0, py * 12.0, pz * 12.0, 4);
+      let lum = 180 + (nCraters - 0.5) * 35;
+
+      // 赫歇尔巨坑（直径占土卫一 1/3，带有高耸中央峰与环形山壁）
+      const distH = angularDistance(px, py, pz, herschelCenter[0], herschelCenter[1], herschelCenter[2]);
+      if (distH < 0.42) {
+        const t = distH / 0.42; // 0=中央峰，1=环壁
+        if (t < 0.14) {
+          // 中央山峰高反光
+          lum += (1.0 - t / 0.14) * 65;
+        } else if (t < 0.75) {
+          // 碗状深坑底阴影
+          lum -= 55 * Math.sin((t / 0.75) * Math.PI);
+        } else {
+          // 环壁边缘隆起高光
+          lum += 48 * Math.sin(((t - 0.75) / 0.25) * Math.PI);
+        }
+      }
+
+      const idx = (y * W + x) * 4;
+      const c = Math.min(255, Math.max(0, Math.round(lum)));
+      data[idx] = c;
+      data[idx + 1] = c;
+      data[idx + 2] = Math.min(255, c + 8); // 微蓝水冰基调
+      data[idx + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return (mimasTexCache = tex);
+}
+
+// ---------------------------------------------------------------------------
+// 10. 土卫三 (Tethys) — 奥德修斯大坑与伊萨卡大峡谷
+// ---------------------------------------------------------------------------
+let tethysTexCache: THREE.Texture | null = null;
+export function getTethysTexture(): THREE.Texture {
+  if (tethysTexCache) return tethysTexCache;
+  if (typeof document === 'undefined') return (tethysTexCache = createFallbackTexture(226, 232, 240));
+
+  const W = 512, H = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return new THREE.CanvasTexture(canvas);
+
+  const imgData = ctx.createImageData(W, H);
+  const data = imgData.data;
+
+  for (let y = 0; y < H; y++) {
+    const phi = (0.5 - y / H) * Math.PI;
+    const cosP = Math.cos(phi);
+    const sinP = Math.sin(phi);
+
+    for (let x = 0; x < W; x++) {
+      const theta = (x / W - 0.5) * 2 * Math.PI;
+      const px = cosP * Math.cos(theta);
+      const py = sinP;
+      const pz = cosP * Math.sin(theta);
+
+      const n1 = fbm3D(px * 10.0, py * 10.0, pz * 10.0, 4);
+      let lum = 215 + (n1 - 0.5) * 25;
+
+      // 伊萨卡大峡谷 (Ithaca Chasma: 极区跨越的大圆深谷)
+      const chasmaDist = Math.abs(px * 0.85 + py * 0.15 - pz * 0.48);
+      if (chasmaDist < 0.045) {
+        const factor = (1.0 - chasmaDist / 0.045);
+        lum -= factor * 60;
+      }
+
+      const idx = (y * W + x) * 4;
+      const c = Math.min(255, Math.max(0, Math.round(lum)));
+      data[idx] = c;
+      data[idx + 1] = c;
+      data[idx + 2] = Math.min(255, c + 6);
+      data[idx + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return (tethysTexCache = tex);
+}
+
+// ---------------------------------------------------------------------------
+// 11. 土卫四 (Dione) & 土卫五 (Rhea)
+// ---------------------------------------------------------------------------
+let dioneTexCache: THREE.Texture | null = null;
+export function getDioneTexture(): THREE.Texture {
+  if (dioneTexCache) return dioneTexCache;
+  if (typeof document === 'undefined') return (dioneTexCache = createFallbackTexture(148, 163, 184));
+
+  const W = 512, H = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return new THREE.CanvasTexture(canvas);
+
+  const imgData = ctx.createImageData(W, H);
+  const data = imgData.data;
+
+  for (let y = 0; y < H; y++) {
+    const phi = (0.5 - y / H) * Math.PI;
+    const cosP = Math.cos(phi);
+    const sinP = Math.sin(phi);
+
+    for (let x = 0; x < W; x++) {
+      const theta = (x / W - 0.5) * 2 * Math.PI;
+      const px = cosP * Math.cos(theta);
+      const py = sinP;
+      const pz = cosP * Math.sin(theta);
+
+      const n1 = fbm3D(px * 9.0, py * 9.0, pz * 9.0, 4);
+      let lum = 155 + (n1 - 0.5) * 35;
+
+      // 后随半球明亮羽状冰崖断层线 (Wispy Chasmata)
+      if (px < 0.0) {
+        const fracture = Math.sin(px * 24.0 + py * 18.0) * Math.cos(pz * 20.0);
+        if (fracture > 0.45) {
+          lum += (fracture - 0.45) * 120;
+        }
+      }
+
+      const idx = (y * W + x) * 4;
+      const c = Math.min(255, Math.max(0, Math.round(lum)));
+      data[idx] = c;
+      data[idx + 1] = c;
+      data[idx + 2] = Math.min(255, c + 8);
+      data[idx + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return (dioneTexCache = tex);
+}
+
+let rheaTexCache: THREE.Texture | null = null;
+export function getRheaTexture(): THREE.Texture {
+  if (rheaTexCache) return rheaTexCache;
+  if (typeof document === 'undefined') return (rheaTexCache = createFallbackTexture(100, 116, 139));
+
+  const W = 512, H = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return new THREE.CanvasTexture(canvas);
+
+  const imgData = ctx.createImageData(W, H);
+  const data = imgData.data;
+
+  for (let y = 0; y < H; y++) {
+    const phi = (0.5 - y / H) * Math.PI;
+    const cosP = Math.cos(phi);
+    const sinP = Math.sin(phi);
+
+    for (let x = 0; x < W; x++) {
+      const theta = (x / W - 0.5) * 2 * Math.PI;
+      const px = cosP * Math.cos(theta);
+      const py = sinP;
+      const pz = cosP * Math.sin(theta);
+
+      const nCraters = fbm3D(px * 16.0, py * 16.0, pz * 16.0, 5);
+      const lum = 135 + (nCraters - 0.5) * 42;
+
+      const idx = (y * W + x) * 4;
+      const c = Math.min(255, Math.max(0, Math.round(lum)));
+      data[idx] = c;
+      data[idx + 1] = c;
+      data[idx + 2] = Math.min(255, c + 6);
+      data[idx + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return (rheaTexCache = tex);
+}
+
+// ---------------------------------------------------------------------------
+// 12. 土卫七 (Hyperion) — 蜂窝海绵状多孔多面体金褐色
+// ---------------------------------------------------------------------------
+let hyperionTexCache: THREE.Texture | null = null;
+export function getHyperionTexture(): THREE.Texture {
+  if (hyperionTexCache) return hyperionTexCache;
+  if (typeof document === 'undefined') return (hyperionTexCache = createFallbackTexture(217, 119, 6));
+
+  const W = 512, H = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return new THREE.CanvasTexture(canvas);
+
+  const imgData = ctx.createImageData(W, H);
+  const data = imgData.data;
+
+  for (let y = 0; y < H; y++) {
+    const phi = (0.5 - y / H) * Math.PI;
+    const cosP = Math.cos(phi);
+    const sinP = Math.sin(phi);
+
+    for (let x = 0; x < W; x++) {
+      const theta = (x / W - 0.5) * 2 * Math.PI;
+      const px = cosP * Math.cos(theta);
+      const py = sinP;
+      const pz = cosP * Math.sin(theta);
+
+      const n1 = fbm3D(px * 14.0, py * 14.0, pz * 14.0, 4);
+      let r = 195 + (n1 - 0.5) * 45;
+      let g = 145 + (n1 - 0.5) * 35;
+      let b = 65 + (n1 - 0.5) * 25;
+
+      // 极深海绵孔底黑影
+      const pit = Math.sin(px * 16.0) * Math.sin(py * 16.0) * Math.sin(pz * 16.0);
+      if (pit < -0.15) {
+        r *= 0.45; g *= 0.45; b *= 0.45;
+      }
+
+      const idx = (y * W + x) * 4;
+      data[idx] = Math.min(255, Math.max(0, Math.round(r)));
+      data[idx + 1] = Math.min(255, Math.max(0, Math.round(g)));
+      data[idx + 2] = Math.min(255, Math.max(0, Math.round(b)));
+      data[idx + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return (hyperionTexCache = tex);
+}
+
+// ---------------------------------------------------------------------------
+// 13. 土卫八 (Iapetus) — 著名极黑极白“阴阳脸”与赤道山脊
+// ---------------------------------------------------------------------------
+let iapetusTexCache: THREE.Texture | null = null;
+export function getIapetusTexture(): THREE.Texture {
+  if (iapetusTexCache) return iapetusTexCache;
+  if (typeof document === 'undefined') return (iapetusTexCache = createFallbackTexture(71, 85, 105));
+
+  const W = 512, H = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return new THREE.CanvasTexture(canvas);
+
+  const imgData = ctx.createImageData(W, H);
+  const data = imgData.data;
+
+  for (let y = 0; y < H; y++) {
+    const phi = (0.5 - y / H) * Math.PI;
+    const latDeg = (phi * 180) / Math.PI;
+    const cosP = Math.cos(phi);
+    const sinP = Math.sin(phi);
+
+    for (let x = 0; x < W; x++) {
+      const theta = (x / W - 0.5) * 2 * Math.PI;
+      const px = cosP * Math.cos(theta);
+      const py = sinP;
+      const pz = cosP * Math.sin(theta);
+
+      const n1 = fbm3D(px * 8.0, py * 8.0, pz * 8.0, 4);
+
+      // 阴阳脸判定：前导半球 (Cassini Regio: 经度 -90° 附近) 极黑 (沥青 3% 反射率)
+      // 后随半球 (Roncevaux Terra) 洁白如雪 (60% 反射率)
+      let r: number, g: number, b: number;
+      const isBlackHemisphere = Math.cos(theta + 0.3) > 0.05;
+
+      if (isBlackHemisphere) {
+        // 卡西尼暗区：煤烟沥青深黑
+        const darkBase = 28 + (n1 - 0.5) * 16;
+        r = darkBase; g = darkBase * 0.9; b = darkBase * 0.8;
+      } else {
+        // 龙塞斯瓦列斯高地：纯白水冰
+        const brightBase = 225 + (n1 - 0.5) * 25;
+        r = brightBase; g = brightBase; b = Math.min(255, brightBase + 10);
+      }
+
+      // 赤道 20km 巨型核桃山脊亮线
+      if (Math.abs(latDeg) < 2.5) {
+        const ridge = (1.0 - Math.abs(latDeg) / 2.5) * 45;
+        r += ridge; g += ridge; b += ridge;
+      }
+
+      const idx = (y * W + x) * 4;
+      data[idx] = Math.min(255, Math.max(0, Math.round(r)));
+      data[idx + 1] = Math.min(255, Math.max(0, Math.round(g)));
+      data[idx + 2] = Math.min(255, Math.max(0, Math.round(b)));
+      data[idx + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return (iapetusTexCache = tex);
+}
+
+// ---------------------------------------------------------------------------
+// 14. 天王星五大卫星 (Miranda, Ariel, Umbriel, Titania, Oberon)
+// ---------------------------------------------------------------------------
+let mirandaTexCache: THREE.Texture | null = null;
+export function getMirandaTexture(): THREE.Texture {
+  if (mirandaTexCache) return mirandaTexCache;
+  if (typeof document === 'undefined') return (mirandaTexCache = createFallbackTexture(161, 161, 170));
+
+  const W = 512, H = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return new THREE.CanvasTexture(canvas);
+
+  const imgData = ctx.createImageData(W, H);
+  const data = imgData.data;
+
+  for (let y = 0; y < H; y++) {
+    const phi = (0.5 - y / H) * Math.PI;
+    const cosP = Math.cos(phi);
+    const sinP = Math.sin(phi);
+
+    for (let x = 0; x < W; x++) {
+      const theta = (x / W - 0.5) * 2 * Math.PI;
+      const px = cosP * Math.cos(theta);
+      const py = sinP;
+      const pz = cosP * Math.sin(theta);
+
+      const n1 = fbm3D(px * 10.0, py * 10.0, pz * 10.0, 4);
+      let lum = 175 + (n1 - 0.5) * 35;
+
+      // 维罗纳断崖与冠状同心断裂几何斑块 (Coronae)
+      const chevron = Math.abs(px - py) < 0.08 || Math.abs(px + pz) < 0.06;
+      if (chevron) {
+        lum += 55;
+      }
+
+      const idx = (y * W + x) * 4;
+      const c = Math.min(255, Math.max(0, Math.round(lum)));
+      data[idx] = c; data[idx + 1] = c; data[idx + 2] = c; data[idx + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return (mirandaTexCache = tex);
+}
+
+let arielTexCache: THREE.Texture | null = null;
+export function getArielTexture(): THREE.Texture {
+  if (arielTexCache) return arielTexCache;
+  if (typeof document === 'undefined') return (arielTexCache = createFallbackTexture(228, 228, 231));
+
+  const W = 512, H = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return new THREE.CanvasTexture(canvas);
+
+  const imgData = ctx.createImageData(W, H);
+  const data = imgData.data;
+
+  for (let y = 0; y < H; y++) {
+    const phi = (0.5 - y / H) * Math.PI;
+    const cosP = Math.cos(phi);
+    const sinP = Math.sin(phi);
+
+    for (let x = 0; x < W; x++) {
+      const theta = (x / W - 0.5) * 2 * Math.PI;
+      const px = cosP * Math.cos(theta);
+      const py = sinP;
+      const pz = cosP * Math.sin(theta);
+
+      const n1 = fbm3D(px * 8.0, py * 8.0, pz * 8.0, 4);
+      let lum = 210 + (n1 - 0.5) * 30;
+
+      // 裂谷地堑裂缝网络 (Graben networks)
+      const rift = Math.sin(px * 20.0 + py * 12.0) * Math.cos(pz * 18.0);
+      if (Math.abs(rift) < 0.12) {
+        lum -= 45;
+      }
+
+      const idx = (y * W + x) * 4;
+      const c = Math.min(255, Math.max(0, Math.round(lum)));
+      data[idx] = c; data[idx + 1] = c; data[idx + 2] = Math.min(255, c + 5); data[idx + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return (arielTexCache = tex);
+}
+
+let umbrielTexCache: THREE.Texture | null = null;
+export function getUmbrielTexture(): THREE.Texture {
+  if (umbrielTexCache) return umbrielTexCache;
+  if (typeof document === 'undefined') return (umbrielTexCache = createFallbackTexture(82, 82, 91));
+
+  const W = 512, H = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return new THREE.CanvasTexture(canvas);
+
+  const imgData = ctx.createImageData(W, H);
+  const data = imgData.data;
+  const wundaCenter = latLonToVec3(-8.0, -85.0); // 翁达环坑
+
+  for (let y = 0; y < H; y++) {
+    const phi = (0.5 - y / H) * Math.PI;
+    const cosP = Math.cos(phi);
+    const sinP = Math.sin(phi);
+
+    for (let x = 0; x < W; x++) {
+      const theta = (x / W - 0.5) * 2 * Math.PI;
+      const px = cosP * Math.cos(theta);
+      const py = sinP;
+      const pz = cosP * Math.sin(theta);
+
+      const n1 = fbm3D(px * 12.0, py * 12.0, pz * 12.0, 4);
+      let lum = 85 + (n1 - 0.5) * 25; // 极度深暗古老表面
+
+      // 翁达 (Wunda) 荧光白环撞击坑
+      const distW = angularDistance(px, py, pz, wundaCenter[0], wundaCenter[1], wundaCenter[2]);
+      if (distW < 0.22) {
+        // 环状白色喷射沉积圈
+        const ring = Math.sin((distW / 0.22) * Math.PI);
+        lum += ring * 145;
+      }
+
+      const idx = (y * W + x) * 4;
+      const c = Math.min(255, Math.max(0, Math.round(lum)));
+      data[idx] = c; data[idx + 1] = c; data[idx + 2] = c; data[idx + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return (umbrielTexCache = tex);
+}
+
+let titaniaTexCache: THREE.Texture | null = null;
+export function getTitaniaTexture(): THREE.Texture {
+  if (titaniaTexCache) return titaniaTexCache;
+  if (typeof document === 'undefined') return (titaniaTexCache = createFallbackTexture(113, 113, 122));
+
+  const W = 512, H = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return new THREE.CanvasTexture(canvas);
+
+  const imgData = ctx.createImageData(W, H);
+  const data = imgData.data;
+
+  for (let y = 0; y < H; y++) {
+    const phi = (0.5 - y / H) * Math.PI;
+    const cosP = Math.cos(phi);
+    const sinP = Math.sin(phi);
+
+    for (let x = 0; x < W; x++) {
+      const theta = (x / W - 0.5) * 2 * Math.PI;
+      const px = cosP * Math.cos(theta);
+      const py = sinP;
+      const pz = cosP * Math.sin(theta);
+
+      const n1 = fbm3D(px * 10.0, py * 10.0, pz * 10.0, 4);
+      let lum = 135 + (n1 - 0.5) * 35;
+
+      // 墨西拿大峡谷 (Messina Chasma)
+      const canyon = Math.abs(px * 0.7 + py * 0.5 - pz * 0.5);
+      if (canyon < 0.05) {
+        lum -= 45 * (1.0 - canyon / 0.05);
+      }
+
+      const idx = (y * W + x) * 4;
+      const c = Math.min(255, Math.max(0, Math.round(lum)));
+      data[idx] = c; data[idx + 1] = c; data[idx + 2] = c; data[idx + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return (titaniaTexCache = tex);
+}
+
+let oberonTexCache: THREE.Texture | null = null;
+export function getOberonTexture(): THREE.Texture {
+  if (oberonTexCache) return oberonTexCache;
+  if (typeof document === 'undefined') return (oberonTexCache = createFallbackTexture(63, 63, 70));
+
+  const W = 512, H = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return new THREE.CanvasTexture(canvas);
+
+  const imgData = ctx.createImageData(W, H);
+  const data = imgData.data;
+
+  for (let y = 0; y < H; y++) {
+    const phi = (0.5 - y / H) * Math.PI;
+    const cosP = Math.cos(phi);
+    const sinP = Math.sin(phi);
+
+    for (let x = 0; x < W; x++) {
+      const theta = (x / W - 0.5) * 2 * Math.PI;
+      const px = cosP * Math.cos(theta);
+      const py = sinP;
+      const pz = cosP * Math.sin(theta);
+
+      const n1 = fbm3D(px * 12.0, py * 12.0, pz * 12.0, 4);
+      // 暗红碳质冰屑色调
+      let r = 95 + (n1 - 0.5) * 30;
+      let g = 82 + (n1 - 0.5) * 26;
+      let b = 78 + (n1 - 0.5) * 25;
+
+      const idx = (y * W + x) * 4;
+      data[idx] = Math.min(255, Math.max(0, Math.round(r)));
+      data[idx + 1] = Math.min(255, Math.max(0, Math.round(g)));
+      data[idx + 2] = Math.min(255, Math.max(0, Math.round(b)));
+      data[idx + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return (oberonTexCache = tex);
+}
+
+// ---------------------------------------------------------------------------
+// 15. 海王星卫星 (Triton & Proteus)
+// ---------------------------------------------------------------------------
+let tritonTexCache: THREE.Texture | null = null;
+export function getTritonTexture(): THREE.Texture {
+  if (tritonTexCache) return tritonTexCache;
+  if (typeof document === 'undefined') return (tritonTexCache = createFallbackTexture(103, 232, 249));
+
+  const W = 512, H = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return new THREE.CanvasTexture(canvas);
+
+  const imgData = ctx.createImageData(W, H);
+  const data = imgData.data;
+
+  for (let y = 0; y < H; y++) {
+    const phi = (0.5 - y / H) * Math.PI;
+    const latDeg = (phi * 180) / Math.PI;
+    const cosP = Math.cos(phi);
+    const sinP = Math.sin(phi);
+
+    for (let x = 0; x < W; x++) {
+      const theta = (x / W - 0.5) * 2 * Math.PI;
+      const px = cosP * Math.cos(theta);
+      const py = sinP;
+      const pz = cosP * Math.sin(theta);
+
+      // 哈密瓜皮构造地形 (Cantaloupe terrain: 多凹陷网络)
+      const cantaloupe = Math.sin(px * 24.0) * Math.sin(py * 24.0) * Math.sin(pz * 24.0);
+      let r = 205 + cantaloupe * 25;
+      let g = 225 + cantaloupe * 20;
+      let b = 238 + cantaloupe * 15;
+
+      // 南极粉白氮冰极冠 (South Polar Nitrogen Ice Cap)
+      if (latDeg < -20.0) {
+        const polar = Math.pow((-latDeg - 20.0) / 70.0, 1.2);
+        r = r * (1 - polar) + 245 * polar;
+        g = g * (1 - polar) + 218 * polar;
+        b = b * (1 - polar) + 225 * polar;
+
+        // 液氮冰火山黑色烟尘条带 (Cryovolcanic Geyser Streaks)
+        const geyser = Math.sin(px * 18.0 + py * 32.0);
+        if (geyser > 0.88) {
+          r *= 0.25; g *= 0.25; b *= 0.25;
+        }
+      }
+
+      const idx = (y * W + x) * 4;
+      data[idx] = Math.min(255, Math.max(0, Math.round(r)));
+      data[idx + 1] = Math.min(255, Math.max(0, Math.round(g)));
+      data[idx + 2] = Math.min(255, Math.max(0, Math.round(b)));
+      data[idx + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return (tritonTexCache = tex);
+}
+
+let proteusTexCache: THREE.Texture | null = null;
+export function getProteusTexture(): THREE.Texture {
+  if (proteusTexCache) return proteusTexCache;
+  if (typeof document === 'undefined') return (proteusTexCache = createFallbackTexture(82, 82, 82));
+
+  const W = 512, H = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return new THREE.CanvasTexture(canvas);
+
+  const imgData = ctx.createImageData(W, H);
+  const data = imgData.data;
+
+  for (let y = 0; y < H; y++) {
+    const phi = (0.5 - y / H) * Math.PI;
+    const cosP = Math.cos(phi);
+    const sinP = Math.sin(phi);
+
+    for (let x = 0; x < W; x++) {
+      const theta = (x / W - 0.5) * 2 * Math.PI;
+      const px = cosP * Math.cos(theta);
+      const py = sinP;
+      const pz = cosP * Math.sin(theta);
+
+      const n1 = fbm3D(px * 14.0, py * 14.0, pz * 14.0, 4);
+      let c = 58 + (n1 - 0.5) * 28;
+
+      const idx = (y * W + x) * 4;
+      c = Math.min(255, Math.max(0, Math.round(c)));
+      data[idx] = c; data[idx + 1] = c; data[idx + 2] = c; data[idx + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return (proteusTexCache = tex);
+}
+
+// ---------------------------------------------------------------------------
+// 通用卫星纹理分发器 (Master Moon Texture Dispatcher)
+// ---------------------------------------------------------------------------
+export function getMoonTextureByBodyId(bodyId: string): THREE.Texture | null {
+  switch (bodyId) {
+    case 'io': return getIoTexture();
+    case 'europa': return getEuropaTexture();
+    case 'ganymede': return getGanymedeTexture();
+    case 'callisto': return getCallistoTexture();
+    case 'amalthea': return getAmaltheaTexture();
+    case 'mimas': return getMimasTexture();
+    case 'enceladus': return getEnceladusTexture();
+    case 'tethys': return getTethysTexture();
+    case 'dione': return getDioneTexture();
+    case 'rhea': return getRheaTexture();
+    case 'titan': return getTitanNearInfraredTexture();
+    case 'hyperion': return getHyperionTexture();
+    case 'iapetus': return getIapetusTexture();
+    case 'miranda': return getMirandaTexture();
+    case 'ariel': return getArielTexture();
+    case 'umbriel': return getUmbrielTexture();
+    case 'titania': return getTitaniaTexture();
+    case 'oberon': return getOberonTexture();
+    case 'triton': return getTritonTexture();
+    case 'proteus': return getProteusTexture();
+    case 'phobos': return getMarsMoonTexture(true);
+    case 'deimos': return getMarsMoonTexture(false);
+    default: return null;
+  }
+}
+

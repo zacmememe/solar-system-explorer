@@ -17,11 +17,25 @@ export type BodyId =
   | 'europa'
   | 'ganymede'
   | 'callisto'
+  | 'amalthea'
   | 'saturn'
-  | 'titan'
+  | 'mimas'
   | 'enceladus'
+  | 'tethys'
+  | 'dione'
+  | 'rhea'
+  | 'titan'
+  | 'hyperion'
+  | 'iapetus'
   | 'uranus'
+  | 'miranda'
+  | 'ariel'
+  | 'umbriel'
+  | 'titania'
+  | 'oberon'
   | 'neptune'
+  | 'triton'
+  | 'proteus'
   | string;
 
 export type BodyType = 'star' | 'planet' | 'moon' | 'spacecraft';
@@ -40,6 +54,10 @@ export interface CelestialBodyData {
   parentId: BodyId | null;
   /** 平均物理半径（千米） */
   radiusKm: number;
+  /** 三维主轴物理尺寸（千米，针对不规则非球体天体 [x, y, z]） */
+  dimensionsKm?: [number, number, number];
+  /** 外观几何形态：标准圆球或不规则三轴多面体 */
+  shapeType?: 'sphere' | 'irregular';
   /** 自转倾角（度） */
   axialTiltDeg: number;
   /** 自转周期（小时，负数代表逆向自转如金星与天王星） */

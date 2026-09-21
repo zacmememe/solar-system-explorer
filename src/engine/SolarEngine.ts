@@ -24,20 +24,19 @@ import {
   createEarthCloudMaterial,
   createAtmosphereHaloMaterial,
 } from '../rendering/EarthMaterial';
-import { createSaturnRingMaterial } from '../rendering/RingMaterial';
+import {
+  createSaturnRingMaterial,
+  getUranusRingTexture,
+  getNeptuneRingTexture,
+} from '../rendering/RingMaterial';
 import { createSunMaterial, createSunCoronaMaterial } from '../rendering/SunMaterial';
+import { buildIrregularMoonGeometry } from '../astronomy/IrregularMeshBuilder';
 import type { BodyId, CelestialBodyData } from '../contracts/body';
 import type { CameraCommand, CameraStateSnapshot } from '../contracts/camera';
 import type { VehicleId, ViewCameraMode } from '../contracts/vehicle';
 import {
-  getIoTexture,
-  getEuropaTexture,
-  getEnceladusTexture,
-  getTitanNearInfraredTexture,
+  getMoonTextureByBodyId,
   getTitanHazeTexture,
-  getGanymedeTexture,
-  getCallistoTexture,
-  getMarsMoonTexture,
 } from '../astronomy/MoonTextures';
 import { soundEffects } from '../audio/SoundEffects';
 import { VehicleMeshBuilder } from '../vehicles/VehicleMeshBuilder';
@@ -118,6 +117,8 @@ export class SolarEngine {
 
   // 纹理缓存
   private saturnRingMaterial: THREE.ShaderMaterial | null = null;
+  private uranusRingMaterial: THREE.ShaderMaterial | null = null;
+  private neptuneRingMaterial: THREE.ShaderMaterial | null = null;
   private sunMaterial: THREE.ShaderMaterial | null = null;
   private sunCoronaMaterial: THREE.ShaderMaterial | null = null;
 
@@ -291,10 +292,12 @@ export class SolarEngine {
     sunGroup.add(sunMesh);
     this.pickableMeshes.push(sunMesh);
 
-    // 太阳日冕光晕
-    this.sunCoronaMaterial = createSunCoronaMaterial();
-    const coronaGeo = new THREE.SphereGeometry(sunRadius * 1.15, 32, 32);
+    // 太阳高能日冕辐射流（面向相机自适应公告板，超大尺度柔和指数衰减，彻底杜绝硬环切面）
+    const quadSize = sunRadius * 4.2;
+    this.sunCoronaMaterial = createSunCoronaMaterial(sunRadius / (quadSize * 0.5));
+    const coronaGeo = new THREE.PlaneGeometry(quadSize, quadSize);
     const coronaMesh = new THREE.Mesh(coronaGeo, this.sunCoronaMaterial);
+    coronaMesh.frustumCulled = false;
     sunGroup.add(coronaMesh);
 
     this.scene.add(sunGroup);
@@ -465,15 +468,15 @@ export class SolarEngine {
         if (data.ringConfig) {
           const innerR = displayRadius * data.ringConfig.innerRadiusRatio;
           const outerR = displayRadius * data.ringConfig.outerRadiusRatio;
-          const ringGeo = new THREE.RingGeometry(innerR, outerR, 64);
+          const ringGeo = new THREE.RingGeometry(innerR, outerR, 96);
           ringGeo.rotateX(Math.PI / 2);
-          const ringMat = new THREE.MeshBasicMaterial({
-            color: 0x67e8f9,
-            side: THREE.DoubleSide,
-            transparent: true,
-            opacity: 0.45,
+          this.uranusRingMaterial = createSaturnRingMaterial({
+            innerRadius: innerR,
+            outerRadius: outerR,
+            ringTexture: getUranusRingTexture(),
+            planetRadius: displayRadius,
           });
-          const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+          const ringMesh = new THREE.Mesh(ringGeo, this.uranusRingMaterial);
           ringMesh.rotation.z = THREE.MathUtils.degToRad(data.axialTiltDeg);
           systemGroup.add(ringMesh);
           node.ringMesh = ringMesh;
@@ -485,22 +488,54 @@ export class SolarEngine {
         const haloMesh = new THREE.Mesh(haloGeo, createAtmosphereHaloMaterial(0x3b82f6, 2.4, 0.75));
         systemGroup.add(haloMesh);
         node.haloMesh = haloMesh;
+
+        // 海王星微弱暗色尘埃与弧段光环系统
+        if (data.ringConfig) {
+          const innerR = displayRadius * data.ringConfig.innerRadiusRatio;
+          const outerR = displayRadius * data.ringConfig.outerRadiusRatio;
+          const ringGeo = new THREE.RingGeometry(innerR, outerR, 96);
+          ringGeo.rotateX(Math.PI / 2);
+          this.neptuneRingMaterial = createSaturnRingMaterial({
+            innerRadius: innerR,
+            outerRadius: outerR,
+            ringTexture: getNeptuneRingTexture(),
+            planetRadius: displayRadius,
+          });
+          const ringMesh = new THREE.Mesh(ringGeo, this.neptuneRingMaterial);
+          ringMesh.rotation.z = THREE.MathUtils.degToRad(data.axialTiltDeg);
+          systemGroup.add(ringMesh);
+          node.ringMesh = ringMesh;
+        }
       }
 
       this.bodyNodes.set(id, node);
     }
 
-    // 初始化核心卫星（月球、火星卫星、伽利略四卫星、土卫六/二）
+    // 初始化太阳系全 23 颗天然卫星体系（地球、火星、木星、土星、天王星、海王星）
     const satelliteIds: BodyId[] = [
       'moon',
       'phobos',
       'deimos',
+      'amalthea',
       'io',
       'europa',
       'ganymede',
       'callisto',
-      'titan',
+      'mimas',
       'enceladus',
+      'tethys',
+      'dione',
+      'rhea',
+      'titan',
+      'hyperion',
+      'iapetus',
+      'miranda',
+      'ariel',
+      'umbriel',
+      'titania',
+      'oberon',
+      'triton',
+      'proteus',
     ];
 
     for (const satId of satelliteIds) {
@@ -515,7 +550,10 @@ export class SolarEngine {
       parentNode.systemGroup.add(satGroup);
 
       const satRadius = Math.max(0.35, getNavDisplayRadius(satData.radiusKm, satData.type));
-      const satGeo = new THREE.SphereGeometry(satRadius, 32, 24);
+      // 物理真实建模：非流体静力平衡小天体采用三轴椭球与特征陨石坑网格，告别千篇一律的圆球
+      const satGeo = satData.shapeType === 'irregular'
+        ? buildIrregularMoonGeometry(satData, satRadius)
+        : new THREE.SphereGeometry(satRadius, 32, 24);
       const satMat = new THREE.MeshStandardMaterial({
         color: satData.colorHex ?? 0xaaaaaa,
         roughness: 0.9,
@@ -525,6 +563,38 @@ export class SolarEngine {
       satMesh.rotation.z = THREE.MathUtils.degToRad(satData.axialTiltDeg || 0);
       satGroup.add(satMesh);
       this.pickableMeshes.push(satMesh);
+
+      // 卫星局部公转轨道线（优雅微弱半透明环，直观呈现多星系同心轨道分布）
+      let satOrbitLine: THREE.LineLoop | undefined;
+      if (satData.orbitSemiMajorAxisKm > 0) {
+        const parentR = getNavDisplayRadius(parentNode.data.radiusKm, parentNode.data.type);
+        const baseClearance = parentNode.data.ringConfig
+          ? parentR * (parentNode.data.ringConfig.outerRadiusRatio + 0.35)
+          : parentR * 1.55;
+        const normDist = Math.pow((satData.orbitSemiMajorAxisKm || 100000) / 100000.0, 0.52);
+        const visualOrbitR = baseClearance + normDist * (parentR * 0.95);
+        const incRad = THREE.MathUtils.degToRad(satData.orbitalInclinationDeg || 0);
+
+        const pts: THREE.Vector3[] = [];
+        const segs = 64;
+        for (let i = 0; i <= segs; i++) {
+          const a = (i / segs) * Math.PI * 2;
+          pts.push(new THREE.Vector3(
+            visualOrbitR * Math.cos(a),
+            visualOrbitR * Math.sin(a) * Math.sin(incRad),
+            visualOrbitR * Math.sin(a) * Math.cos(incRad)
+          ));
+        }
+        const satOrbitGeo = new THREE.BufferGeometry().setFromPoints(pts);
+        const satOrbitMat = new THREE.LineBasicMaterial({
+          color: satData.colorHex ?? 0x64748b,
+          transparent: true,
+          opacity: 0.22,
+        });
+        satOrbitLine = new THREE.LineLoop(satOrbitGeo, satOrbitMat);
+        satOrbitLine.visible = this.showOrbits;
+        parentNode.systemGroup.add(satOrbitLine);
+      }
 
       let satHalo: THREE.Mesh | undefined;
       let satCloudMesh: THREE.Mesh | undefined;
@@ -554,6 +624,7 @@ export class SolarEngine {
         material: satMat,
         cloudMesh: satCloudMesh,
         haloMesh: satHalo,
+        orbitLine: satOrbitLine,
       });
     }
   }
@@ -621,88 +692,54 @@ export class SolarEngine {
 
     }).catch((e) => console.error('[Texture] Moon load failed:', e));
 
-    // 4.1 挂载核心卫星专属高拟真科学地貌纹理
-    const ioNode = this.bodyNodes.get('io');
-    if (ioNode) {
-      const mat = ioNode.mesh.material as THREE.MeshStandardMaterial;
-      mat.color.set(0xffffff);
-      mat.map = getIoTexture();
-      mat.roughness = 0.85;
-      mat.needsUpdate = true;
-    }
+    // 4.1 挂载全 23 颗天然卫星高拟真科学地貌纹理
+    const allMoonIds: BodyId[] = [
+      'phobos',
+      'deimos',
+      'amalthea',
+      'io',
+      'europa',
+      'ganymede',
+      'callisto',
+      'mimas',
+      'enceladus',
+      'tethys',
+      'dione',
+      'rhea',
+      'titan',
+      'hyperion',
+      'iapetus',
+      'miranda',
+      'ariel',
+      'umbriel',
+      'titania',
+      'oberon',
+      'triton',
+      'proteus',
+    ];
 
-    const europaNode = this.bodyNodes.get('europa');
-    if (europaNode) {
-      const mat = europaNode.mesh.material as THREE.MeshStandardMaterial;
-      mat.color.set(0xffffff);
-      mat.map = getEuropaTexture();
-      mat.roughness = 0.45;
-      mat.metalness = 0.08;
-      mat.needsUpdate = true;
-    }
-
-    const enceladusNode = this.bodyNodes.get('enceladus');
-    if (enceladusNode) {
-      const mat = enceladusNode.mesh.material as THREE.MeshStandardMaterial;
-      mat.color.set(0xffffff);
-      mat.map = getEnceladusTexture();
-      mat.roughness = 0.35;
-      mat.needsUpdate = true;
-    }
-
-    const titanNode = this.bodyNodes.get('titan');
-    if (titanNode) {
-      // 内部：卡西尼 938nm 近红外穿透地表
-      const surfMat = titanNode.mesh.material as THREE.MeshStandardMaterial;
-      surfMat.color.set(0xffffff);
-      surfMat.map = getTitanNearInfraredTexture();
-      surfMat.roughness = 0.85;
-      surfMat.needsUpdate = true;
-
-      // 外部：可见光橘黄光化学烟雾大气层
-      if (titanNode.cloudMesh) {
-        const atmMat = titanNode.cloudMesh.material as THREE.MeshStandardMaterial;
-        atmMat.color.set(0xffffff);
-        atmMat.map = getTitanHazeTexture();
-        atmMat.roughness = 0.95;
-        atmMat.needsUpdate = true;
+    for (const satId of allMoonIds) {
+      const satNode = this.bodyNodes.get(satId);
+      if (!satNode) continue;
+      const tex = getMoonTextureByBodyId(satId);
+      if (tex) {
+        const mat = satNode.mesh.material as THREE.MeshStandardMaterial;
+        mat.color.set(0xffffff);
+        mat.map = tex;
+        mat.roughness = satId === 'europa' ? 0.45 : satId === 'enceladus' ? 0.35 : 0.88;
+        mat.metalness = satId === 'europa' ? 0.08 : 0.02;
+        mat.needsUpdate = true;
       }
     }
 
-    const ganymedeNode = this.bodyNodes.get('ganymede');
-    if (ganymedeNode) {
-      const mat = ganymedeNode.mesh.material as THREE.MeshStandardMaterial;
-      mat.color.set(0xffffff);
-      mat.map = getGanymedeTexture();
-      mat.roughness = 0.88;
-      mat.needsUpdate = true;
-    }
-
-    const callistoNode = this.bodyNodes.get('callisto');
-    if (callistoNode) {
-      const mat = callistoNode.mesh.material as THREE.MeshStandardMaterial;
-      mat.color.set(0xffffff);
-      mat.map = getCallistoTexture();
-      mat.roughness = 0.9;
-      mat.needsUpdate = true;
-    }
-
-    const phobosNode = this.bodyNodes.get('phobos');
-    if (phobosNode) {
-      const mat = phobosNode.mesh.material as THREE.MeshStandardMaterial;
-      mat.color.set(0xffffff);
-      mat.map = getMarsMoonTexture(true);
-      mat.roughness = 0.92;
-      mat.needsUpdate = true;
-    }
-
-    const deimosNode = this.bodyNodes.get('deimos');
-    if (deimosNode) {
-      const mat = deimosNode.mesh.material as THREE.MeshStandardMaterial;
-      mat.color.set(0xffffff);
-      mat.map = getMarsMoonTexture(false);
-      mat.roughness = 0.92;
-      mat.needsUpdate = true;
+    // 土卫六专属：可见光浓厚橘黄光化学烟雾大气层
+    const titanNode = this.bodyNodes.get('titan');
+    if (titanNode && titanNode.cloudMesh) {
+      const atmMat = titanNode.cloudMesh.material as THREE.MeshStandardMaterial;
+      atmMat.color.set(0xffffff);
+      atmMat.map = getTitanHazeTexture();
+      atmMat.roughness = 0.95;
+      atmMat.needsUpdate = true;
     }
 
     // 5. 金星（大气与穿透地表雷达图）
@@ -998,6 +1035,11 @@ export class SolarEngine {
   public setShowOrbits(show: boolean): void {
     this.showOrbits = show;
     this.orbitLinesGroup.visible = show;
+    for (const node of this.bodyNodes.values()) {
+      if (node.orbitLine) {
+        node.orbitLine.visible = show;
+      }
+    }
   }
 
   public setShowVenusSurface(radar: boolean): void {
@@ -1161,10 +1203,21 @@ export class SolarEngine {
           }
         }
 
-        // 土星专属：更新投射到光环的太阳方向
-        if (id === 'saturn' && this.saturnRingMaterial) {
+        // 土星、天王星、海王星专属：更新投射到光环的太阳方向与行星遮挡投影
+        if (id === 'saturn' && this.saturnRingMaterial && node.ringMesh) {
           const sunDir = node.systemGroup.position.clone().negate().normalize();
-          this.saturnRingMaterial.uniforms.sunDirection.value.copy(sunDir);
+          const localSunDir = sunDir.clone().applyQuaternion(node.ringMesh.quaternion.clone().invert());
+          this.saturnRingMaterial.uniforms.sunDirection.value.copy(localSunDir);
+        }
+        if (id === 'uranus' && this.uranusRingMaterial && node.ringMesh) {
+          const sunDir = node.systemGroup.position.clone().negate().normalize();
+          const localSunDir = sunDir.clone().applyQuaternion(node.ringMesh.quaternion.clone().invert());
+          this.uranusRingMaterial.uniforms.sunDirection.value.copy(localSunDir);
+        }
+        if (id === 'neptune' && this.neptuneRingMaterial && node.ringMesh) {
+          const sunDir = node.systemGroup.position.clone().negate().normalize();
+          const localSunDir = sunDir.clone().applyQuaternion(node.ringMesh.quaternion.clone().invert());
+          this.neptuneRingMaterial.uniforms.sunDirection.value.copy(localSunDir);
         }
       }
 

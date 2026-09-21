@@ -122,7 +122,7 @@ describe('太阳系全行星与卫星系统 (Solar System Architecture & Astrono
     expect(sunMat.uniforms.time).toBeDefined();
 
     expect(coronaMat).toBeInstanceOf(THREE.ShaderMaterial);
-    expect(coronaMat.side).toBe(THREE.BackSide);
+    expect(coronaMat.side).toBe(THREE.DoubleSide);
     expect(coronaMat.blending).toBe(THREE.AdditiveBlending);
   });
 

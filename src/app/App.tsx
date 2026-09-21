@@ -50,8 +50,10 @@ const PLANET_ORDER: BodyId[] = [
 const PLANET_MOONS: Record<string, BodyId[]> = {
   earth: ['moon'],
   mars: ['phobos', 'deimos'],
-  jupiter: ['io', 'europa', 'ganymede', 'callisto'],
-  saturn: ['titan', 'enceladus'],
+  jupiter: ['amalthea', 'io', 'europa', 'ganymede', 'callisto'],
+  saturn: ['mimas', 'enceladus', 'tethys', 'dione', 'rhea', 'titan', 'hyperion', 'iapetus'],
+  uranus: ['miranda', 'ariel', 'umbriel', 'titania', 'oberon'],
+  neptune: ['triton', 'proteus'],
 };
 
 export const App: React.FC = () => {
@@ -576,6 +578,9 @@ export const App: React.FC = () => {
             border: '1px solid rgba(56, 189, 248, 0.3)',
             boxShadow: '0 4px 20px rgba(0,0,0,0.65)',
             zIndex: 15,
+            maxWidth: '92vw',
+            overflowX: 'auto',
+            scrollbarWidth: 'none',
           }}
         >
           <span style={{ fontSize: 10, color: '#94a3b8', marginRight: 4 }}>🛰️ 卫星:</span>
