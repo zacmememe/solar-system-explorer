@@ -418,25 +418,28 @@ export function getNavOrbitRadius(semiMajorAxisKm: number): number {
 
 /**
  * 导航尺度（宏观全景）下的天体展示视觉半径
- * 避免小行星在百个单位视距下变成不可见的 0 像素黑点，保证点击拾取与亲子可识别性
+ * 采用对数连续映射保留真实物理比例感：
+ *   水星 (2440km)   → 0.55   土星 (58232km)  → 3.80
+ *   火星 (3390km)   → 0.70   木星 (69911km)  → 4.20
+ *   地球 (6371km)   → 0.95   天王星(25362km) → 2.35
+ *   金星 (6052km)   → 0.92   海王星(24622km) → 2.30
+ * 最小展示半径 0.40（微卫星），最大 4.20（木星）
+ * 太阳固定 7.0 以彰显中心主导地位
  */
 export function getNavDisplayRadius(radiusKm: number, type: string): number {
   if (type === 'star') {
-    return 7.0; // 太阳在宏观下适度显眼，但不吞噬水星轨道
+    return 7.0; // 太阳固定大小，主导全景视野
   }
-  if (radiusKm > 50000) {
-    return 3.2; // 木星、土星气态巨行星
-  }
-  if (radiusKm > 20000) {
-    return 2.2; // 天王星、海王星冰巨星
-  }
-  if (radiusKm > 4000) {
-    return 1.4; // 地球、金星类地行星
-  }
-  if (radiusKm > 1000) {
-    return 1.0; // 水星、火星、月球
-  }
-  return 0.6; // 小卫星
+  // 对数连续映射：以木星半径为上锚 (4.20)，以水星半径为下锚 (0.55)
+  // scale = log(r / r_min) / log(r_max / r_min)，然后线性插值到 [minDisplay, maxDisplay]
+  const R_MIN = 2439.7;   // 水星半径 (km)
+  const R_MAX = 69911.0;  // 木星半径 (km)
+  const D_MIN = 0.40;     // 最小展示半径
+  const D_MAX = 4.20;     // 最大展示半径（木星）
+
+  const rClamped = Math.max(R_MIN * 0.05, Math.min(radiusKm, R_MAX));
+  const logScale = Math.log(rClamped / (R_MIN * 0.05)) / Math.log(R_MAX / (R_MIN * 0.05));
+  return D_MIN + logScale * (D_MAX - D_MIN);
 }
 
 const PLANET_INITIAL_PHASES: Record<string, number> = {
