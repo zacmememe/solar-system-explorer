@@ -417,29 +417,32 @@ export function getNavOrbitRadius(semiMajorAxisKm: number): number {
 }
 
 /**
- * 导航尺度（宏观全景）下的天体展示视觉半径
- * 采用对数连续映射保留真实物理比例感：
- *   水星 (2440km)   → 0.55   土星 (58232km)  → 3.80
- *   火星 (3390km)   → 0.70   木星 (69911km)  → 4.20
- *   地球 (6371km)   → 0.95   天王星(25362km) → 2.35
- *   金星 (6052km)   → 0.92   海王星(24622km) → 2.30
- * 最小展示半径 0.40（微卫星），最大 4.20（木星）
- * 太阳固定 7.0 以彰显中心主导地位
+ * 导航尺度（宏观全景与微观特写）下的天体展示视觉半径
+ * 采用视觉感知幂律缩放 (Perceptual Power-Law, γ = 0.52)，以地球 (6371km) = 1.35 为基准：
+ *   太阳 (696340km) → 8.50 (中心霸主，光辉灿烂)
+ *   木星 (69911km)  → 4.70 (气态巨行星霸主，盘面面积约为地球 12 倍)
+ *   土星 (58232km)  → 4.27 (含光环延伸至 10.03，宏伟震撼)
+ *   天王星(25362km) → 2.77 (冰巨星，清晰介于气态巨星与类地行星之间)
+ *   海王星(24622km) → 2.73 (冰巨星)
+ *   地球 (6371km)   → 1.35 (类地行星基准)
+ *   金星 (6052km)   → 1.31 (地球姊妹星)
+ *   火星 (3390km)   → 0.97 (袖珍红色星球)
+ *   水星 (2440km)   → 0.82 (最内侧致密岩石星)
+ *   月球 (1737km)   → 0.69 (卫星自然层级)
+ *   微卫星          → 最小保底 0.38-0.42，确保拾取命中与亲子辨识
  */
 export function getNavDisplayRadius(radiusKm: number, type: string): number {
   if (type === 'star') {
-    return 7.0; // 太阳固定大小，主导全景视野
+    return 8.5; // 太阳在宏观全景中具有绝对统领感，同时不遮挡水星轨道 (半长轴 ~18.0)
   }
-  // 对数连续映射：以木星半径为上锚 (4.20)，以水星半径为下锚 (0.55)
-  // scale = log(r / r_min) / log(r_max / r_min)，然后线性插值到 [minDisplay, maxDisplay]
-  const R_MIN = 2439.7;   // 水星半径 (km)
-  const R_MAX = 69911.0;  // 木星半径 (km)
-  const D_MIN = 0.40;     // 最小展示半径
-  const D_MAX = 4.20;     // 最大展示半径（木星）
 
-  const rClamped = Math.max(R_MIN * 0.05, Math.min(radiusKm, R_MAX));
-  const logScale = Math.log(rClamped / (R_MIN * 0.05)) / Math.log(R_MAX / (R_MIN * 0.05));
-  return D_MIN + logScale * (D_MAX - D_MIN);
+  // 幂律映射：R_display = 1.35 * (radiusKm / 6371.0) ^ 0.52
+  // 在保留天文学真实体积量级层级的同时，压缩过大的物理动态范围
+  const normalized = Math.max(10.0, radiusKm) / 6371.0;
+  const computed = 1.35 * Math.pow(normalized, 0.52);
+
+  // 约束范围：微小卫星保底 0.38，巨行星上限 4.70
+  return Math.max(0.38, Math.min(4.70, computed));
 }
 
 const PLANET_INITIAL_PHASES: Record<string, number> = {

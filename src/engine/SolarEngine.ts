@@ -125,8 +125,7 @@ export class SolarEngine {
   private currentVehicleId: VehicleId | null = 'apollo-lm';
   private vehicleGroup: THREE.Group = new THREE.Group();
   private currentVehicleMesh: THREE.Group | null = null;
-  private viewCameraMode: ViewCameraMode = 'VEHICLE_FORMATION';
-  private vehicleOrbitAngle: number = 0;
+  private viewCameraMode: ViewCameraMode = 'PLANET_OBSERVE';
 
   // 动画与时钟
   private isRunning: boolean = true;
@@ -1218,37 +1217,8 @@ export class SolarEngine {
         this.vehicleGroup.position.set(0.0, -0.42, -1.35);
         this.vehicleGroup.rotation.set(0.06, 0, 0);
       } else {
-        if (this.vehicleGroup.parent !== this.scene) {
-          this.scene.add(this.vehicleGroup);
-        }
-        // PLANET_OBSERVE: 航天器在当前目标星球轨道优雅巡航
-        const targetId = this.cameraController.getSnapshot().targetBodyId;
-        const targetNode = (targetId ? this.bodyNodes.get(targetId) : null) || this.bodyNodes.get('earth');
-        if (targetNode) {
-          this.vehicleGroup.visible = true;
-          const worldPos = new THREE.Vector3();
-          targetNode.mesh.getWorldPosition(worldPos);
-          const orbitR = targetNode.displayRadius * 1.55;
-          this.vehicleOrbitAngle += deltaSec * 0.25;
-
-          const orbitScale = Math.max(targetNode.displayRadius * 0.09, 0.45) / origDim;
-          this.currentVehicleMesh.scale.setScalar(orbitScale);
-
-          const vx = worldPos.x + Math.cos(this.vehicleOrbitAngle) * orbitR;
-          const vy = worldPos.y + Math.sin(this.vehicleOrbitAngle * 0.8) * (orbitR * 0.2);
-          const vz = worldPos.z + Math.sin(this.vehicleOrbitAngle) * orbitR;
-
-          this.vehicleGroup.position.set(vx, vy, vz);
-
-          const tangent = new THREE.Vector3(
-            -Math.sin(this.vehicleOrbitAngle),
-            0.1,
-            Math.cos(this.vehicleOrbitAngle)
-          ).normalize();
-          this.vehicleGroup.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), tangent);
-        } else {
-          this.vehicleGroup.visible = false;
-        }
+        // PLANET_OBSERVE: 纯净行星全景观测，隐藏航天器以确保宏伟的天体、星环与微卫星视野不受遮挡
+        this.vehicleGroup.visible = false;
       }
     } else {
       this.vehicleGroup.visible = false;

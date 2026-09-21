@@ -78,7 +78,7 @@ export const App: React.FC = () => {
 
   // 载具与伴飞视角系统
   const [currentVehicleId, setCurrentVehicleId] = useState<VehicleId | null>('apollo-lm');
-  const [viewCameraMode, setViewCameraMode] = useState<ViewCameraMode>('VEHICLE_FORMATION');
+  const [viewCameraMode, setViewCameraMode] = useState<ViewCameraMode>('PLANET_OBSERVE');
   const [showHangar, setShowHangar] = useState<boolean>(false);
 
   // 观察点与书签系统
