@@ -8,6 +8,7 @@ import { VEHICLE_CATALOG } from '../vehicles/VehicleCatalog';
 import { HangarModal } from '../vehicles/HangarModal';
 import { PostcardModal } from '../vehicles/PostcardModal';
 import { BookmarkModal } from './BookmarkModal';
+import { TrajectoryArcHUD } from './TrajectoryArcHUD';
 import type { BookmarkItem } from '../contracts/bookmark';
 import { generateDiscoveryPostcard } from '../utils/postcard';
 import {
@@ -1125,6 +1126,14 @@ export const App: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* 底部中央：SpaceX 极简航空风格动态星际航程与天体相对位置仪表弧 (TrajectoryArcHUD) */}
+      <TrajectoryArcHUD
+        selectedBodyId={selectedBodyId}
+        cameraSnapshot={cameraSnapshot}
+        onSelectBody={handleFlyTo}
+        timeScale={timeScale}
+      />
 
       {/* 右下角：SpaceX 极简航空风格天体科学遥测 HUD (TargetScienceHUD) */}
       <aside

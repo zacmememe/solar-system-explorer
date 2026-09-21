@@ -12,6 +12,8 @@ export interface CameraStateSnapshot {
   mode: CameraMode;
   targetBodyId: BodyId | null;
   selectedBodyId: BodyId | null;
+  sourceBodyId?: BodyId | null;
+  transitionProgress?: number;
   distanceToTarget: number;
   minDistance: number;
   maxDistance: number;

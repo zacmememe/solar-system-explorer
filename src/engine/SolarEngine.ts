@@ -1399,10 +1399,12 @@ export class SolarEngine {
       };
     });
 
-    // 飞行状态变化监听：飞行结束切入 ORBIT_TARGET 时立即同步状态给 UI
+    // 飞行状态变化监听：飞行结束切入 ORBIT_TARGET 时立即同步状态给 UI，飞行过程中同步实时插值进度
     const isTransitioningNow = this.cameraController.getSnapshot().isTransitioning;
     if (this.prevIsTransitioning !== isTransitioningNow) {
       this.prevIsTransitioning = isTransitioningNow;
+      this.emitSnapshot();
+    } else if (isTransitioningNow) {
       this.emitSnapshot();
     }
 

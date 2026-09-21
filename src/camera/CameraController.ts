@@ -24,6 +24,7 @@ export class CameraController {
   private mode: CameraMode = 'ORBIT_TARGET';
   private targetBodyId: BodyId = 'earth';
   private selectedBodyId: BodyId = 'earth';
+  private sourceBodyId: BodyId | null = 'earth';
 
   // 观察状态（球坐标：相对于 targetPosition）
   private targetPosition: THREE.Vector3 = new THREE.Vector3(0, 0, 0);
@@ -63,6 +64,8 @@ export class CameraController {
       mode: this.mode,
       targetBodyId: this.targetBodyId,
       selectedBodyId: this.selectedBodyId,
+      sourceBodyId: this.sourceBodyId,
+      transitionProgress: this.transitionProgress,
       distanceToTarget: this.spherical.radius,
       minDistance: this.minDistance,
       maxDistance: this.maxDistance,
@@ -162,6 +165,7 @@ export class CameraController {
   ): void {
     if (token !== this.currentCommandId) return;
 
+    this.sourceBodyId = this.targetBodyId || this.selectedBodyId || 'earth';
     this.isTransitioning = true;
     this.mode = 'TRANSITION';
     this.targetBodyId = targetId;
@@ -233,6 +237,7 @@ export class CameraController {
   private initiateOverviewFlight(token: number, durationSec: number = 2.5): void {
     if (token !== this.currentCommandId) return;
 
+    this.sourceBodyId = this.targetBodyId || this.selectedBodyId || 'earth';
     this.isTransitioning = true;
     this.mode = 'TRANSITION';
     this.targetBodyId = 'sun';
@@ -258,6 +263,7 @@ export class CameraController {
   ): void {
     if (token !== this.currentCommandId) return;
 
+    this.sourceBodyId = this.targetBodyId || this.selectedBodyId || 'earth';
     this.isTransitioning = true;
     this.mode = 'TRANSITION';
     this.targetBodyId = targetId;

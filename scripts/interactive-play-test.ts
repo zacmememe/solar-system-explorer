@@ -94,7 +94,9 @@ async function main() {
     // 5. 飞往木星与木卫二 Europa
     console.log('🚀 飞往木星 (Jupiter)...');
     await page.click('button[data-testid="planet-btn-jupiter"]');
-    await sleep(3200);
+    await sleep(1000);
+    await capture('play-09-interplanetary-flight-arc.png', '星际霍曼转移航程推进弧（飞船实时推进）');
+    await sleep(2400);
     await page.waitForSelector('button[data-testid="moon-btn-europa"]');
     await page.click('button[data-testid="moon-btn-europa"]');
     await sleep(3200);
