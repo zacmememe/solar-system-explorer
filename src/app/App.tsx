@@ -61,7 +61,7 @@ export const App: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<SolarEngine | null>(null);
 
-  const [selectedBodyId, setSelectedBodyId] = useState<BodyId>('sun');
+  const [selectedBodyId, setSelectedBodyId] = useState<BodyId>('earth');
   const [cameraSnapshot, setCameraSnapshot] = useState<CameraStateSnapshot | null>(null);
   const [webglInfo, setWebglInfo] = useState<WebGLDiagnosticInfo | null>(null);
   const [isPaused, setIsPaused] = useState<boolean>(false);
@@ -954,7 +954,7 @@ export const App: React.FC = () => {
                   position: 'absolute',
                   left: `${lbl.screenX}px`,
                   top: `${lbl.screenY}px`,
-                  transform: 'translate(-50%, -100%) translateY(-14px)',
+                  transform: 'translate(-50%, -100%)',
                   pointerEvents: 'auto',
                   cursor: 'pointer',
                   display: 'flex',

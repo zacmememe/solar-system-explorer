@@ -4,7 +4,7 @@
     "name": "页面启动与控制台无未捕获异常",
     "category": "环境与资产",
     "status": "PASS",
-    "detail": "耗时 6673ms，无未处理异常"
+    "detail": "耗时 7869ms，无未处理异常"
   },
   {
     "id": "ENV-02",

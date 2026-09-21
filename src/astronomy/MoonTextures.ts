@@ -238,18 +238,31 @@ export function getEuropaTexture(): THREE.Texture {
   const imgData = ctx.createImageData(W, H);
   const data = imgData.data;
 
-  // 定义环球主要大裂谷大圆法向量 (大圆公式: n·p ≈ 0 时在裂缝上)
+  // 定义环球主要大裂谷与次级裂隙大圆法向量 (16道多尺度冰裂隙网络)
   const lineaePlanes = [
-    { nx: 0.35, ny: 0.85, nz: 0.38, width: 0.038, colR: 130, colG: 45, colB: 28 },
-    { nx: -0.72, ny: 0.45, nz: 0.52, width: 0.042, colR: 140, colG: 50, colB: 32 },
-    { nx: 0.65, ny: -0.38, nz: 0.65, width: 0.035, colR: 125, colG: 42, colB: 26 },
-    { nx: -0.28, ny: -0.88, nz: 0.38, width: 0.045, colR: 135, colG: 48, colB: 30 },
-    { nx: 0.82, ny: 0.32, nz: -0.46, width: 0.032, colR: 120, colG: 40, colB: 24 },
-    { nx: -0.45, ny: 0.72, nz: -0.52, width: 0.030, colR: 130, colG: 44, colB: 28 },
+    // 1. 主要跨半球双脊大裂谷 (Major Cycloid Lineae)
+    { nx: 0.35, ny: 0.85, nz: 0.38, width: 0.022, colR: 145, colG: 48, colB: 28, doubleRidge: true },
+    { nx: -0.72, ny: 0.45, nz: 0.52, width: 0.024, colR: 152, colG: 52, colB: 32, doubleRidge: true },
+    { nx: 0.65, ny: -0.38, nz: 0.65, width: 0.020, colR: 138, colG: 44, colB: 26, doubleRidge: true },
+    { nx: -0.28, ny: -0.88, nz: 0.38, width: 0.025, colR: 148, colG: 50, colB: 30, doubleRidge: true },
+    { nx: 0.82, ny: 0.32, nz: -0.46, width: 0.018, colR: 132, colG: 42, colB: 24, doubleRidge: true },
+    { nx: -0.45, ny: 0.72, nz: -0.52, width: 0.019, colR: 140, colG: 46, colB: 28, doubleRidge: true },
+    // 2. 细密次级张性断裂带 (Secondary Fractures)
+    { nx: 0.15, ny: -0.92, nz: -0.35, width: 0.012, colR: 130, colG: 45, colB: 28, doubleRidge: false },
+    { nx: -0.55, ny: -0.25, nz: 0.79, width: 0.011, colR: 135, colG: 48, colB: 30, doubleRidge: false },
+    { nx: 0.42, ny: 0.65, nz: -0.63, width: 0.013, colR: 125, colG: 40, colB: 25, doubleRidge: false },
+    { nx: -0.85, ny: 0.12, nz: -0.51, width: 0.010, colR: 128, colG: 42, colB: 26, doubleRidge: false },
+    { nx: 0.22, ny: 0.48, nz: 0.85, width: 0.014, colR: 142, colG: 50, colB: 30, doubleRidge: false },
+    { nx: -0.38, ny: 0.82, nz: 0.43, width: 0.009, colR: 120, colG: 38, colB: 22, doubleRidge: false },
+    { nx: 0.71, ny: -0.62, nz: -0.33, width: 0.011, colR: 136, colG: 46, colB: 28, doubleRidge: false },
+    { nx: -0.18, ny: 0.35, nz: -0.92, width: 0.013, colR: 132, colG: 44, colB: 27, doubleRidge: false },
+    { nx: 0.58, ny: 0.75, nz: 0.31, width: 0.010, colR: 124, colG: 39, colB: 24, doubleRidge: false },
+    { nx: -0.68, ny: -0.55, nz: 0.48, width: 0.012, colR: 130, colG: 42, colB: 26, doubleRidge: false },
   ];
 
   // 柯纳马拉混沌地形中心 (Conamara Chaos: lat 12°N, lon -87°)
-  const chaosCenter = latLonToVec3(12.0, -87.0);
+  const chaosCenter1 = latLonToVec3(12.0, -87.0);
+  const chaosCenter2 = latLonToVec3(-22.0, 45.0);
 
   for (let y = 0; y < H; y++) {
     const phi = (0.5 - y / H) * Math.PI;
@@ -266,42 +279,49 @@ export function getEuropaTexture(): THREE.Texture {
       const nDetail = fbm3D(px * 18.0, py * 18.0, pz * 18.0, 3);
 
       // 高反照率纯净水冰底色（微蓝浅灰白）
-      let r = 232 + (nBase - 0.5) * 16;
-      let g = 236 + (nBase - 0.5) * 14;
-      let b = 244 + (nBase - 0.5) * 10;
+      let r = 236 + (nBase - 0.5) * 14;
+      let g = 240 + (nBase - 0.5) * 12;
+      let b = 248 + (nBase - 0.5) * 8;
 
       // 计算红褐色双脊线裂缝 (Lineae)
       for (const lp of lineaePlanes) {
-        // 大圆距离 + 扰动微褶皱
-        const planeDist = Math.abs(px * lp.nx + py * lp.ny + pz * lp.nz);
-        const perturbedDist = planeDist + (nDetail - 0.5) * 0.015;
+        // 真实木星潮汐应力摆线弧形微弯 (Cycloidal curvature arcs)
+        const cycloidCurve = Math.sin(px * 5.5 + pz * 5.0) * 0.012 + Math.cos(py * 6.8) * 0.006;
+        const planeDist = Math.abs(px * lp.nx + py * lp.ny + pz * lp.nz + cycloidCurve);
+        const perturbedDist = planeDist + (nDetail - 0.5) * 0.006;
 
         if (perturbedDist < lp.width) {
           const t = perturbedDist / lp.width; // 0=中心凹槽，1=边缘
           // 宽带水合盐与索林斯矿物晕染扩散
-          const haloWeight = Math.pow(1.0 - t, 1.5) * 0.65;
+          const haloWeight = Math.pow(1.0 - t, 1.4) * 0.70;
           r = r * (1 - haloWeight) + lp.colR * haloWeight;
           g = g * (1 - haloWeight) + lp.colG * haloWeight;
           b = b * (1 - haloWeight) + lp.colB * haloWeight;
 
           // 双脊结构：中央深凹槽 + 两侧亮脊
-          if (t < 0.28) {
-            // 中心深裂缝
-            const ridgeDepth = (1.0 - t / 0.28) * 0.35;
-            r = r * (1 - ridgeDepth) + 75 * ridgeDepth;
-            g = g * (1 - ridgeDepth) + 24 * ridgeDepth;
-            b = b * (1 - ridgeDepth) + 15 * ridgeDepth;
+          if (lp.doubleRidge && t < 0.32) {
+            const ridgeDepth = (1.0 - t / 0.32) * 0.45;
+            r = r * (1 - ridgeDepth) + 68 * ridgeDepth;
+            g = g * (1 - ridgeDepth) + 20 * ridgeDepth;
+            b = b * (1 - ridgeDepth) + 12 * ridgeDepth;
           }
         }
       }
 
-      // 柯纳马拉混沌碎冰块地形 (Conamara Chaos)
-      const distChaos = angularDistance(px, py, pz, chaosCenter[0], chaosCenter[1], chaosCenter[2]);
-      if (distChaos < 0.22) {
-        const chaosFactor = Math.pow(1.0 - distChaos / 0.22, 1.5) * (0.35 + (nDetail - 0.5) * 0.3);
+      // 混沌碎冰块地形 (Conamara & Powys Chaos)
+      const distChaos1 = angularDistance(px, py, pz, chaosCenter1[0], chaosCenter1[1], chaosCenter1[2]);
+      if (distChaos1 < 0.22) {
+        const chaosFactor = Math.pow(1.0 - distChaos1 / 0.22, 1.5) * (0.35 + (nDetail - 0.5) * 0.3);
         r = r * (1 - chaosFactor) + 145 * chaosFactor;
         g = g * (1 - chaosFactor) + 68 * chaosFactor;
         b = b * (1 - chaosFactor) + 42 * chaosFactor;
+      }
+      const distChaos2 = angularDistance(px, py, pz, chaosCenter2[0], chaosCenter2[1], chaosCenter2[2]);
+      if (distChaos2 < 0.18) {
+        const chaosFactor = Math.pow(1.0 - distChaos2 / 0.18, 1.5) * (0.32 + (nDetail - 0.5) * 0.25);
+        r = r * (1 - chaosFactor) + 152 * chaosFactor;
+        g = g * (1 - chaosFactor) + 72 * chaosFactor;
+        b = b * (1 - chaosFactor) + 45 * chaosFactor;
       }
 
       const idx = (y * W + x) * 4;
@@ -1385,7 +1405,7 @@ export function getTritonTexture(): THREE.Texture {
   if (tritonTexCache) return tritonTexCache;
   if (typeof document === 'undefined') return (tritonTexCache = createFallbackTexture(103, 232, 249));
 
-  const W = 512, H = 256;
+  const W = 1024, H = 512;
   const canvas = document.createElement('canvas');
   canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext('2d');
@@ -1406,23 +1426,47 @@ export function getTritonTexture(): THREE.Texture {
       const py = sinP;
       const pz = cosP * Math.sin(theta);
 
-      // 哈密瓜皮构造地形 (Cantaloupe terrain: 多凹陷网络)
-      const cantaloupe = Math.sin(px * 24.0) * Math.sin(py * 24.0) * Math.sin(pz * 24.0);
-      let r = 205 + cantaloupe * 25;
-      let g = 225 + cantaloupe * 20;
-      let b = 238 + cantaloupe * 15;
+      // 真实哈密瓜皮凹陷地形 (Cantaloupe terrain: 多重分形有机蜂窝多边形凹槽)
+      const c1 = fbm3D(px * 14.0, py * 14.0, pz * 14.0, 3);
+      const c2 = fbm3D(px * 28.0, py * 28.0, pz * 28.0, 2);
+      const cantaloupe = (c1 * 0.7 + c2 * 0.3 - 0.5) * 2.0;
 
-      // 南极粉白氮冰极冠 (South Polar Nitrogen Ice Cap)
-      if (latDeg < -20.0) {
-        const polar = Math.pow((-latDeg - 20.0) / 70.0, 1.2);
-        r = r * (1 - polar) + 245 * polar;
-        g = g * (1 - polar) + 218 * polar;
-        b = b * (1 - polar) + 225 * polar;
+      // 极寒低温青蓝灰色水冰与甲烷基底
+      let r = 212 + cantaloupe * 22;
+      let g = 228 + cantaloupe * 16;
+      let b = 238 + cantaloupe * 12;
 
-        // 液氮冰火山黑色烟尘条带 (Cryovolcanic Geyser Streaks)
-        const geyser = Math.sin(px * 18.0 + py * 32.0);
-        if (geyser > 0.88) {
-          r *= 0.25; g *= 0.25; b *= 0.25;
+      // 南极粉白微红氮冰极冠 (South Polar Nitrogen-Methane Ice Cap: 延伸至赤道以南)
+      if (latDeg < -10.0) {
+        const polar = Math.pow((-latDeg - 10.0) / 80.0, 1.15);
+        r = r * (1 - polar) + 246 * polar;
+        g = g * (1 - polar) + 214 * polar;
+        b = b * (1 - polar) + 218 * polar;
+
+        // 真实液氮冰火山黑色羽流风蚀沉降扇 (Cryovolcanic Geyser Plumes: Voyager 2 观测到的暗色羽流)
+        // 8 处离散主喷口 + 随高空风向东北向拉长的扇形黑色烟尘沉降
+        for (let gi = 0; gi < 8; gi++) {
+          const gLat = -25.0 - gi * 7.5;
+          const gLon = -140.0 + gi * 44.0 + Math.sin(gi * 2.3) * 18.0;
+          const gCenter = latLonToVec3(gLat, gLon);
+          const ventDist = angularDistance(px, py, pz, gCenter[0], gCenter[1], gCenter[2]);
+          if (ventDist < 0.045) {
+            const ventFactor = Math.pow(1.0 - ventDist / 0.045, 1.8) * 0.90;
+            r = r * (1 - ventFactor) + 16 * ventFactor;
+            g = g * (1 - ventFactor) + 14 * ventFactor;
+            b = b * (1 - ventFactor) + 12 * ventFactor;
+          }
+
+          const dTheta = theta - (gLon * Math.PI) / 180.0;
+          const dPhi = phi - (gLat * Math.PI) / 180.0;
+          const windDist = Math.sqrt(Math.pow(dTheta * 1.6 - dPhi * 0.7, 2) + Math.pow(dPhi * 2.0, 2));
+
+          if (windDist < 0.14 && dTheta > -0.02) {
+            const plumeDark = Math.pow(1.0 - windDist / 0.14, 1.4) * 0.82;
+            r = r * (1 - plumeDark) + 32 * plumeDark;
+            g = g * (1 - plumeDark) + 28 * plumeDark;
+            b = b * (1 - plumeDark) + 25 * plumeDark;
+          }
         }
       }
 

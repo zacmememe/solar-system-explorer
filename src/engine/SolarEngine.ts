@@ -141,6 +141,7 @@ export class SolarEngine {
   private vehicleGroup: THREE.Group = new THREE.Group();
   private currentVehicleMesh: THREE.Group | null = null;
   private viewCameraMode: ViewCameraMode = 'PLANET_OBSERVE';
+  private prevIsTransitioning: boolean = false;
 
   // 动画与时钟
   private isRunning: boolean = true;
@@ -583,10 +584,10 @@ export class SolarEngine {
       if (satData.orbitSemiMajorAxisKm > 0) {
         const parentR = getNavDisplayRadius(parentNode.data.radiusKm, parentNode.data.type);
         const baseClearance = parentNode.data.ringConfig
-          ? parentR * (parentNode.data.ringConfig.outerRadiusRatio + 0.35)
-          : parentR * 1.55;
+          ? parentR * (parentNode.data.ringConfig.outerRadiusRatio + 0.38)
+          : parentR * 2.65;
         const normDist = Math.pow((satData.orbitSemiMajorAxisKm || 100000) / 100000.0, 0.52);
-        const visualOrbitR = baseClearance + normDist * (parentR * 0.95);
+        const visualOrbitR = baseClearance + normDist * (parentR * 1.35);
         const incRad = THREE.MathUtils.degToRad(satData.orbitalInclinationDeg || 0);
 
         const pts: THREE.Vector3[] = [];
@@ -852,6 +853,8 @@ export class SolarEngine {
         const mat = node.mesh.material as THREE.MeshStandardMaterial;
         mat.color.set(0xffffff);
         mat.map = uranusTex;
+        mat.roughness = 0.65;
+        mat.metalness = 0.04;
         mat.needsUpdate = true;
       }
     }).catch((e) => console.error('[Texture] Uranus load failed:', e));
@@ -862,6 +865,8 @@ export class SolarEngine {
         const mat = node.mesh.material as THREE.MeshStandardMaterial;
         mat.color.set(0xffffff);
         mat.map = neptuneTex;
+        mat.roughness = 0.60;
+        mat.metalness = 0.04;
         mat.needsUpdate = true;
       }
     }).catch((e) => console.error('[Texture] Neptune load failed:', e));
@@ -1044,6 +1049,14 @@ export class SolarEngine {
   }
 
   public executeCameraCommand(cmd: CameraCommand): void {
+    if (cmd.type === 'flyTo' && !cmd.targetPos) {
+      const node = this.bodyNodes.get(cmd.bodyId);
+      if (node) {
+        const wp = new THREE.Vector3();
+        node.mesh.getWorldPosition(wp);
+        cmd = { ...cmd, targetPos: [wp.x, wp.y, wp.z] };
+      }
+    }
     if (cmd.type === 'flyTo' || cmd.type === 'overview' || cmd.type === 'restoreBookmark') {
       soundEffects.playWarp();
     } else if (cmd.type === 'select') {
@@ -1386,6 +1399,13 @@ export class SolarEngine {
       };
     });
 
+    // 飞行状态变化监听：飞行结束切入 ORBIT_TARGET 时立即同步状态给 UI
+    const isTransitioningNow = this.cameraController.getSnapshot().isTransitioning;
+    if (this.prevIsTransitioning !== isTransitioningNow) {
+      this.prevIsTransitioning = isTransitioningNow;
+      this.emitSnapshot();
+    }
+
     // 6. 渲染一帧
     this.renderer.render(this.scene, this.camera);
 
@@ -1403,17 +1423,34 @@ export class SolarEngine {
 
       const width = this.canvas.clientWidth || window.innerWidth;
       const height = this.canvas.clientHeight || window.innerHeight;
+      const fovRad = THREE.MathUtils.degToRad(this.camera.fov);
       const tempPos = new THREE.Vector3();
       const toBody = new THREE.Vector3();
 
       for (const [id, node] of this.bodyNodes.entries()) {
-        // 过滤策略：太阳与八大行星均投射；卫星仅在当前聚焦于其系统时投射
-        if (node.data.type === 'moon' && node.data.parentId !== targetSystemPlanet) {
+        node.mesh.getWorldPosition(tempPos);
+        toBody.subVectors(tempPos, camPos);
+        const dist = toBody.length();
+
+        // 核心视觉沉浸：如果当前正在特写观察该天体且非全景模式，隐藏本尊的浮动标签（右侧信息卡与顶部栏已明确说明）
+        if (id === currentTargetId && snap.mode !== 'OVERVIEW') {
           continue;
         }
 
-        node.mesh.getWorldPosition(tempPos);
-        toBody.subVectors(tempPos, camPos);
+        // 空间过滤：当镜头处于某一特定行星系时，仅投射太阳、母星与本系统内的卫星，杜绝数十AU外其它天体产生干扰堆叠
+        if (targetSystemPlanet && targetSystemPlanet !== 'sun') {
+          const isSun = node.data.type === 'star';
+          const isSystemPlanet = id === targetSystemPlanet;
+          const isSystemMoon = node.data.type === 'moon' && node.data.parentId === targetSystemPlanet;
+          if (!isSun && !isSystemPlanet && !isSystemMoon) {
+            continue;
+          }
+        } else {
+          // 全景模式下，微卫星不单独投射，避免全景视角下数十颗小卫星重叠混乱
+          if (node.data.type === 'moon') {
+            continue;
+          }
+        }
 
         // 剔除相机后方的天体
         if (toBody.dot(camDir) <= 0) continue;
@@ -1422,8 +1459,15 @@ export class SolarEngine {
         if (projected.z < -1.0 || projected.z > 1.0) continue;
         if (projected.x < -1.05 || projected.x > 1.05 || projected.y < -1.05 || projected.y > 1.05) continue;
 
+        // 计算屏幕空间投射半径，将标签优雅浮置于天体顶部边缘上方，绝不遮挡天体表面！
+        let effectiveR = node.displayRadius;
+        if (node.ringMesh && node.data.ringConfig) {
+          effectiveR *= (node.data.ringConfig.outerRadiusRatio * 0.75);
+        }
+        const screenRadius = (effectiveR / Math.max(0.1, dist)) * (height / (2.0 * Math.tan(fovRad / 2.0)));
+
         const screenX = ((projected.x + 1) / 2) * width;
-        const screenY = ((-projected.y + 1) / 2) * height;
+        const screenY = ((-projected.y + 1) / 2) * height - screenRadius - 8;
 
         labels.push({
           id,

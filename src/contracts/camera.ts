@@ -26,7 +26,7 @@ export interface CameraStateSnapshot {
 
 export type CameraCommand =
   | { type: 'select'; bodyId: BodyId }
-  | { type: 'flyTo'; bodyId: BodyId; durationSec?: number }
+  | { type: 'flyTo'; bodyId: BodyId; durationSec?: number; targetPos?: [number, number, number] }
   | { type: 'cancelFlight' }
   | { type: 'orbit'; deltaPhi: number; deltaTheta: number }
   | { type: 'zoom'; deltaDist: number }

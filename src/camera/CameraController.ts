@@ -89,7 +89,7 @@ export class CameraController {
 
       case 'flyTo': {
         const dur = command.durationSec ?? (this.reduceMotion ? 0.15 : 2.5);
-        this.initiateFlight(command.bodyId, dur, token);
+        this.initiateFlight(command.bodyId, dur, token, command.targetPos);
         break;
       }
 
@@ -152,8 +152,14 @@ export class CameraController {
 
   /**
    * 启动飞向指定天体动画
+   * 采用真实天文导引：将相机精准导引至向阳面（Sunlit Side）并形成绝美侧光立体阴影
    */
-  private initiateFlight(targetId: BodyId, durationSec: number, token: number): void {
+  private initiateFlight(
+    targetId: BodyId,
+    durationSec: number,
+    token: number,
+    targetPos?: [number, number, number]
+  ): void {
     if (token !== this.currentCommandId) return;
 
     this.isTransitioning = true;
@@ -166,8 +172,7 @@ export class CameraController {
     this.transitionStartSpherical.copy(this.spherical);
     this.transitionStartTargetPos.copy(this.targetPosition);
 
-    // 计算合理的目标观察距离（基于 FOV 与屏幕宽高比留白构图，横竖屏自适应）
-    // 确保天体在移动端竖屏与桌面横屏下均占据视口约 45%~60%
+    // 计算合理的目标观察距离（留白构图：天体占据视口约 45%~55% 高度，避免压迫感，并给卫星留下优雅环绕空间）
     const vFovRad = THREE.MathUtils.degToRad(this.camera.fov);
     const hFovRad = 2 * Math.atan(Math.tan(vFovRad / 2) * Math.max(0.2, this.camera.aspect));
     const limitingFovRad = Math.min(vFovRad, hFovRad);
@@ -176,7 +181,7 @@ export class CameraController {
     let baseRadius = 1.4;
     if (body) {
       if (body.type === 'star') {
-        baseRadius = 7.0; // 太阳在特写时使用舒适视界尺寸
+        baseRadius = 7.0; // 太阳特写尺寸
       } else {
         baseRadius = getNavDisplayRadius(body.radiusKm, body.type);
         if (body.ringConfig) {
@@ -184,18 +189,41 @@ export class CameraController {
         }
       }
     }
-    // 保证小卫星不至于过近（至少 0.8 场景单位），巨行星不突破视锥
     baseRadius = Math.max(0.8, baseRadius);
 
+    const framingFactor = body?.type === 'moon' ? 1.40 : 1.65;
     const targetDist = Math.max(
-      baseRadius * 1.5,
-      (baseRadius / Math.sin(limitingFovRad / 2)) * 1.25
+      baseRadius * 1.8,
+      (baseRadius / Math.sin(limitingFovRad / 2)) * framingFactor
     );
+
+    let targetTheta = this.spherical.theta + 0.25;
+    let targetPhi = Math.PI / 2.22;
+
+    // 太阳位于原点 (0, 0, 0)。
+    // 行星指向太阳的矢量为 -P_target。
+    // 在 Three.js 球坐标系中 (x = r sin(phi) sin(theta), z = r sin(phi) cos(theta))：
+    // 向阳方向的方位角 theta_sun = atan2(-Px, -Pz)。
+    // 偏转 24° (0.42 rad) 形成绝美 3/4 凸月盈亏立体侧光，太阳位于视线斜后方，杜绝逆光死黑！
+    if (targetPos && targetId !== 'sun') {
+      const px = targetPos[0];
+      const pz = targetPos[2];
+      const distFromSun = Math.sqrt(px * px + pz * pz);
+      if (distFromSun > 0.01) {
+        const thetaSun = Math.atan2(-px, -pz);
+        targetTheta = thetaSun + 0.42;
+        targetPhi = Math.PI / 2.22;
+      }
+    }
+
+    // 计算最短球面角路径，杜绝跨越 2PI 缝隙产生多圈剧烈乱转
+    const deltaTheta = THREE.MathUtils.euclideanModulo(targetTheta - this.spherical.theta + Math.PI, 2 * Math.PI) - Math.PI;
+    const finalTheta = this.spherical.theta + deltaTheta;
 
     this.transitionTargetSpherical.set(
       targetDist,
-      Math.PI / 2.3,
-      this.spherical.theta + 0.25 // 轻微自然过渡角
+      targetPhi,
+      finalTheta
     );
   }
 

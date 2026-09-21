@@ -822,14 +822,14 @@ export function getSatelliteNavPosition(
   const parent = BODIES[sat.parentId];
   const parentR = parent ? getNavDisplayRadius(parent.radiusKm, parent.type) : 3.0;
 
-  // 基础净距：行星半径加上额外安全观察间距（避免被光环或大气遮挡）
+  // 基础净距：行星半径加上额外安全观察间距（避免被光环遮挡，或与特写相机视界穿模挤压）
   const baseClearance = parent?.ringConfig
-    ? parentR * (parent.ringConfig.outerRadiusRatio + 0.35)
-    : parentR * 1.55;
+    ? parentR * (parent.ringConfig.outerRadiusRatio + 0.38)
+    : parentR * 2.65;
 
   // 依据真实半长轴平滑幂次扩展，卫星从内到外错落有致
   const normDist = Math.pow((sat.orbitSemiMajorAxisKm || 100000) / 100000.0, 0.52);
-  const visualOrbitR = baseClearance + normDist * (parentR * 0.95);
+  const visualOrbitR = baseClearance + normDist * (parentR * 1.35);
 
   const periodHours = sat.orbitPeriodDays * 24.0;
   const initialPhase = SATELLITE_INITIAL_PHASES[satelliteId] || 0;
