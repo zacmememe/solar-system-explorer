@@ -208,3 +208,95 @@ export function getNeptuneRingTexture(): THREE.Texture {
   tex.wrapT = THREE.ClampToEdgeWrapping;
   return tex;
 }
+
+export interface RingShadowPlanetMaterialOptions {
+  planetTexture: THREE.Texture;
+  ringTexture: THREE.Texture;
+  innerRadius: number;
+  outerRadius: number;
+}
+
+/**
+ * 行星本体受光环投射阴影材质 (Ring Shadow on Planet Globe)
+ * 依据卡西尼号/旅行者号物理观测：
+ * 当阳光照射行星赤道附近的浓厚云层时，位于赤道平面的高密光环将在地表投下狭长深邃的星环黑带阴影。
+ */
+export function createRingShadowPlanetMaterial(
+  options: RingShadowPlanetMaterialOptions
+): THREE.ShaderMaterial {
+  const { planetTexture, ringTexture, innerRadius, outerRadius } = options;
+
+  planetTexture.wrapS = THREE.RepeatWrapping;
+  planetTexture.wrapT = THREE.ClampToEdgeWrapping;
+  ringTexture.wrapS = THREE.ClampToEdgeWrapping;
+  ringTexture.wrapT = THREE.ClampToEdgeWrapping;
+
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      planetTexture: { value: planetTexture },
+      ringTexture: { value: ringTexture },
+      innerRadius: { value: innerRadius },
+      outerRadius: { value: outerRadius },
+      sunDirection: { value: new THREE.Vector3(1, 0, 0) },
+      ambientLight: { value: 0.22 },
+      teachingLight: { value: 0.0 },
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      varying vec3 vLocalPosition;
+
+      void main() {
+        vUv = uv;
+        vLocalPosition = position;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform sampler2D planetTexture;
+      uniform sampler2D ringTexture;
+      uniform float innerRadius;
+      uniform float outerRadius;
+      uniform vec3 sunDirection;
+      uniform float ambientLight;
+      uniform float teachingLight;
+
+      varying vec2 vUv;
+      varying vec3 vLocalPosition;
+
+      void main() {
+        vec4 texColor = texture2D(planetTexture, vUv);
+
+        // 1. 局部坐标系下的球体表面漫反射
+        vec3 localNormal = normalize(vLocalPosition);
+        vec3 normSunDir = normalize(sunDirection);
+        float dotNL = max(dot(localNormal, normSunDir), 0.0);
+
+        // 2. 光环在行星本体表面的几何解析投射阴影
+        float shadowFactor = 1.0;
+        // 沿阳光入射线到达赤道光环平面 (Y=0) 的交点参数: vLocalPosition.y + t * normSunDir.y = 0
+        if (abs(normSunDir.y) > 0.001) {
+          float t = -vLocalPosition.y / normSunDir.y;
+          // t > 0 说明光线从太阳朝向星球表面时，先穿过了赤道光环平面
+          if (t > 0.0) {
+            vec3 hitPoint = vLocalPosition + t * normSunDir;
+            float rHit = length(hitPoint.xz);
+            if (rHit >= innerRadius && rHit <= outerRadius) {
+              float u = clamp((rHit - innerRadius) / (outerRadius - innerRadius), 0.0, 1.0);
+              vec4 ringSample = texture2D(ringTexture, vec2(u, 0.5));
+              // 密集环区投射出极具真实感的深邃条带黑影
+              shadowFactor = 1.0 - ringSample.a * 0.88;
+            }
+          }
+        }
+
+        // 3. 漫反射 + 教学提亮支持
+        float baseLight = mix(ambientLight, 0.65, teachingLight);
+        float lightIntensity = baseLight + (1.0 - baseLight) * dotNL * shadowFactor;
+        vec3 finalColor = texColor.rgb * lightIntensity;
+
+        gl_FragColor = vec4(finalColor, 1.0);
+      }
+    `,
+  });
+}
+

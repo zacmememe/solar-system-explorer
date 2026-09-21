@@ -26,6 +26,7 @@ import {
 } from '../rendering/EarthMaterial';
 import {
   createSaturnRingMaterial,
+  createRingShadowPlanetMaterial,
   getUranusRingTexture,
   getNeptuneRingTexture,
 } from '../rendering/RingMaterial';
@@ -51,11 +52,22 @@ export interface WebGLDiagnosticInfo {
   highpSupported: boolean;
 }
 
+export interface CelestialLabelItem {
+  id: BodyId;
+  name: string;
+  nameEn: string;
+  screenX: number;
+  screenY: number;
+  isVisible: boolean;
+  type: string;
+}
+
 export interface SolarEngineCallbacks {
   onSelectBody?: (bodyId: BodyId) => void;
   onCameraSnapshot?: (snapshot: CameraStateSnapshot) => void;
   onWebGLInfo?: (info: WebGLDiagnosticInfo) => void;
   onContextState?: (state: 'lost' | 'restored') => void;
+  onCelestialLabels?: (labels: CelestialLabelItem[]) => void;
 }
 
 function safeDisposeMaterial(mat: THREE.Material | THREE.Material[]): void {
@@ -101,6 +113,7 @@ export class SolarEngine {
   // 光照
   private sunPointLight: THREE.PointLight;
   private ambientLight: THREE.AmbientLight;
+  private cameraHeadlight: THREE.DirectionalLight;
 
   // 地球着色材质与云层
   private earthMaterial: THREE.ShaderMaterial | null = null;
@@ -115,8 +128,9 @@ export class SolarEngine {
   private venusRadarMode: boolean = false;
   private reduceMotion: boolean = false;
 
-  // 纹理缓存
+  // 纹理与材质缓存
   private saturnRingMaterial: THREE.ShaderMaterial | null = null;
+  private saturnPlanetMaterial: THREE.ShaderMaterial | null = null;
   private uranusRingMaterial: THREE.ShaderMaterial | null = null;
   private neptuneRingMaterial: THREE.ShaderMaterial | null = null;
   private sunMaterial: THREE.ShaderMaterial | null = null;
@@ -213,13 +227,13 @@ export class SolarEngine {
     this.scene.add(this.sunPointLight);
 
     // 柔和微弱的环境光（深空星光漫反射）
-    this.ambientLight = new THREE.AmbientLight(0x222a38, 0.35);
+    this.ambientLight = new THREE.AmbientLight(0x222a38, 0.22);
     this.scene.add(this.ambientLight);
 
-    // 4.1 相机伴随柔和三维补光灯（确保深空航天器表面金属光泽与隔热薄膜清晰呈现）
-    const cameraHeadlight = new THREE.DirectionalLight(0xffffff, 0.75);
-    cameraHeadlight.position.set(0.6, 0.8, 1.2);
-    this.camera.add(cameraHeadlight);
+    // 4.1 相机伴随补光灯（航天器伴飞与教学模式下动态启用，全景观测模式下保持关闭）
+    this.cameraHeadlight = new THREE.DirectionalLight(0xffffff, 0.0);
+    this.cameraHeadlight.position.set(0.6, 0.8, 1.2);
+    this.camera.add(this.cameraHeadlight);
     this.scene.add(this.camera);
 
     // 5. 轨道线组
@@ -796,27 +810,38 @@ export class SolarEngine {
       }
     }).catch((e) => console.error('[Texture] Jupiter load failed:', e));
 
-    // 8. 土星与土星环
+    // 8. 土星本体与土星光环（双向投射阴影）
     Promise.all([
       this.assetManager.loadTexture('saturn-sss-2k', token, () => true),
       this.assetManager.loadTexture('saturn-rings-sss-2k', token, () => true),
     ]).then(([saturnTex, saturnRingsTex]) => {
       const saturnNode = this.bodyNodes.get('saturn');
-      if (saturnTex && saturnNode) {
-        const mat = saturnNode.mesh.material as THREE.MeshStandardMaterial;
-        mat.color.set(0xffffff);
-        mat.map = saturnTex;
-        mat.needsUpdate = true;
-      }
-      if (saturnRingsTex && saturnNode && saturnNode.ringMesh && saturnNode.data.ringConfig) {
-        this.saturnRingMaterial = createSaturnRingMaterial({
-          innerRadius: saturnNode.displayRadius * saturnNode.data.ringConfig.innerRadiusRatio,
-          outerRadius: saturnNode.displayRadius * saturnNode.data.ringConfig.outerRadiusRatio,
+      if (saturnTex && saturnRingsTex && saturnNode && saturnNode.data.ringConfig) {
+        const innerR = saturnNode.displayRadius * saturnNode.data.ringConfig.innerRadiusRatio;
+        const outerR = saturnNode.displayRadius * saturnNode.data.ringConfig.outerRadiusRatio;
+
+        // 1. 土星本体：受星环深邃黑带条带投影阴影材质
+        this.saturnPlanetMaterial = createRingShadowPlanetMaterial({
+          planetTexture: saturnTex,
           ringTexture: saturnRingsTex,
-          planetRadius: saturnNode.displayRadius,
+          innerRadius: innerR,
+          outerRadius: outerR,
         });
-        safeDisposeMaterial(saturnNode.ringMesh.material);
-        saturnNode.ringMesh.material = this.saturnRingMaterial;
+        this.saturnPlanetMaterial.uniforms.teachingLight.value = this.teachingLight ? 1.0 : 0.0;
+        safeDisposeMaterial(saturnNode.mesh.material);
+        saturnNode.mesh.material = this.saturnPlanetMaterial;
+
+        // 2. 土星光环：受行星圆柱阴影遮挡的双面透光材质
+        if (saturnNode.ringMesh) {
+          this.saturnRingMaterial = createSaturnRingMaterial({
+            innerRadius: innerR,
+            outerRadius: outerR,
+            ringTexture: saturnRingsTex,
+            planetRadius: saturnNode.displayRadius,
+          });
+          safeDisposeMaterial(saturnNode.ringMesh.material);
+          saturnNode.ringMesh.material = this.saturnRingMaterial;
+        }
       }
     }).catch((e) => console.error('[Texture] Saturn load failed:', e));
 
@@ -847,6 +872,7 @@ export class SolarEngine {
     this.canvas.addEventListener('pointerdown', this.onPointerDown);
     window.addEventListener('pointermove', this.onPointerMove);
     window.addEventListener('pointerup', this.onPointerUp);
+    this.canvas.addEventListener('dblclick', this.onDoubleClick);
     this.canvas.addEventListener('wheel', this.onWheel, { passive: false });
     document.addEventListener('visibilitychange', this.onVisibilityChange);
     this.canvas.addEventListener('webglcontextlost', this.onContextLost, false);
@@ -906,6 +932,26 @@ export class SolarEngine {
     }
   };
 
+  private onDoubleClick = (e: MouseEvent): void => {
+    const rect = this.canvas.getBoundingClientRect();
+    this.pointerNdc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    this.pointerNdc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+    this.raycaster.setFromCamera(this.pointerNdc, this.camera);
+    const intersects = this.raycaster.intersectObjects(this.pickableMeshes);
+    if (intersects.length > 0) {
+      const hit = intersects[0].object;
+      const bodyId = hit.userData.bodyId as BodyId;
+      if (bodyId) {
+        soundEffects.playWarp();
+        this.executeCameraCommand({ type: 'flyTo', bodyId });
+        if (this.callbacks.onSelectBody) {
+          this.callbacks.onSelectBody(bodyId);
+        }
+      }
+    }
+  };
+
   private onPointerMove = (e: PointerEvent): void => {
     if (!this.activePointers.has(e.pointerId)) return;
     this.activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -923,7 +969,16 @@ export class SolarEngine {
       return;
     }
 
-    if (!this.isPointerDown) return;
+    if (!this.isPointerDown) {
+      // 鼠标未拖拽状态下的光标悬浮反馈：滑过可交互天体时变为手型光标
+      const rect = this.canvas.getBoundingClientRect();
+      this.pointerNdc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      this.pointerNdc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      this.raycaster.setFromCamera(this.pointerNdc, this.camera);
+      const hits = this.raycaster.intersectObjects(this.pickableMeshes);
+      this.canvas.style.cursor = hits.length > 0 ? 'pointer' : 'default';
+      return;
+    }
 
     const dx = e.clientX - this.lastPointerX;
     const dy = e.clientY - this.lastPointerY;
@@ -1014,13 +1069,33 @@ export class SolarEngine {
     }
   }
 
+  private updateLightingState(): void {
+    const isObserving = this.viewCameraMode === 'PLANET_OBSERVE';
+    if (isObserving) {
+      if (this.teachingLight) {
+        this.cameraHeadlight.intensity = 0.65;
+        this.ambientLight.intensity = 0.75;
+      } else {
+        this.cameraHeadlight.intensity = 0.0;
+        this.ambientLight.intensity = 0.22;
+      }
+    } else {
+      // 航天器伴飞/随船视角：启用柔和补光确保隔热箔与机体材质清晰
+      this.cameraHeadlight.intensity = 0.70;
+      this.ambientLight.intensity = 0.35;
+    }
+
+    if (this.earthMaterial) {
+      this.earthMaterial.uniforms.teachingLight.value = this.teachingLight ? 1.0 : 0.0;
+    }
+    if (this.saturnPlanetMaterial) {
+      this.saturnPlanetMaterial.uniforms.teachingLight.value = this.teachingLight ? 1.0 : 0.0;
+    }
+  }
+
   public setTeachingLight(enable: boolean): void {
     this.teachingLight = enable;
-    if (this.earthMaterial) {
-      this.earthMaterial.uniforms.teachingLight.value = enable ? 1.0 : 0.0;
-    }
-    // 增加全局环境光以辅助暗部辨识
-    this.ambientLight.intensity = enable ? 0.85 : 0.35;
+    this.updateLightingState();
   }
 
   public setShowAtmosphere(show: boolean): void {
@@ -1128,6 +1203,7 @@ export class SolarEngine {
 
   public setViewCameraMode(mode: ViewCameraMode): void {
     this.viewCameraMode = mode;
+    this.updateLightingState();
   }
 
   public getViewCameraMode(): ViewCameraMode {
@@ -1203,11 +1279,17 @@ export class SolarEngine {
           }
         }
 
-        // 土星、天王星、海王星专属：更新投射到光环的太阳方向与行星遮挡投影
-        if (id === 'saturn' && this.saturnRingMaterial && node.ringMesh) {
+        // 土星、天王星、海王星专属：更新投射到光环与行星本体的太阳方向与遮挡投影
+        if (id === 'saturn' && node.ringMesh) {
           const sunDir = node.systemGroup.position.clone().negate().normalize();
-          const localSunDir = sunDir.clone().applyQuaternion(node.ringMesh.quaternion.clone().invert());
-          this.saturnRingMaterial.uniforms.sunDirection.value.copy(localSunDir);
+          const localRingSunDir = sunDir.clone().applyQuaternion(node.ringMesh.quaternion.clone().invert());
+          if (this.saturnRingMaterial) {
+            this.saturnRingMaterial.uniforms.sunDirection.value.copy(localRingSunDir);
+          }
+          if (this.saturnPlanetMaterial) {
+            const localPlanetSunDir = sunDir.clone().applyQuaternion(node.mesh.quaternion.clone().invert());
+            this.saturnPlanetMaterial.uniforms.sunDirection.value.copy(localPlanetSunDir);
+          }
         }
         if (id === 'uranus' && this.uranusRingMaterial && node.ringMesh) {
           const sunDir = node.systemGroup.position.clone().negate().normalize();
@@ -1306,6 +1388,56 @@ export class SolarEngine {
 
     // 6. 渲染一帧
     this.renderer.render(this.scene, this.camera);
+
+    // 7. 计算并回调屏幕空间天体悬浮引导标识
+    if (this.callbacks.onCelestialLabels) {
+      const snap = this.cameraController.getSnapshot();
+      const currentTargetId = snap.targetBodyId;
+      const currentTargetNode = currentTargetId ? this.bodyNodes.get(currentTargetId) : undefined;
+      const targetSystemPlanet = currentTargetNode?.data.type === 'moon' ? currentTargetNode.data.parentId : currentTargetId;
+
+      const labels: CelestialLabelItem[] = [];
+      const camPos = this.camera.position;
+      const camDir = new THREE.Vector3();
+      this.camera.getWorldDirection(camDir);
+
+      const width = this.canvas.clientWidth || window.innerWidth;
+      const height = this.canvas.clientHeight || window.innerHeight;
+      const tempPos = new THREE.Vector3();
+      const toBody = new THREE.Vector3();
+
+      for (const [id, node] of this.bodyNodes.entries()) {
+        // 过滤策略：太阳与八大行星均投射；卫星仅在当前聚焦于其系统时投射
+        if (node.data.type === 'moon' && node.data.parentId !== targetSystemPlanet) {
+          continue;
+        }
+
+        node.mesh.getWorldPosition(tempPos);
+        toBody.subVectors(tempPos, camPos);
+
+        // 剔除相机后方的天体
+        if (toBody.dot(camDir) <= 0) continue;
+
+        const projected = tempPos.project(this.camera);
+        if (projected.z < -1.0 || projected.z > 1.0) continue;
+        if (projected.x < -1.05 || projected.x > 1.05 || projected.y < -1.05 || projected.y > 1.05) continue;
+
+        const screenX = ((projected.x + 1) / 2) * width;
+        const screenY = ((-projected.y + 1) / 2) * height;
+
+        labels.push({
+          id,
+          name: node.data.name,
+          nameEn: node.data.nameEn,
+          screenX,
+          screenY,
+          isVisible: true,
+          type: node.data.type,
+        });
+      }
+
+      this.callbacks.onCelestialLabels(labels);
+    }
   };
 
   public dispose(): void {
@@ -1315,6 +1447,7 @@ export class SolarEngine {
     this.canvas.removeEventListener('pointerdown', this.onPointerDown);
     window.removeEventListener('pointermove', this.onPointerMove);
     window.removeEventListener('pointerup', this.onPointerUp);
+    this.canvas.removeEventListener('dblclick', this.onDoubleClick);
     this.canvas.removeEventListener('wheel', this.onWheel);
     document.removeEventListener('visibilitychange', this.onVisibilityChange);
     this.canvas.removeEventListener('webglcontextlost', this.onContextLost);
@@ -1335,6 +1468,13 @@ export class SolarEngine {
     if (this.skyboxMesh) {
       this.skyboxMesh.geometry.dispose();
       safeDisposeMaterial(this.skyboxMesh.material);
+    }
+
+    if (this.saturnPlanetMaterial) {
+      safeDisposeMaterial(this.saturnPlanetMaterial);
+    }
+    if (this.saturnRingMaterial) {
+      safeDisposeMaterial(this.saturnRingMaterial);
     }
 
     for (const node of this.bodyNodes.values()) {

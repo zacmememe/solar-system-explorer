@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { SolarEngine, WebGLDiagnosticInfo } from '../engine/SolarEngine';
+import { SolarEngine, WebGLDiagnosticInfo, CelestialLabelItem } from '../engine/SolarEngine';
 import { BODIES } from '../astronomy/bodies';
 import type { BodyId } from '../contracts/body';
 import type { CameraStateSnapshot } from '../contracts/camera';
@@ -28,6 +28,7 @@ import {
   Navigation,
   Bookmark,
   Activity,
+  Tag,
   Volume2,
   VolumeX,
   Maximize2,
@@ -86,6 +87,10 @@ export const App: React.FC = () => {
   // 观察点与书签系统
   const [showBookmarkModal, setShowBookmarkModal] = useState<boolean>(false);
 
+  // 3D 屏幕空间天体悬浮引导标识
+  const [showLabels, setShowLabels] = useState<boolean>(true);
+  const [celestialLabels, setCelestialLabels] = useState<CelestialLabelItem[]>([]);
+
   // 探索明信片系统
   const [showPostcardModal, setShowPostcardModal] = useState<boolean>(false);
   const [postcardDataUrl, setPostcardDataUrl] = useState<string>('');
@@ -100,6 +105,7 @@ export const App: React.FC = () => {
         onSelectBody: (id) => setSelectedBodyId(id),
         onCameraSnapshot: (snap) => setCameraSnapshot(snap),
         onWebGLInfo: (info) => setWebglInfo(info),
+        onCelestialLabels: (labels) => setCelestialLabels(labels),
         onContextState: (state) => {
           if (state === 'lost') {
             showToast('⚠️ 显卡 WebGL 上下文中断，系统正在全力保护与恢复...');
@@ -831,6 +837,27 @@ export const App: React.FC = () => {
           </button>
         )}
 
+        {/* 天体悬浮标识显示/隐藏切换 */}
+        <button
+          onClick={() => setShowLabels(!showLabels)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '6px 10px',
+            background: showLabels ? 'rgba(56, 189, 248, 0.2)' : 'transparent',
+            border: showLabels ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid rgba(255,255,255,0.06)',
+            color: showLabels ? '#e2e8f0' : '#64748b',
+            borderRadius: 8,
+            cursor: 'pointer',
+            fontSize: 11,
+          }}
+          title="在三维场景中显示/隐藏天体名称悬浮导引标识"
+        >
+          <Tag size={13} />
+          <span>天体标识 ({showLabels ? '显示' : '隐藏'})</span>
+        </button>
+
         {/* 减弱动态无障碍设置 */}
         <button
           onClick={toggleReduceMotion}
@@ -900,6 +927,77 @@ export const App: React.FC = () => {
           <span>{isGeneratingPostcard ? '正在截帧中...' : '记录发现 · 探索明信片'}</span>
         </button>
       </nav>
+
+      {/* 3D 屏幕空间天体悬浮引导标识 */}
+      {showLabels && celestialLabels.length > 0 && (
+        <div
+          data-testid="celestial-labels-layer"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            pointerEvents: 'none',
+            overflow: 'hidden',
+            zIndex: 8,
+          }}
+        >
+          {celestialLabels.map((lbl) => {
+            const isSelected = selectedBodyId === lbl.id;
+            return (
+              <button
+                key={lbl.id}
+                data-testid={`celestial-label-${lbl.id}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleFlyTo(lbl.id);
+                }}
+                style={{
+                  position: 'absolute',
+                  left: `${lbl.screenX}px`,
+                  top: `${lbl.screenY}px`,
+                  transform: 'translate(-50%, -100%) translateY(-14px)',
+                  pointerEvents: 'auto',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  padding: '3px 8px',
+                  borderRadius: 12,
+                  background: isSelected
+                    ? 'rgba(2, 132, 199, 0.90)'
+                    : 'rgba(15, 23, 42, 0.75)',
+                  border: isSelected
+                    ? '1px solid #38bdf8'
+                    : '1px solid rgba(255, 255, 255, 0.18)',
+                  backdropFilter: 'blur(6px)',
+                  color: isSelected ? '#ffffff' : '#cbd5e1',
+                  fontSize: 10,
+                  fontWeight: 500,
+                  whiteSpace: 'nowrap',
+                  boxShadow: isSelected
+                    ? '0 0 12px rgba(56, 189, 248, 0.65)'
+                    : '0 2px 8px rgba(0, 0, 0, 0.5)',
+                  transition: 'background 0.15s ease, border 0.15s ease, transform 0.15s ease',
+                  userSelect: 'none',
+                }}
+                title={`点击飞往 ${lbl.name} (${lbl.nameEn})`}
+              >
+                <span
+                  style={{
+                    width: 5,
+                    height: 5,
+                    borderRadius: '50%',
+                    backgroundColor: isSelected
+                      ? '#ffffff'
+                      : (lbl.type === 'moon' ? '#a78bfa' : '#38bdf8'),
+                    display: 'inline-block',
+                  }}
+                />
+                <span>{lbl.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* 核心亲子观察卡片（右下角） */}
       <aside

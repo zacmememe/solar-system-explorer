@@ -728,14 +728,14 @@ export function getNavDisplayRadius(radiusKm: number, type: string): number {
 }
 
 const PLANET_INITIAL_PHASES: Record<string, number> = {
-  mercury: 4.40,
-  venus: 3.16,
-  earth: 1.75,
-  mars: 6.20,
-  jupiter: 0.59,
-  saturn: 0.87,
-  uranus: 5.48,
-  neptune: 5.30,
+  mercury: 0.85,  // ~49°
+  venus: 2.25,    // ~129°
+  earth: 3.65,    // ~209°
+  mars: 5.25,     // ~301°
+  jupiter: 1.45,  // ~83°
+  saturn: 3.15,   // ~180°
+  uranus: 4.60,   // ~264°
+  neptune: 0.25,  // ~14°
 };
 
 /**
