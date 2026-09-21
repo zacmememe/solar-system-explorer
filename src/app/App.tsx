@@ -940,16 +940,24 @@ export const App: React.FC = () => {
             zIndex: 8,
           }}
         >
-          {celestialLabels.map((lbl) => {
-            const isSelected = selectedBodyId === lbl.id;
-            return (
-              <button
-                key={lbl.id}
-                data-testid={`celestial-label-${lbl.id}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleFlyTo(lbl.id);
-                }}
+          {celestialLabels
+            .filter((lbl) => {
+              // 沉浸式观星：当点击去到某个星球时，该星球自身标签绝不展示
+              if (lbl.id === selectedBodyId) return false;
+              if (lbl.id === cameraSnapshot?.targetBodyId) return false;
+              if (lbl.id === cameraSnapshot?.selectedBodyId) return false;
+              return true;
+            })
+            .map((lbl) => {
+              const isSelected = selectedBodyId === lbl.id;
+              return (
+                <button
+                  key={lbl.id}
+                  data-testid={`celestial-label-${lbl.id}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleFlyTo(lbl.id);
+                  }}
                 style={{
                   position: 'absolute',
                   left: `${lbl.screenX}px`,

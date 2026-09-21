@@ -1432,8 +1432,13 @@ export class SolarEngine {
         toBody.subVectors(tempPos, camPos);
         const dist = toBody.length();
 
-        // 核心视觉沉浸：如果当前正在特写观察该天体且非全景模式，隐藏本尊的浮动标签（右侧信息卡与顶部栏已明确说明）
-        if (id === currentTargetId && snap.mode !== 'OVERVIEW') {
+        // 核心视觉沉浸：当前正在观测、已选中或正在飞往的天体本尊，绝不展示浮动标签，留出 100% 纯净沉浸式天体特写
+        if (id === currentTargetId || id === snap.selectedBodyId) {
+          continue;
+        }
+
+        // 当近距特写观测某颗卫星时，母星本身作为壮丽背景，不展示母星的文本标签以防抢镜
+        if (currentTargetNode?.data.type === 'moon' && id === targetSystemPlanet) {
           continue;
         }
 
@@ -1468,6 +1473,30 @@ export class SolarEngine {
 
         const screenX = ((projected.x + 1) / 2) * width;
         const screenY = ((-projected.y + 1) / 2) * height - screenRadius - 8;
+
+        // 视线遮挡剔除：如果卫星在母星背后，且屏幕投影落在母星盘面内部，则绝不在母星正面虚假投射
+        if (node.data.type === 'moon' && targetSystemPlanet && targetSystemPlanet !== id) {
+          const parentNode = this.bodyNodes.get(targetSystemPlanet);
+          if (parentNode) {
+            const parentWorldPos = new THREE.Vector3();
+            parentNode.mesh.getWorldPosition(parentWorldPos);
+            const distToParent = camPos.distanceTo(parentWorldPos);
+            if (dist > distToParent) {
+              const parentProjected = parentWorldPos.project(this.camera);
+              const parentScreenX = ((parentProjected.x + 1) / 2) * width;
+              const parentScreenY = ((-parentProjected.y + 1) / 2) * height;
+              let parentEffectiveR = parentNode.displayRadius;
+              if (parentNode.ringMesh && parentNode.data.ringConfig) {
+                parentEffectiveR *= (parentNode.data.ringConfig.outerRadiusRatio * 0.72);
+              }
+              const parentScreenRadius = (parentEffectiveR / Math.max(0.1, distToParent)) * (height / (2.0 * Math.tan(fovRad / 2.0)));
+              const distToParentCenterPx = Math.hypot(screenX - parentScreenX, ((-projected.y + 1) / 2) * height - parentScreenY);
+              if (distToParentCenterPx < parentScreenRadius * 1.05) {
+                continue; // 卫星被母星遮挡在背面，跳过标签展示
+              }
+            }
+          }
+        }
 
         labels.push({
           id,
