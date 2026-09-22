@@ -60,6 +60,18 @@ export interface VehicleDefinition {
   accentColorHex: number;
   /** 历史真实来源 */
   sourceRef: string;
+  /** 是否属于默认精选典藏载具（R4: ISS 与 NASA Hubble） */
+  isFeatured?: boolean;
+  /** 3D 模型格式类型 */
+  modelFormat?: 'glb' | 'procedural';
+  /** 模型静态资产相对路径 */
+  modelAssetPath?: string;
+  /** 模型数据来源与署名 */
+  modelSourceUrl?: string;
+  /** 模型开源许可 */
+  modelLicense?: string;
+  /** 资产审核准入状态 */
+  modelApproved?: boolean;
 }
 
 export type ViewCameraMode =

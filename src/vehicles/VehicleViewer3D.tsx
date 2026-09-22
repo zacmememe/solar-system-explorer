@@ -1,34 +1,38 @@
 /**
- * 航天器机库 3D 实时交互视窗
- * 遵循 04-VEHICLES.zh-CN.md 规范：
- * 1. 真实米制建模展示，支持构图自适应与真实米制标尺对比；
- * 2. 交互平滑旋转，空闲时柔和微动，用户交互优先；
- * 3. 结构热点实时定位高亮。
+ * 航天器机库 3D 实时交互视窗 VehicleViewer3D
+ * 遵循 04-VEHICLES.zh-CN.md 及第二轮优化审计 R4 要求：
+ * 1. 采用代际事务安全（Generation Tracking）加载 GLB/程序模型，杜绝迟到回调污染与黑屏闪烁；
+ * 2. 模型切换在同一 WebGL 上下文中平滑过渡，基于最新 Bounds 准确定位机位目标；
+ * 3. 结构热点绑定到模型本地空间，随载具姿态自洽旋转；
+ * 4. 真实米制对比网格与可切换的中性工坊光/在轨日光对比。
  */
 
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import type { VehicleId } from '../contracts/vehicle';
 import { VEHICLE_CATALOG } from './VehicleCatalog';
-import { VehicleMeshBuilder } from './VehicleMeshBuilder';
+import { VehicleLoader } from './VehicleLoader';
 
-interface VehicleViewer3DProps {
+export interface VehicleViewer3DProps {
   vehicleId: VehicleId;
   activeHotspotId?: string | null;
   scaleMode?: 'framed' | 'metric';
+  lightingMode?: 'studio' | 'orbit';
 }
 
 export const VehicleViewer3D: React.FC<VehicleViewer3DProps> = ({
   vehicleId,
   activeHotspotId,
   scaleMode = 'framed',
+  lightingMode = 'studio',
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const animRef = useRef<number>(0);
 
-  // 状态引用，用于在动画循环与平滑补间中持久通信
+  // 内部持久状态引用
   const stateRef = useRef({
     scaleMode,
+    lightingMode,
     activeHotspotId,
     targetCamPos: new THREE.Vector3(0, 5, 20),
     targetLookAt: new THREE.Vector3(0, 0, 0),
@@ -40,9 +44,23 @@ export const VehicleViewer3D: React.FC<VehicleViewer3DProps> = ({
     userInteracted: false,
   });
 
-  // 同步最新 props 到 stateRef
+  // 三维核心场景对象引用（在 Viewer 生命周期内保持单一稳定）
+  const sceneRef = useRef<THREE.Scene | null>(null);
+  const vehicleGroupRef = useRef<THREE.Group | null>(null);
+  const currentMeshRef = useRef<THREE.Group | null>(null);
+  const hotspotMarkerRef = useRef<THREE.Mesh | null>(null);
+  const lightsRef = useRef<{
+    keyLight: THREE.DirectionalLight;
+    fillLight: THREE.DirectionalLight;
+    rimLight: THREE.DirectionalLight;
+    ambientLight: THREE.AmbientLight;
+  } | null>(null);
+  const gridHelperRef = useRef<THREE.GridHelper | null>(null);
+
+  // 1. 同步参数变化 (scaleMode, lightingMode, activeHotspotId)
   useEffect(() => {
     stateRef.current.scaleMode = scaleMode;
+    stateRef.current.lightingMode = lightingMode;
     stateRef.current.activeHotspotId = activeHotspotId;
 
     const { maxDim } = stateRef.current;
@@ -53,8 +71,35 @@ export const VehicleViewer3D: React.FC<VehicleViewer3DProps> = ({
       stateRef.current.targetCamPos.set(0, 25, 75);
       stateRef.current.targetLookAt.set(0, 0, 0);
     }
-  }, [scaleMode, activeHotspotId]);
 
+    // 更新光照模式
+    if (lightsRef.current) {
+      const { keyLight, fillLight, rimLight, ambientLight } = lightsRef.current;
+      if (lightingMode === 'orbit') {
+        // 在轨严苛日光：硬阴影、高对比度太阳直射光与深邃太空微弱反光
+        keyLight.color.setHex(0xffffff);
+        keyLight.intensity = 3.2;
+        keyLight.position.set(12, 4, 10);
+        fillLight.color.setHex(0x1e3a8a);
+        fillLight.intensity = 0.35;
+        rimLight.intensity = 0.0;
+        ambientLight.color.setHex(0x050814);
+        ambientLight.intensity = 0.2;
+      } else {
+        // 中性工坊光：柔和三点光与中性环境光，便于清晰观察结构与标尺
+        keyLight.color.setHex(0xffffff);
+        keyLight.intensity = 2.2;
+        keyLight.position.set(5, 8, 7);
+        fillLight.color.setHex(0x38bdf8);
+        fillLight.intensity = 1.2;
+        rimLight.intensity = 0.8;
+        ambientLight.color.setHex(0x334155);
+        ambientLight.intensity = 1.0;
+      }
+    }
+  }, [scaleMode, lightingMode, activeHotspotId]);
+
+  // 2. 初始化 WebGL 视窗生命周期（仅在组件挂载时运行一次，保持 renderer 常驻）
   useEffect(() => {
     const container = mountRef.current;
     if (!container) return;
@@ -62,9 +107,9 @@ export const VehicleViewer3D: React.FC<VehicleViewer3DProps> = ({
     const width = container.clientWidth || 400;
     const height = container.clientHeight || 340;
 
-    // 1. WebGL 场景与渲染器
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0a101d);
+    sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 500);
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -75,7 +120,7 @@ export const VehicleViewer3D: React.FC<VehicleViewer3DProps> = ({
     renderer.toneMappingExposure = 1.25;
     container.appendChild(renderer.domElement);
 
-    // 2. 摄影棚灯光系统（柔和三点光 + 轮廓光）
+    // 灯光系统
     const keyLight = new THREE.DirectionalLight(0xffffff, 2.2);
     keyLight.position.set(5, 8, 7);
     scene.add(keyLight);
@@ -91,49 +136,29 @@ export const VehicleViewer3D: React.FC<VehicleViewer3DProps> = ({
     const ambientLight = new THREE.AmbientLight(0x334155, 1.0);
     scene.add(ambientLight);
 
-    // 3. 构建航天器模型
+    lightsRef.current = { keyLight, fillLight, rimLight, ambientLight };
+
+    // 载具装配根节点
     const vehicleGroup = new THREE.Group();
     scene.add(vehicleGroup);
-
-    const mesh = VehicleMeshBuilder.buildVehicle(vehicleId);
-    vehicleGroup.add(mesh);
-
-    // 计算模型包围盒与中心
-    const box = new THREE.Box3().setFromObject(mesh);
-    const center = new THREE.Vector3();
-    box.getCenter(center);
-    mesh.position.sub(center); // 居中
-    stateRef.current.center.copy(center);
-
-    const size = new THREE.Vector3();
-    box.getSize(size);
-    const maxDim = Math.max(size.x, size.y, size.z, 0.01);
-    stateRef.current.maxDim = maxDim;
+    vehicleGroupRef.current = vehicleGroup;
 
     // 地面米制参考网格 (100m x 100m，每格 5m)
     const gridHelper = new THREE.GridHelper(100, 20, 0x38bdf8, 0x1e293b);
-    gridHelper.position.y = -size.y * 0.5 - 0.5;
+    gridHelper.position.y = -5.0;
     scene.add(gridHelper);
+    gridHelperRef.current = gridHelper;
 
-    // 相机初始控制
-    if (stateRef.current.scaleMode === 'framed') {
-      camera.position.set(0, maxDim * 0.4, maxDim * 1.8);
-      gridHelper.visible = false;
-    } else {
-      camera.position.set(0, 25, 75);
-      gridHelper.visible = true;
-    }
-    camera.lookAt(0, 0, 0);
-
-    // 4. 热点高亮指示器
+    // 热点高亮标记球体（挂载在 vehicleGroup 下随飞船旋转）
     const hotspotMarker = new THREE.Mesh(
-      new THREE.SphereGeometry(Math.max(0.15, maxDim * 0.025), 16, 16),
+      new THREE.SphereGeometry(0.35, 16, 16),
       new THREE.MeshBasicMaterial({ color: 0x38bdf8, wireframe: true })
     );
     hotspotMarker.visible = false;
-    scene.add(hotspotMarker);
+    vehicleGroup.add(hotspotMarker);
+    hotspotMarkerRef.current = hotspotMarker;
 
-    // 5. 交互旋转控制
+    // 交互拖拽控制
     let prevX = 0;
     let prevY = 0;
 
@@ -162,22 +187,24 @@ export const VehicleViewer3D: React.FC<VehicleViewer3DProps> = ({
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onPointerUp);
 
-    // 6. 动画循环
+    // 动画循环
     let lastTime = performance.now();
     const animate = () => {
       animRef.current = requestAnimationFrame(animate);
       const now = performance.now();
-      const deltaSec = (now - lastTime) / 1000;
+      const deltaSec = Math.min(0.1, (now - lastTime) / 1000);
       lastTime = now;
 
-      // 平滑相机过渡（无论模式切换还是热点视角，无黑屏）
-      camera.position.lerp(stateRef.current.targetCamPos, 0.08);
+      // 帧率无关平滑阻尼插值 (dt-based lerp)
+      const lerpAlpha = 1.0 - Math.exp(-6.0 * deltaSec);
+      camera.position.lerp(stateRef.current.targetCamPos, lerpAlpha);
       camera.lookAt(stateRef.current.targetLookAt);
 
-      // 网格显隐
-      gridHelper.visible = stateRef.current.scaleMode === 'metric';
+      if (gridHelperRef.current) {
+        gridHelperRef.current.visible = stateRef.current.scaleMode === 'metric';
+      }
 
-      // 若未手动拖拽，缓慢自动自转展示
+      // 未手动交互时轻柔自转
       if (!stateRef.current.isDragging && !stateRef.current.userInteracted) {
         stateRef.current.rotY += deltaSec * 0.25;
       }
@@ -185,26 +212,10 @@ export const VehicleViewer3D: React.FC<VehicleViewer3DProps> = ({
       vehicleGroup.rotation.y = stateRef.current.rotY;
       vehicleGroup.rotation.x = stateRef.current.rotX;
 
-      // 更新热点标记
-      const curHotspotId = stateRef.current.activeHotspotId;
-      const def = VEHICLE_CATALOG[vehicleId];
-      if (curHotspotId && def) {
-        const hs = def.hotspots.find((h) => h.id === curHotspotId);
-        if (hs) {
-          const [hx, hy, hz] = hs.relativePosM;
-          const localHotspot = new THREE.Vector3(hx, hy, hz).sub(stateRef.current.center);
-          localHotspot.applyAxisAngle(new THREE.Vector3(1, 0, 0), stateRef.current.rotX);
-          localHotspot.applyAxisAngle(new THREE.Vector3(0, 1, 0), stateRef.current.rotY);
-          hotspotMarker.position.copy(localHotspot);
-          hotspotMarker.visible = true;
-          // 呼吸闪烁
-          const s = 1.0 + Math.sin(now * 0.008) * 0.2;
-          hotspotMarker.scale.setScalar(s);
-        } else {
-          hotspotMarker.visible = false;
-        }
-      } else {
-        hotspotMarker.visible = false;
+      // 热点闪烁动画
+      if (hotspotMarkerRef.current && hotspotMarkerRef.current.visible) {
+        const s = 1.0 + Math.sin(now * 0.008) * 0.25;
+        hotspotMarkerRef.current.scale.setScalar(s);
       }
 
       renderer.render(scene, camera);
@@ -228,27 +239,92 @@ export const VehicleViewer3D: React.FC<VehicleViewer3DProps> = ({
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('resize', onResize);
 
-      vehicleGroup.traverse((obj) => {
-        if ((obj as THREE.Mesh).isMesh) {
-          const m = obj as THREE.Mesh;
-          m.geometry.dispose();
-          if (Array.isArray(m.material)) {
-            m.material.forEach((mat) => mat.dispose());
-          } else {
-            m.material.dispose();
-          }
-        }
-      });
+      if (currentMeshRef.current) {
+        VehicleLoader.disposeVehicleObject(currentMeshRef.current);
+        currentMeshRef.current = null;
+      }
       renderer.dispose();
       if (renderer.domElement.parentElement) {
         renderer.domElement.parentElement.removeChild(renderer.domElement);
       }
     };
+  }, []);
+
+  // 3. 异步载入新模型（代际事务管理，彻底杜绝迟到回调与机位目标错误）
+  useEffect(() => {
+    const vehicleGroup = vehicleGroupRef.current;
+    if (!vehicleGroup) return;
+
+    const gen = VehicleLoader.nextGeneration();
+
+    VehicleLoader.loadVehicle(vehicleId, gen).then((newModel) => {
+      // 检查代际是否依然有效
+      if (gen !== VehicleLoader.getCurrentGeneration() || !newModel) {
+        if (newModel) {
+          VehicleLoader.disposeVehicleObject(newModel);
+        }
+        return;
+      }
+
+      // 释放并移除旧模型
+      if (currentMeshRef.current) {
+        vehicleGroup.remove(currentMeshRef.current);
+        VehicleLoader.disposeVehicleObject(currentMeshRef.current);
+        currentMeshRef.current = null;
+      }
+
+      currentMeshRef.current = newModel;
+      vehicleGroup.add(newModel);
+
+      // 提取准确模型物理 Bounds 并更新相机聚焦目标
+      const maxDim = (newModel.userData.maxDim as number) || 10;
+      stateRef.current.maxDim = maxDim;
+
+      if (stateRef.current.scaleMode === 'framed') {
+        stateRef.current.targetCamPos.set(0, maxDim * 0.4, maxDim * 1.8);
+      } else {
+        stateRef.current.targetCamPos.set(0, 25, 75);
+      }
+      stateRef.current.targetLookAt.set(0, 0, 0);
+
+      // 同步热点标记尺寸与位置
+      if (hotspotMarkerRef.current) {
+        const markerRadius = Math.max(0.2, maxDim * 0.025);
+        hotspotMarkerRef.current.geometry.dispose();
+        hotspotMarkerRef.current.geometry = new THREE.SphereGeometry(markerRadius, 16, 16);
+      }
+
+      if (gridHelperRef.current) {
+        const size = newModel.userData.size as THREE.Vector3;
+        gridHelperRef.current.position.y = -size.y * 0.5 - 0.2;
+      }
+    });
   }, [vehicleId]);
+
+  // 4. 热点高亮更新响应
+  useEffect(() => {
+    const marker = hotspotMarkerRef.current;
+    if (!marker) return;
+
+    if (!activeHotspotId) {
+      marker.visible = false;
+      return;
+    }
+
+    const def = VEHICLE_CATALOG[vehicleId];
+    const hs = def?.hotspots.find((h) => h.id === activeHotspotId);
+    if (hs) {
+      marker.position.set(hs.relativePosM[0], hs.relativePosM[1], hs.relativePosM[2]);
+      marker.visible = true;
+    } else {
+      marker.visible = false;
+    }
+  }, [vehicleId, activeHotspotId]);
 
   return (
     <div
       ref={mountRef}
+      data-testid="hangar-3d-viewport"
       style={{
         width: '100%',
         height: '100%',

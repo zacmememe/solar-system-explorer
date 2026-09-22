@@ -62,7 +62,7 @@ import {
   getTitanHazeTexture,
 } from '../astronomy/MoonTextures';
 import { soundEffects } from '../audio/SoundEffects';
-import { VehicleMeshBuilder } from '../vehicles/VehicleMeshBuilder';
+import { VehicleLoader } from '../vehicles/VehicleLoader';
 import productionAssetsData from '../../sources/production-assets.json';
 
 /**
@@ -199,6 +199,7 @@ export class SolarEngine {
   private currentVehicleId: VehicleId | null = null;
   private vehicleGroup: THREE.Group = new THREE.Group();
   private currentVehicleMesh: THREE.Group | null = null;
+  private vehicleLoadGeneration: number = 0;
   private viewCameraMode: ViewCameraMode = 'PLANET_OBSERVE';
   private prevIsTransitioning: boolean = false;
 
@@ -1452,30 +1453,29 @@ export class SolarEngine {
   }
 
   public setVehicle(id: VehicleId | null): void {
+    const gen = ++this.vehicleLoadGeneration;
+
     if (this.currentVehicleMesh) {
       this.vehicleGroup.remove(this.currentVehicleMesh);
-      this.currentVehicleMesh.traverse((obj) => {
-        if ((obj as THREE.Mesh).isMesh) {
-          const mesh = obj as THREE.Mesh;
-          mesh.geometry.dispose();
-          safeDisposeMaterial(mesh.material);
-        }
-      });
+      VehicleLoader.disposeVehicleObject(this.currentVehicleMesh);
       this.currentVehicleMesh = null;
     }
 
     this.currentVehicleId = id;
     if (!id) return;
 
-    const mesh = VehicleMeshBuilder.buildVehicle(id);
-    const box = new THREE.Box3().setFromObject(mesh);
-    const size = new THREE.Vector3();
-    box.getSize(size);
-    const maxDim = Math.max(size.x, size.y, size.z, 0.01);
-    mesh.userData = { originalMaxDim: maxDim };
+    VehicleLoader.loadVehicle(id, gen).then((group) => {
+      if (gen !== this.vehicleLoadGeneration || this.currentVehicleId !== id) {
+        if (group) {
+          VehicleLoader.disposeVehicleObject(group);
+        }
+        return;
+      }
+      if (!group) return;
 
-    this.currentVehicleMesh = mesh;
-    this.vehicleGroup.add(mesh);
+      this.currentVehicleMesh = group;
+      this.vehicleGroup.add(group);
+    });
   }
 
   public getCurrentVehicle(): VehicleId | null {
@@ -1770,7 +1770,7 @@ export class SolarEngine {
 
     // 3. 更新载具空间位置与伴飞/随船/绕飞姿态
     if (this.currentVehicleMesh && this.currentVehicleId) {
-      const origDim = (this.currentVehicleMesh.userData.originalMaxDim as number) || 5.0;
+      const origDim = (this.currentVehicleMesh.userData.maxDim as number) || (this.currentVehicleMesh.userData.originalMaxDim as number) || 5.0;
 
       if (this.viewCameraMode === 'VEHICLE_FORMATION') {
         if (this.vehicleGroup.parent !== this.camera) {

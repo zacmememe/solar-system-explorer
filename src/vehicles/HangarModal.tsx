@@ -1,17 +1,19 @@
 /**
  * 航天器机库模态窗 HangarModal
- * 遵循 04-VEHICLES.zh-CN.md 规范：
- * 1. 完整展示六大航天器（阿波罗登月舱、旅行者1号、韦伯望远镜、国际空间站、天宫空间站、卡西尼号）；
- * 2. 真实米制物理尺寸对比标尺；
- * 3. 结构热点交互科普（给孩子的一句话 + 深入科学原理）；
- * 4. “搭乘这艘飞船伴飞”双向联动引擎。
+ * 遵循 04-VEHICLES.zh-CN.md 及第二轮优化审计 R4 要求：
+ * 1. 默认收缩为精选典藏入口（ISS 与官方 NASA Hubble GLB），旧型号归入全部历史载具兼容分区；
+ * 2. 真实 NASA 官方模型凭证、许可与数据溯源展示；
+ * 3. 真实米制物理尺寸对比标尺与结构热点交互；
+ * 4. 工坊白光与在轨严苛日光双光照模式切换；
+ * 5. 代际事务安全与登船/清空伴飞双向联动。
  */
 
 import React, { useState } from 'react';
 import type { VehicleId } from '../contracts/vehicle';
 import { VEHICLE_CATALOG } from './VehicleCatalog';
+import { VEHICLE_ASSET_REGISTRY, getFeaturedVehicleIds, getAllVehicleIds } from './VehicleAssetRegistry';
 import { VehicleViewer3D } from './VehicleViewer3D';
-import { X, Rocket, Ruler, Eye, Sparkles } from 'lucide-react';
+import { X, Rocket, Ruler, Eye, Sparkles, Sun, Lightbulb, CheckCircle2, ShieldCheck } from 'lucide-react';
 
 interface HangarModalProps {
   currentVehicleId: VehicleId | null;
@@ -20,27 +22,23 @@ interface HangarModalProps {
   onClose: () => void;
 }
 
-const VEHICLE_LIST: VehicleId[] = [
-  'apollo-lm',
-  'voyager-1',
-  'james-webb',
-  'hubble',
-  'iss',
-  'tiangong',
-  'cassini',
-];
-
 export const HangarModal: React.FC<HangarModalProps> = ({
   currentVehicleId,
   onSelectVehicle,
   onClearVehicle,
   onClose,
 }) => {
-  const [selectedId, setSelectedId] = useState<VehicleId>(currentVehicleId || 'apollo-lm');
+  // 默认选中当前伴飞载具，或精选默认 ISS
+  const [selectedId, setSelectedId] = useState<VehicleId>(currentVehicleId || 'iss');
+  const [category, setCategory] = useState<'featured' | 'all'>('featured');
   const [scaleMode, setScaleMode] = useState<'framed' | 'metric'>('framed');
+  const [lightingMode, setLightingMode] = useState<'studio' | 'orbit'>('studio');
   const [activeHotspotId, setActiveHotspotId] = useState<string | null>(null);
 
   const def = VEHICLE_CATALOG[selectedId];
+  const assetRecord = VEHICLE_ASSET_REGISTRY[selectedId];
+
+  const vehicleList = category === 'featured' ? getFeaturedVehicleIds() : getAllVehicleIds();
 
   const handleSelect = (id: VehicleId) => {
     setSelectedId(id);
@@ -69,8 +67,8 @@ export const HangarModal: React.FC<HangarModalProps> = ({
       <div
         style={{
           width: '94vw',
-          maxWidth: 1100,
-          maxHeight: '90vh',
+          maxWidth: 1120,
+          maxHeight: '92vh',
           backgroundColor: '#0c1322',
           borderRadius: 20,
           border: '1px solid rgba(56, 189, 248, 0.25)',
@@ -112,12 +110,65 @@ export const HangarModal: React.FC<HangarModalProps> = ({
                 航天器机库 · Spacecraft Hangar
               </h2>
               <span style={{ fontSize: 11, color: '#94a3b8' }}>
-                选择你要搭乘伴飞的人类太空探索载具
+                选择搭乘伴飞的人类太空探索载具与真实模型
               </span>
             </div>
           </div>
 
+          {/* 分类切换器 (精选典藏 vs 全部历史载具) */}
+          <div
+            style={{
+              display: 'flex',
+              gap: 4,
+              background: 'rgba(255, 255, 255, 0.05)',
+              padding: 3,
+              borderRadius: 10,
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+            }}
+          >
+            <button
+              data-testid="hangar-tab-featured"
+              onClick={() => {
+                setCategory('featured');
+                if (!VEHICLE_ASSET_REGISTRY[selectedId]?.isFeatured) {
+                  setSelectedId('iss');
+                }
+              }}
+              style={{
+                padding: '5px 12px',
+                borderRadius: 8,
+                border: 'none',
+                background: category === 'featured' ? '#0284c7' : 'transparent',
+                color: category === 'featured' ? '#ffffff' : '#94a3b8',
+                fontSize: 12,
+                fontWeight: category === 'featured' ? 600 : 400,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              🌟 精选典藏 ({getFeaturedVehicleIds().length})
+            </button>
+            <button
+              data-testid="hangar-tab-all"
+              onClick={() => setCategory('all')}
+              style={{
+                padding: '5px 12px',
+                borderRadius: 8,
+                border: 'none',
+                background: category === 'all' ? '#0284c7' : 'transparent',
+                color: category === 'all' ? '#ffffff' : '#94a3b8',
+                fontSize: 12,
+                fontWeight: category === 'all' ? 600 : 400,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              📦 全部载具 ({getAllVehicleIds().length})
+            </button>
+          </div>
+
           <button
+            data-testid="hangar-close-btn"
             onClick={onClose}
             aria-label="关闭机库"
             title="关闭机库"
@@ -125,10 +176,10 @@ export const HangarModal: React.FC<HangarModalProps> = ({
               background: 'rgba(255, 255, 255, 0.05)',
               border: '1px solid rgba(255, 255, 255, 0.1)',
               borderRadius: '50%',
-              width: 44,
-              height: 44,
-              minWidth: 44,
-              minHeight: 44,
+              width: 38,
+              height: 38,
+              minWidth: 38,
+              minHeight: 38,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -141,7 +192,7 @@ export const HangarModal: React.FC<HangarModalProps> = ({
           </button>
         </div>
 
-        {/* 载具横向选择切换标签 */}
+        {/* 载具横向选择切换列表 */}
         <div
           style={{
             display: 'flex',
@@ -152,14 +203,16 @@ export const HangarModal: React.FC<HangarModalProps> = ({
             borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
           }}
         >
-          {VEHICLE_LIST.map((id) => {
+          {vehicleList.map((id) => {
             const v = VEHICLE_CATALOG[id];
+            const rec = VEHICLE_ASSET_REGISTRY[id];
             const isSelected = selectedId === id;
             const isBoarded = currentVehicleId === id;
 
             return (
               <button
                 key={id}
+                data-testid={`hangar-vehicle-item-${id}`}
                 onClick={() => handleSelect(id)}
                 style={{
                   display: 'flex',
@@ -186,6 +239,20 @@ export const HangarModal: React.FC<HangarModalProps> = ({
                   }}
                 />
                 <span>{v.name}</span>
+                {rec?.format === 'glb' && (
+                  <span
+                    style={{
+                      fontSize: 9,
+                      padding: '1px 5px',
+                      borderRadius: 4,
+                      background: 'rgba(56, 189, 248, 0.2)',
+                      color: '#38bdf8',
+                      border: '1px solid rgba(56, 189, 248, 0.35)',
+                    }}
+                  >
+                    NASA GLB
+                  </span>
+                )}
                 {isBoarded && (
                   <span
                     style={{
@@ -214,7 +281,7 @@ export const HangarModal: React.FC<HangarModalProps> = ({
             overflowY: 'auto',
           }}
         >
-          {/* 左栏：3D 交互预览与真实米制尺寸标尺 */}
+          {/* 左栏：3D 交互预览、光照切换与真实米制尺寸标尺 */}
           <div
             style={{
               flex: 1.15,
@@ -228,7 +295,7 @@ export const HangarModal: React.FC<HangarModalProps> = ({
             <div
               style={{
                 flex: 1,
-                minHeight: 320,
+                minHeight: 340,
                 borderRadius: 14,
                 overflow: 'hidden',
                 position: 'relative',
@@ -240,61 +307,85 @@ export const HangarModal: React.FC<HangarModalProps> = ({
                 vehicleId={selectedId}
                 activeHotspotId={activeHotspotId}
                 scaleMode={scaleMode}
+                lightingMode={lightingMode}
               />
 
-              {/* 构图视角模式切换小浮窗 */}
+              {/* 视角与光照模式切换浮窗 */}
               <div
                 style={{
                   position: 'absolute',
                   top: 12,
                   right: 12,
                   display: 'flex',
-                  gap: 4,
-                  background: 'rgba(15, 23, 42, 0.85)',
-                  backdropFilter: 'blur(8px)',
-                  padding: 3,
-                  borderRadius: 8,
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  gap: 6,
                 }}
               >
-                <button
-                  onClick={() => setScaleMode('framed')}
+                {/* 光照切换按钮 */}
+                <div
                   style={{
                     display: 'flex',
-                    alignItems: 'center',
-                    gap: 4,
-                    padding: '4px 8px',
-                    borderRadius: 6,
-                    border: 'none',
-                    background: scaleMode === 'framed' ? '#0284c7' : 'transparent',
-                    color: scaleMode === 'framed' ? '#fff' : '#94a3b8',
-                    cursor: 'pointer',
-                    fontSize: 11,
+                    background: 'rgba(15, 23, 42, 0.85)',
+                    backdropFilter: 'blur(8px)',
+                    padding: 3,
+                    borderRadius: 8,
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
                   }}
-                  title="自动适配合适构图比例"
                 >
-                  <Eye size={12} />
-                  <span>最佳构图</span>
-                </button>
-                <button
-                  onClick={() => setScaleMode('metric')}
+                  <button
+                    data-testid="hangar-light-toggle-btn"
+                    onClick={() => setLightingMode(lightingMode === 'studio' ? 'orbit' : 'studio')}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      padding: '4px 8px',
+                      borderRadius: 6,
+                      border: 'none',
+                      background: lightingMode === 'orbit' ? '#eab308' : '#0284c7',
+                      color: lightingMode === 'orbit' ? '#000' : '#fff',
+                      cursor: 'pointer',
+                      fontSize: 11,
+                      fontWeight: 600,
+                    }}
+                    title="在中性工坊白光与在轨日光高反差之间切换"
+                  >
+                    {lightingMode === 'studio' ? <Lightbulb size={12} /> : <Sun size={12} />}
+                    <span>{lightingMode === 'studio' ? '工坊光' : '在轨日光'}</span>
+                  </button>
+                </div>
+
+                {/* 构图比例切换 */}
+                <div
                   style={{
                     display: 'flex',
-                    alignItems: 'center',
-                    gap: 4,
-                    padding: '4px 8px',
-                    borderRadius: 6,
-                    border: 'none',
-                    background: scaleMode === 'metric' ? '#0284c7' : 'transparent',
-                    color: scaleMode === 'metric' ? '#fff' : '#94a3b8',
-                    cursor: 'pointer',
-                    fontSize: 11,
+                    background: 'rgba(15, 23, 42, 0.85)',
+                    backdropFilter: 'blur(8px)',
+                    padding: 3,
+                    borderRadius: 8,
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
                   }}
-                  title="真实 1:1 米制比例（感受 109m ISS 与 3.7m Voyager 的巨大体积反差）"
                 >
-                  <Ruler size={12} />
-                  <span>1:1 真实米制对比</span>
-                </button>
+                  <button
+                    data-testid="hangar-scale-toggle-btn"
+                    onClick={() => setScaleMode(scaleMode === 'framed' ? 'metric' : 'framed')}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      padding: '4px 8px',
+                      borderRadius: 6,
+                      border: 'none',
+                      background: scaleMode === 'metric' ? '#0284c7' : 'transparent',
+                      color: scaleMode === 'metric' ? '#fff' : '#94a3b8',
+                      cursor: 'pointer',
+                      fontSize: 11,
+                    }}
+                    title="在最佳构图与 1:1 米制对比网格间切换"
+                  >
+                    {scaleMode === 'framed' ? <Eye size={12} /> : <Ruler size={12} />}
+                    <span>{scaleMode === 'framed' ? '最佳构图' : '1:1 标尺'}</span>
+                  </button>
+                </div>
               </div>
 
               <div
@@ -307,14 +398,44 @@ export const HangarModal: React.FC<HangarModalProps> = ({
                   pointerEvents: 'none',
                 }}
               >
-                🖱️ 鼠标按住并拖拽可 360° 旋转观察
+                🖱️ 鼠标拖拽 360° 旋转 · 滚轮缩放镜头
               </div>
             </div>
+
+            {/* 模型资产来源与出处证书条目 */}
+            {assetRecord && (
+              <div
+                data-testid="hangar-provenance-badge"
+                style={{
+                  marginTop: 10,
+                  background: 'rgba(56, 189, 248, 0.08)',
+                  padding: '8px 12px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(56, 189, 248, 0.2)',
+                  fontSize: 11,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  color: '#94a3b8',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <ShieldCheck size={14} color="#38bdf8" />
+                  <span>
+                    资产出处: <strong style={{ color: '#e2e8f0' }}>{assetRecord.source}</strong>
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#4ade80' }}>
+                  <CheckCircle2 size={12} />
+                  <span>{assetRecord.license}</span>
+                </div>
+              </div>
+            )}
 
             {/* 真实米制物理尺寸对比标尺卡片 */}
             <div
               style={{
-                marginTop: 14,
+                marginTop: 10,
                 background: 'rgba(15, 23, 42, 0.5)',
                 padding: '12px 16px',
                 borderRadius: 12,
@@ -332,7 +453,7 @@ export const HangarModal: React.FC<HangarModalProps> = ({
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#38bdf8', fontWeight: 600 }}>
                   <Ruler size={13} />
-                  <span>真实物理尺寸 (Real Dimensions)</span>
+                  <span>真实物理尺寸 (Real Metric Dimensions)</span>
                 </div>
                 <div style={{ color: '#94a3b8', fontSize: 11 }}>
                   发射重量: <strong style={{ color: '#e2e8f0' }}>{(def.massKg / 1000).toFixed(1)} 吨</strong> ({def.massKg.toLocaleString()} kg)
@@ -341,7 +462,7 @@ export const HangarModal: React.FC<HangarModalProps> = ({
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, textAlign: 'center' }}>
                 <div style={{ background: 'rgba(255,255,255,0.03)', padding: '6px 8px', borderRadius: 8 }}>
-                  <div style={{ fontSize: 10, color: '#64748b' }}>长 / 跨度</div>
+                  <div style={{ fontSize: 10, color: '#64748b' }}>长度 / 跨度</div>
                   <div style={{ fontSize: 14, fontWeight: 700, color: '#f8fafc' }}>{def.dimensions.lengthM} 米</div>
                 </div>
                 <div style={{ background: 'rgba(255,255,255,0.03)', padding: '6px 8px', borderRadius: 8 }}>
@@ -353,29 +474,13 @@ export const HangarModal: React.FC<HangarModalProps> = ({
                   <div style={{ fontSize: 14, fontWeight: 700, color: '#f8fafc' }}>{def.dimensions.heightM} 米</div>
                 </div>
               </div>
-
-              {/* 参照物形象对比条 */}
-              <div style={{ marginTop: 10, fontSize: 11, color: '#94a3b8' }}>
-                <span>生活参照：</span>
-                <span style={{ color: '#e2e8f0' }}>
-                  {def.dimensions.lengthM >= 100
-                    ? '比一个标准足球场还要大！'
-                    : def.dimensions.lengthM >= 30
-                    ? '相当于 3 辆大巴车首尾相连！'
-                    : def.dimensions.lengthM >= 15
-                    ? '约相当于半个标准网球场！'
-                    : def.dimensions.lengthM >= 6
-                    ? '大约相当于两层居民小洋楼的高度！'
-                    : '小巧精密，展开天线约相当于一个大客厅。'}
-                </span>
-              </div>
             </div>
           </div>
 
-          {/* 右栏：航天档案、亲子记忆点与结构热点 */}
+          {/* 右栏：详细档案、结构热点揭秘与操作按钮 */}
           <div
             style={{
-              flex: 1,
+              flex: 0.95,
               padding: 24,
               display: 'flex',
               flexDirection: 'column',
@@ -448,11 +553,11 @@ export const HangarModal: React.FC<HangarModalProps> = ({
                       style={{
                         padding: '6px 12px',
                         borderRadius: 8,
-                        background: isActive ? '#0284c7' : 'rgba(255, 255, 255, 0.05)',
-                        border: isActive ? '1px solid #38bdf8' : '1px solid rgba(255, 255, 255, 0.08)',
-                        color: isActive ? '#ffffff' : '#cbd5e1',
-                        cursor: 'pointer',
+                        border: isActive ? '1px solid #38bdf8' : '1px solid rgba(255, 255, 255, 0.1)',
+                        background: isActive ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.04)',
+                        color: isActive ? '#ffffff' : '#94a3b8',
                         fontSize: 11,
+                        cursor: 'pointer',
                         transition: 'all 0.15s ease',
                       }}
                     >
@@ -462,60 +567,47 @@ export const HangarModal: React.FC<HangarModalProps> = ({
                 })}
               </div>
 
-              {/* 选中的热点科普解密 */}
+              {/* 展开当前选中的热点科普详情 */}
               {activeHotspotId && (() => {
-                const curHs = def.hotspots.find((h) => h.id === activeHotspotId);
-                if (!curHs) return null;
+                const cur = def.hotspots.find((h) => h.id === activeHotspotId);
+                if (!cur) return null;
                 return (
                   <div
                     style={{
                       marginTop: 10,
-                      background: 'rgba(30, 41, 59, 0.65)',
-                      padding: '10px 14px',
-                      borderRadius: 8,
-                      border: '1px solid rgba(56, 189, 248, 0.25)',
-                      fontSize: 11,
-                      lineHeight: 1.55,
+                      background: 'rgba(15, 23, 42, 0.6)',
+                      padding: 12,
+                      borderRadius: 10,
+                      border: '1px solid rgba(56, 189, 248, 0.2)',
                     }}
                   >
-                    <div style={{ color: '#38bdf8', fontWeight: 600, marginBottom: 3 }}>
-                      🔍 {curHs.name}
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#38bdf8', marginBottom: 4 }}>
+                      🔍 {cur.name}
                     </div>
-                    <div style={{ color: '#e2e8f0', marginBottom: 4 }}>
-                      <strong>孩子好懂：</strong>{curHs.kidTip}
+                    <div style={{ fontSize: 11, color: '#e2e8f0', lineHeight: 1.5, marginBottom: 6 }}>
+                      {cur.kidTip}
                     </div>
-                    <div style={{ color: '#94a3b8' }}>
-                      <strong>科学原理：</strong>{curHs.scienceDetail}
+                    <div style={{ fontSize: 10, color: '#94a3b8', lineHeight: 1.4, borderTop: '1px dashed rgba(255,255,255,0.1)', paddingTop: 6 }}>
+                      🔬 <strong>工程细节：</strong>{cur.scienceDetail}
                     </div>
                   </div>
                 );
               })()}
             </div>
 
-            {/* 详细任务档案与科学成就（家长科普） */}
-            <div
-              style={{
-                background: 'rgba(15, 23, 42, 0.4)',
-                padding: '12px 14px',
-                borderRadius: 8,
-                fontSize: 11,
-                lineHeight: 1.6,
-                color: '#94a3b8',
-              }}
-            >
-              <div style={{ color: '#e2e8f0', fontWeight: 600, marginBottom: 4 }}>
-                🏆 历史里程碑：
-              </div>
-              <div style={{ color: '#cbd5e1', marginBottom: 6 }}>{def.keyMilestone}</div>
-              <div style={{ color: '#94a3b8' }}>{def.description}</div>
-              <div style={{ marginTop: 6, fontSize: 10, color: '#64748b' }}>
-                档案来源: {def.sourceRef}
+            {/* 详细历史档案与科学成就 */}
+            <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.6 }}>
+              <div style={{ fontWeight: 600, color: '#cbd5e1', marginBottom: 4 }}>📖 任务档案与科学成就：</div>
+              <p style={{ margin: 0 }}>{def.description}</p>
+              <div style={{ marginTop: 8, color: '#38bdf8', fontSize: 11 }}>
+                🏆 <strong>历史里程碑：</strong> {def.keyMilestone}
               </div>
             </div>
 
-            {/* 底部行动按钮 */}
-            <div style={{ marginTop: 'auto', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {/* 底部行动按钮栏 */}
+            <div style={{ marginTop: 'auto', paddingTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
               <button
+                data-testid="hangar-board-btn"
                 onClick={handleBoard}
                 style={{
                   width: '100%',
@@ -541,6 +633,7 @@ export const HangarModal: React.FC<HangarModalProps> = ({
 
               {currentVehicleId && onClearVehicle && (
                 <button
+                  data-testid="hangar-clear-vehicle-btn"
                   onClick={() => {
                     onClearVehicle();
                     onClose();

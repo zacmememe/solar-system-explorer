@@ -177,6 +177,12 @@ export const VEHICLE_CATALOG: Record<VehicleId, VehicleDefinition> = {
     ],
     accentColorHex: 0x94a3b8, // 钛银与多层隔热被色
     sourceRef: 'NASA / STScI Hubble Space Telescope Official Data',
+    isFeatured: true,
+    modelFormat: 'glb',
+    modelAssetPath: '/assets/models/hubble-nasa-b.glb',
+    modelSourceUrl: 'https://science.nasa.gov/3d-resources/hubble-space-telescope-b/',
+    modelLicense: 'NASA Open Data / Public Domain',
+    modelApproved: true,
   },
   'iss': {
     id: 'iss',
@@ -213,6 +219,9 @@ export const VEHICLE_CATALOG: Record<VehicleId, VehicleDefinition> = {
     ],
     accentColorHex: 0x38bdf8,
     sourceRef: 'NASA International Space Station Facts and Figures',
+    isFeatured: true,
+    modelFormat: 'procedural',
+    modelApproved: true,
   },
   'tiangong': {
     id: 'tiangong',

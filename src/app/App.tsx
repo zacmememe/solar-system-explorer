@@ -348,6 +348,7 @@ export const App: React.FC = () => {
               <button
                 onClick={() => setShowHangar(true)}
                 className="app-toolbar-btn btn-hangar"
+                data-testid="toolbar-hangar-btn"
                 title="打开航天器机库选择搭乘载具"
                 aria-label="打开航天器机库"
               >
@@ -370,6 +371,7 @@ export const App: React.FC = () => {
                 <button
                   onClick={handleClearVehicle}
                   className="app-toolbar-btn"
+                  data-testid="toolbar-clear-vehicle-btn"
                   style={{ padding: '6px 7px', color: '#fca5a5' }}
                   title="结束伴飞 · 移除航天器"
                   aria-label="结束伴飞"
