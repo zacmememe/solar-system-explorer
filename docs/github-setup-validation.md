@@ -14,4 +14,6 @@
 
 导出试运行暴露了测试发现范围问题：Vitest 会重复执行导出目录中的测试副本。新增 `vitest.config.ts`，保留默认排除规则并排除 `review-exports/**`；重新运行后仅执行原项目的 37 项测试，全部通过。
 
+另对 ZIP 内部目录做了跨平台检查：Windows PowerShell 的默认压缩方法使用反斜杠，已改成显式写入正斜杠目录，并验证包含 `.gitignore` 等选中文件，便于网页端在 Linux 环境解包。
+
 本地保留 `review-exports/pre-github-history.bundle` 和 `pre-github-working-tree.patch` 作为接入前历史及已跟踪文件差异备份；它们不会推送。原始备份目录与未纳入仓库的历史交接包保留在原位置。

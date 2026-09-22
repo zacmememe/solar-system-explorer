@@ -33,6 +33,14 @@ function exported(result) {
   if (process.platform === 'win32') {
     assert.ok(fs.existsSync(folder + '.zip'));
     assert.equal(fs.readFileSync(folder + '.zip').subarray(0, 2).toString(), 'PK');
+    const zipPath = "'" + (folder + '.zip').replaceAll("'", "''") + "'";
+    const command = `Add-Type -AssemblyName System.IO.Compression.FileSystem; ` +
+      `$archive = [System.IO.Compression.ZipFile]::OpenRead(${zipPath}); ` +
+      `try { @($archive.Entries | ForEach-Object { $_.FullName }) | ConvertTo-Json -Compress } finally { $archive.Dispose() }`;
+    const entries = JSON.parse(execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { encoding: 'utf8' }));
+    assert.ok(entries.includes('snapshot/README.md'), 'ZIP directories must use portable forward slashes');
+    assert.ok(entries.includes('snapshot/.gitignore'), 'ZIP must include selected dotfiles');
+    assert.ok(entries.every(entry => !entry.includes('\\')));
   }
   return { folder, manifest };
 }

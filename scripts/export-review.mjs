@@ -172,7 +172,14 @@ write('REVIEW.md', `# 太阳系漫游审查快照\n\n` +
 
 if (process.platform === 'win32') {
   const quote = value => "'" + value.replaceAll("'", "''") + "'";
-  const command = `Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::CreateFromDirectory(${quote(output)}, ${quote(output + '.zip')})`;
+  // Windows PowerShell's older CreateFromDirectory writes backslash entry names.
+  // Explicit forward slashes preserve directories when ChatGPT unpacks on Linux.
+  const command = `$ErrorActionPreference = 'Stop'; Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem; ` +
+    `$zipSource = ${quote(output)}; $zipArchive = [System.IO.Compression.ZipFile]::Open(${quote(output + '.zip')}, [System.IO.Compression.ZipArchiveMode]::Create); ` +
+    `try { Get-ChildItem -LiteralPath $zipSource -Recurse -File -Force | ForEach-Object { ` +
+    `$zipEntry = $_.FullName.Substring($zipSource.Length + 1).Replace([char]92, [char]47); ` +
+    `[System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zipArchive, $_.FullName, $zipEntry, [System.IO.Compression.CompressionLevel]::Optimal) | Out-Null ` +
+    `} } finally { $zipArchive.Dispose() }`;
   execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { cwd: root, stdio: 'pipe' });
   console.log(`ZIP: ${output}.zip`);
 }
