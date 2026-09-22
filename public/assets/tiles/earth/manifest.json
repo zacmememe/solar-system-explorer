@@ -1,0 +1,31 @@
+{
+  "bodyId": "earth",
+  "datasetId": "nasa-blue-marble-200409-tiles",
+  "version": "1.0.0",
+  "source": "NASA Earth Observatory / Blue Marble Next Generation",
+  "sourceDate": "2004-09",
+  "projection": "equirectangular-dual-root",
+  "referenceRadiusKm": 6371,
+  "maxLevel": 3,
+  "tileSizePixels": 512,
+  "colorSpace": "sRGB",
+  "tileRootPath": "/assets/tiles/earth",
+  "coverageRoi": [
+    {
+      "name": "珠江口大湾区 (Pearl River Delta)",
+      "lonMin": 112.5,
+      "lonMax": 115,
+      "latMin": 21.5,
+      "latMax": 23.5,
+      "targetLevel": 3
+    },
+    {
+      "name": "青藏高原喜马拉雅山脉 (Himalayas)",
+      "lonMin": 84,
+      "lonMax": 88,
+      "latMin": 27,
+      "latMax": 29.5,
+      "targetLevel": 3
+    }
+  ]
+}

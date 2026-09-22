@@ -26,6 +26,35 @@ export const VehicleViewer3D: React.FC<VehicleViewer3DProps> = ({
   const mountRef = useRef<HTMLDivElement>(null);
   const animRef = useRef<number>(0);
 
+  // 状态引用，用于在动画循环与平滑补间中持久通信
+  const stateRef = useRef({
+    scaleMode,
+    activeHotspotId,
+    targetCamPos: new THREE.Vector3(0, 5, 20),
+    targetLookAt: new THREE.Vector3(0, 0, 0),
+    maxDim: 10,
+    center: new THREE.Vector3(0, 0, 0),
+    rotX: 0.15,
+    rotY: 0.3,
+    isDragging: false,
+    userInteracted: false,
+  });
+
+  // 同步最新 props 到 stateRef
+  useEffect(() => {
+    stateRef.current.scaleMode = scaleMode;
+    stateRef.current.activeHotspotId = activeHotspotId;
+
+    const { maxDim } = stateRef.current;
+    if (scaleMode === 'framed') {
+      stateRef.current.targetCamPos.set(0, maxDim * 0.4, maxDim * 1.8);
+      stateRef.current.targetLookAt.set(0, 0, 0);
+    } else {
+      stateRef.current.targetCamPos.set(0, 25, 75);
+      stateRef.current.targetLookAt.set(0, 0, 0);
+    }
+  }, [scaleMode, activeHotspotId]);
+
   useEffect(() => {
     const container = mountRef.current;
     if (!container) return;
@@ -74,26 +103,27 @@ export const VehicleViewer3D: React.FC<VehicleViewer3DProps> = ({
     const center = new THREE.Vector3();
     box.getCenter(center);
     mesh.position.sub(center); // 居中
+    stateRef.current.center.copy(center);
 
     const size = new THREE.Vector3();
     box.getSize(size);
     const maxDim = Math.max(size.x, size.y, size.z, 0.01);
+    stateRef.current.maxDim = maxDim;
 
-    // 相机与缩放控制
-    if (scaleMode === 'framed') {
-      // 构图模式：距离按物体大小自适应
+    // 地面米制参考网格 (100m x 100m，每格 5m)
+    const gridHelper = new THREE.GridHelper(100, 20, 0x38bdf8, 0x1e293b);
+    gridHelper.position.y = -size.y * 0.5 - 0.5;
+    scene.add(gridHelper);
+
+    // 相机初始控制
+    if (stateRef.current.scaleMode === 'framed') {
       camera.position.set(0, maxDim * 0.4, maxDim * 1.8);
-      camera.lookAt(0, 0, 0);
+      gridHelper.visible = false;
     } else {
-      // 真实米制模式：固定相机视野，展现 109m ISS 与 3.7m Voyager 的剧烈体积反差
       camera.position.set(0, 25, 75);
-      camera.lookAt(0, 0, 0);
-
-      // 地面米制参考网格 (100m x 100m，每格 5m)
-      const gridHelper = new THREE.GridHelper(100, 20, 0x38bdf8, 0x1e293b);
-      gridHelper.position.y = -size.y * 0.5 - 0.5;
-      scene.add(gridHelper);
+      gridHelper.visible = true;
     }
+    camera.lookAt(0, 0, 0);
 
     // 4. 热点高亮指示器
     const hotspotMarker = new THREE.Mesh(
@@ -104,32 +134,28 @@ export const VehicleViewer3D: React.FC<VehicleViewer3DProps> = ({
     scene.add(hotspotMarker);
 
     // 5. 交互旋转控制
-    let isDragging = false;
     let prevX = 0;
     let prevY = 0;
-    let rotY = 0.3;
-    let rotX = 0.15;
-    let userInteracted = false;
 
     const onPointerDown = (e: PointerEvent) => {
-      isDragging = true;
-      userInteracted = true;
+      stateRef.current.isDragging = true;
+      stateRef.current.userInteracted = true;
       prevX = e.clientX;
       prevY = e.clientY;
     };
 
     const onPointerMove = (e: PointerEvent) => {
-      if (!isDragging) return;
+      if (!stateRef.current.isDragging) return;
       const dx = e.clientX - prevX;
       const dy = e.clientY - prevY;
-      rotY += dx * 0.008;
-      rotX = Math.max(-1.2, Math.min(1.2, rotX + dy * 0.008));
+      stateRef.current.rotY += dx * 0.008;
+      stateRef.current.rotX = Math.max(-1.2, Math.min(1.2, stateRef.current.rotX + dy * 0.008));
       prevX = e.clientX;
       prevY = e.clientY;
     };
 
     const onPointerUp = () => {
-      isDragging = false;
+      stateRef.current.isDragging = false;
     };
 
     renderer.domElement.addEventListener('pointerdown', onPointerDown);
@@ -144,23 +170,31 @@ export const VehicleViewer3D: React.FC<VehicleViewer3DProps> = ({
       const deltaSec = (now - lastTime) / 1000;
       lastTime = now;
 
+      // 平滑相机过渡（无论模式切换还是热点视角，无黑屏）
+      camera.position.lerp(stateRef.current.targetCamPos, 0.08);
+      camera.lookAt(stateRef.current.targetLookAt);
+
+      // 网格显隐
+      gridHelper.visible = stateRef.current.scaleMode === 'metric';
+
       // 若未手动拖拽，缓慢自动自转展示
-      if (!isDragging && !userInteracted) {
-        rotY += deltaSec * 0.25;
+      if (!stateRef.current.isDragging && !stateRef.current.userInteracted) {
+        stateRef.current.rotY += deltaSec * 0.25;
       }
 
-      vehicleGroup.rotation.y = rotY;
-      vehicleGroup.rotation.x = rotX;
+      vehicleGroup.rotation.y = stateRef.current.rotY;
+      vehicleGroup.rotation.x = stateRef.current.rotX;
 
       // 更新热点标记
+      const curHotspotId = stateRef.current.activeHotspotId;
       const def = VEHICLE_CATALOG[vehicleId];
-      if (activeHotspotId && def) {
-        const hs = def.hotspots.find((h) => h.id === activeHotspotId);
+      if (curHotspotId && def) {
+        const hs = def.hotspots.find((h) => h.id === curHotspotId);
         if (hs) {
           const [hx, hy, hz] = hs.relativePosM;
-          const localHotspot = new THREE.Vector3(hx, hy, hz).sub(center);
-          localHotspot.applyAxisAngle(new THREE.Vector3(1, 0, 0), rotX);
-          localHotspot.applyAxisAngle(new THREE.Vector3(0, 1, 0), rotY);
+          const localHotspot = new THREE.Vector3(hx, hy, hz).sub(stateRef.current.center);
+          localHotspot.applyAxisAngle(new THREE.Vector3(1, 0, 0), stateRef.current.rotX);
+          localHotspot.applyAxisAngle(new THREE.Vector3(0, 1, 0), stateRef.current.rotY);
           hotspotMarker.position.copy(localHotspot);
           hotspotMarker.visible = true;
           // 呼吸闪烁
@@ -210,7 +244,7 @@ export const VehicleViewer3D: React.FC<VehicleViewer3DProps> = ({
         renderer.domElement.parentElement.removeChild(renderer.domElement);
       }
     };
-  }, [vehicleId, activeHotspotId, scaleMode]);
+  }, [vehicleId]);
 
   return (
     <div

@@ -24,6 +24,7 @@ const VEHICLE_LIST: VehicleId[] = [
   'apollo-lm',
   'voyager-1',
   'james-webb',
+  'hubble',
   'iss',
   'tiangong',
   'cassini',

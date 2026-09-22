@@ -7,11 +7,11 @@ import {
 } from '../src/utils/bookmarkStorage';
 
 describe('M4 书签与观察点存档测试 (SAVE-01, SAVE-02)', () => {
-  it('SAVE-01: 所有预置书签结构完整且符合 schemaVersion 1 契约', () => {
+  it('SAVE-01: 所有预置书签结构完整且符合 schemaVersion 契约', () => {
     expect(PRESET_BOOKMARKS.length).toBeGreaterThanOrEqual(4);
     for (const b of PRESET_BOOKMARKS) {
       expect(isValidBookmark(b)).toBe(true);
-      expect(b.schemaVersion).toBe(1);
+      expect([1, 2]).toContain(b.schemaVersion);
       expect(b.targetBodyId).toBeDefined();
       expect(b.spherical.radius).toBeGreaterThan(0);
       expect(b.spherical.phi).toBeGreaterThan(0);

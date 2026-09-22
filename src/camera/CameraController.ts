@@ -161,13 +161,28 @@ export class CameraController {
   public updateTargetPosition(targetPos: THREE.Vector3, targetRadius: number): void {
     if (!this.isTransitioning && this.anchor.kind === 'body') {
       this.targetPosition.copy(targetPos);
-      this.minDistance = Math.max(1.5, targetRadius * 1.2);
+      this.minDistance = Math.max(0.1, targetRadius * 1.02);
       this.maxDistance = Math.max(100, targetRadius * 100);
       if (this.spherical.radius < this.minDistance) {
         this.spherical.radius = this.minDistance;
       }
       this.updateCameraTransform();
     }
+  }
+
+  /**
+   * 直接设置球坐标 (用于特定视角定向如 ROI 特写或书签直达)，保持单一相机控制器约束
+   */
+  public setSphericalDirect(radius: number, phi: number, theta: number): void {
+    if (this.isTransitioning) {
+      this.cancelFlight();
+    }
+    this.spherical.radius = THREE.MathUtils.clamp(radius, this.minDistance, this.maxDistance);
+    this.spherical.phi = Math.max(0.01, Math.min(Math.PI - 0.01, phi));
+    this.spherical.theta = theta;
+    this.spherical.makeSafe();
+    this.syncLogDollyFromRadius();
+    this.updateCameraTransform();
   }
 
   /**
@@ -370,7 +385,7 @@ export class CameraController {
         this.anchor = { kind: 'body', bodyId: this.targetBodyId };
         const targetInfo = getBodyPos(this.targetBodyId);
         this.surfaceRadius = targetInfo.radius;
-        this.minDistance = targetInfo.radius * 1.2;
+        this.minDistance = Math.max(0.1, targetInfo.radius * 1.02);
         this.maxDistance = targetInfo.radius * 100;
         this.syncLogDollyFromRadius();
       }
@@ -400,7 +415,7 @@ export class CameraController {
       this.spherical.makeSafe();
 
       this.surfaceRadius = targetInfo.radius;
-      this.minDistance = targetInfo.radius * 1.2;
+      this.minDistance = Math.max(0.1, targetInfo.radius * 1.02);
       this.maxDistance = targetInfo.radius * 100;
       this.syncLogDollyFromRadius();
     } else {
@@ -409,7 +424,7 @@ export class CameraController {
         const targetInfo = getBodyPos(this.anchor.bodyId);
         this.targetPosition.copy(targetInfo.pos);
         this.surfaceRadius = targetInfo.radius;
-        this.minDistance = targetInfo.radius * 1.2;
+        this.minDistance = Math.max(0.1, targetInfo.radius * 1.02);
         this.maxDistance = targetInfo.radius * 100;
       } else {
         this.targetPosition.set(this.anchor.pivotScene[0], this.anchor.pivotScene[1], this.anchor.pivotScene[2]);

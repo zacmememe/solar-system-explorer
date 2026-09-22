@@ -258,6 +258,10 @@ export const App: React.FC = () => {
     setViewCameraMode(bm.viewCameraMode);
     engineRef.current?.setViewCameraMode(bm.viewCameraMode);
 
+    // 同步展示策略（V2 规范：NAV_SCHEMATIC 导航示意 或 PHYSICAL_OBSERVATION 物理真实尺度）
+    const policy = (bm as any).presentationPolicy || 'NAV_SCHEMATIC';
+    engineRef.current?.setPresentationPolicy(policy);
+
     setShowClouds(bm.layers.showClouds);
     engineRef.current?.setShowClouds(bm.layers.showClouds);
 

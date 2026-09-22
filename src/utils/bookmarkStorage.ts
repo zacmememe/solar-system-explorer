@@ -1,23 +1,27 @@
 /**
- * 书签与观察点离线安全存储管理工具
- * 遵循 01-REBUILD-PLAN.zh-CN.md 与 03-ACCEPTANCE.zh-CN.md (SAVE-01, SAVE-02) 规范：
+ * 书签与观察点离线安全存储管理工具 (V2 规范)
+ * 遵循主方案规范：
  * 1. 本地 localStorage 持久化，零服务器上传，保护儿童隐私；
- * 2. 提供预置经典探索观测点；
- * 3. 严格校验 schemaVersion 与字段边界，杜绝脏数据导致黑屏崩溃；
+ * 2. 提供预置经典探索观测点（包含导航比例与物理观察模式）；
+ * 3. 严格校验 schemaVersion（兼容 V1 与 V2）与字段边界；
  * 4. 支持 JSON 格式导出与导入备份。
  */
 
-import type { BookmarkItem, BookmarkExportPackage } from '../contracts/bookmark';
+import type { BookmarkItem, BookmarkItemV2, BookmarkExportPackage } from '../contracts/bookmark';
+import { upgradeBookmarkToV2 } from '../contracts/bookmark';
 import { BODIES } from '../astronomy/bodies';
 
-const STORAGE_KEY = 'solar_explorer_bookmarks_v1';
+const STORAGE_KEY = 'solar_explorer_bookmarks_v2';
+const LEGACY_STORAGE_KEY = 'solar_explorer_bookmarks_v1';
 
-export const PRESET_BOOKMARKS: BookmarkItem[] = [
+export const PRESET_BOOKMARKS: BookmarkItemV2[] = [
   {
     id: 'preset-earth-terminator',
-    schemaVersion: 1,
+    schemaVersion: 2,
     title: '🌍 地球 · 晨昏线与万家灯火',
     targetBodyId: 'earth',
+    presentationPolicy: 'NAV_SCHEMATIC',
+    epochIso: '2026-09-22T00:00:00.000Z',
     spherical: { radius: 4.8, phi: 1.45, theta: 0.8 },
     viewCameraMode: 'VEHICLE_FORMATION',
     vehicleId: 'iss',
@@ -34,10 +38,34 @@ export const PRESET_BOOKMARKS: BookmarkItem[] = [
     isPreset: true,
   },
   {
+    id: 'preset-moon-physical-earth',
+    schemaVersion: 2,
+    title: '🌕 月球 · 物理尺度眺望地球 (1.90°)',
+    targetBodyId: 'moon',
+    presentationPolicy: 'PHYSICAL_OBSERVATION',
+    epochIso: '2026-09-22T00:00:00.000Z',
+    spherical: { radius: 3.5, phi: 1.57, theta: 3.14 },
+    viewCameraMode: 'PLANET_OBSERVE',
+    vehicleId: null,
+    layers: {
+      showClouds: true,
+      showAtmosphere: true,
+      teachingLight: false,
+      showOrbits: false,
+      venusRadarMode: false,
+    },
+    simTimeHours: 0.0,
+    createdAtIso: '2026-09-22T00:00:00.000Z',
+    notes: '地月真实物理间距 384,400km，从月球回望地球呈现严密符合物理光学法则的 1.90° 壮丽视圆盘。',
+    isPreset: true,
+  },
+  {
     id: 'preset-saturn-rings',
-    schemaVersion: 1,
+    schemaVersion: 2,
     title: '🪐 土星 · 宏伟双面环与背阳投影',
     targetBodyId: 'saturn',
+    presentationPolicy: 'NAV_SCHEMATIC',
+    epochIso: '2026-09-22T00:00:00.000Z',
     spherical: { radius: 21.0, phi: 1.3, theta: 0.95 },
     viewCameraMode: 'VEHICLE_FORMATION',
     vehicleId: 'cassini',
@@ -55,9 +83,11 @@ export const PRESET_BOOKMARKS: BookmarkItem[] = [
   },
   {
     id: 'preset-moon-landing',
-    schemaVersion: 1,
+    schemaVersion: 2,
     title: '🌕 月球 · 阿波罗 11 号静海基地',
     targetBodyId: 'moon',
+    presentationPolicy: 'NAV_SCHEMATIC',
+    epochIso: '2026-09-22T00:00:00.000Z',
     spherical: { radius: 2.8, phi: 1.35, theta: 0.5 },
     viewCameraMode: 'VEHICLE_FORMATION',
     vehicleId: 'apollo-lm',
@@ -75,9 +105,11 @@ export const PRESET_BOOKMARKS: BookmarkItem[] = [
   },
   {
     id: 'preset-jwst-deepspace',
-    schemaVersion: 1,
+    schemaVersion: 2,
     title: '🔭 韦伯望远镜 · 深空红外巡天',
     targetBodyId: 'jupiter',
+    presentationPolicy: 'NAV_SCHEMATIC',
+    epochIso: '2026-09-22T00:00:00.000Z',
     spherical: { radius: 10.5, phi: 1.4, theta: 1.1 },
     viewCameraMode: 'VEHICLE_FORMATION',
     vehicleId: 'james-webb',
@@ -96,21 +128,33 @@ export const PRESET_BOOKMARKS: BookmarkItem[] = [
 ];
 
 /**
- * 读取当前所有书签（预置 + 用户自定义）
+ * 读取当前所有书签（预置 + 用户自定义，自动无缝升级迁移旧版）
  */
-export function getStoredBookmarks(): BookmarkItem[] {
+export function getStoredBookmarks(): BookmarkItemV2[] {
   if (typeof window === 'undefined' || !window.localStorage) {
     return [...PRESET_BOOKMARKS];
   }
 
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [...PRESET_BOOKMARKS];
+    let raw = localStorage.getItem(STORAGE_KEY);
+    // 若 V2 不存在，尝试读取旧版 V1 并自动迁移
+    if (!raw) {
+      const legacyRaw = localStorage.getItem(LEGACY_STORAGE_KEY);
+      if (legacyRaw) {
+        const legacyParsed = JSON.parse(legacyRaw);
+        if (Array.isArray(legacyParsed)) {
+          const upgraded = legacyParsed.filter(isValidBookmarkAnyVersion).map(upgradeBookmarkToV2);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(upgraded));
+          return [...PRESET_BOOKMARKS, ...upgraded];
+        }
+      }
+      return [...PRESET_BOOKMARKS];
+    }
 
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [...PRESET_BOOKMARKS];
 
-    const validCustom = parsed.filter(isValidBookmark);
+    const validCustom = parsed.filter(isValidBookmarkAnyVersion).map(upgradeBookmarkToV2);
     return [...PRESET_BOOKMARKS, ...validCustom];
   } catch (err) {
     console.warn('[Bookmark] Failed to load bookmarks from storage:', err);
@@ -124,13 +168,13 @@ export function getStoredBookmarks(): BookmarkItem[] {
 export function saveBookmark(bookmark: BookmarkItem): void {
   if (typeof window === 'undefined' || !window.localStorage) return;
 
+  const upgraded = upgradeBookmarkToV2(bookmark);
   const current = getStoredBookmarks().filter((b) => !b.isPreset);
-  // 去重或更新
-  const existingIdx = current.findIndex((b) => b.id === bookmark.id);
+  const existingIdx = current.findIndex((b) => b.id === upgraded.id);
   if (existingIdx >= 0) {
-    current[existingIdx] = bookmark;
+    current[existingIdx] = upgraded;
   } else {
-    current.unshift(bookmark);
+    current.unshift(upgraded);
   }
 
   try {
@@ -161,7 +205,7 @@ export function exportBookmarksJson(): string {
   const bookmarks = getStoredBookmarks();
   const pkg: BookmarkExportPackage = {
     app: 'solar-system-explorer',
-    schemaVersion: 1,
+    schemaVersion: 2,
     exportedAtIso: new Date().toISOString(),
     bookmarks,
   };
@@ -177,13 +221,13 @@ export function downloadBookmarksFile(): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `solar-system-bookmarks-${new Date().toISOString().slice(0, 10)}.json`;
+  a.download = `solar-system-bookmarks-v2-${new Date().toISOString().slice(0, 10)}.json`;
   a.click();
   URL.revokeObjectURL(url);
 }
 
 /**
- * 导入 JSON 存档，严格执行模式与数据校验
+ * 导入 JSON 存档，严格执行模式与数据校验（支持 V1 和 V2 文件无缝导入）
  */
 export function importBookmarksJson(jsonStr: string): {
   success: boolean;
@@ -196,7 +240,7 @@ export function importBookmarksJson(jsonStr: string): {
       return { success: false, importedCount: 0, message: '无效的 JSON 文件格式' };
     }
 
-    if (data.app !== 'solar-system-explorer' || data.schemaVersion !== 1) {
+    if (data.app !== 'solar-system-explorer' || (data.schemaVersion !== 1 && data.schemaVersion !== 2)) {
       return { success: false, importedCount: 0, message: '不支持的存档版本或非本应用导出的书签' };
     }
 
@@ -204,13 +248,15 @@ export function importBookmarksJson(jsonStr: string): {
       return { success: false, importedCount: 0, message: '存档中未找到有效的书签列表' };
     }
 
-    const validItems: BookmarkItem[] = [];
+    const validItems: BookmarkItemV2[] = [];
     for (const item of data.bookmarks) {
-      if (isValidBookmark(item)) {
-        // 导入时保证作为用户自定义书签，防止覆盖预置规则
+      if (isValidBookmarkAnyVersion(item)) {
+        const upgraded = upgradeBookmarkToV2(item);
         validItems.push({
-          ...item,
-          id: item.id.startsWith('preset-') ? `imported-${Date.now()}-${Math.random().toString(36).slice(2, 6)}` : item.id,
+          ...upgraded,
+          id: upgraded.id.startsWith('preset-')
+            ? `imported-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+            : upgraded.id,
           isPreset: false,
         });
       }
@@ -235,12 +281,12 @@ export function importBookmarksJson(jsonStr: string): {
 }
 
 /**
- * 严格校验书签对象合法性，防止非法值污染
+ * 严格校验书签合法性（支持 V1 和 V2）
  */
-export function isValidBookmark(obj: any): obj is BookmarkItem {
+export function isValidBookmarkAnyVersion(obj: any): boolean {
   if (!obj || typeof obj !== 'object') return false;
   if (typeof obj.id !== 'string' || !obj.id) return false;
-  if (obj.schemaVersion !== 1) return false;
+  if (obj.schemaVersion !== 1 && obj.schemaVersion !== 2) return false;
   if (typeof obj.title !== 'string') return false;
   if (typeof obj.targetBodyId !== 'string' || !BODIES[obj.targetBodyId]) return false;
 
@@ -266,3 +312,5 @@ export function isValidBookmark(obj: any): obj is BookmarkItem {
 
   return true;
 }
+
+export const isValidBookmark = isValidBookmarkAnyVersion;

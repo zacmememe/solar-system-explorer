@@ -44,6 +44,9 @@ export class VehicleMeshBuilder {
       case 'cassini':
         this.buildCassini(group);
         break;
+      case 'hubble':
+        this.buildHubble(group);
+        break;
     }
 
     return group;
@@ -942,6 +945,291 @@ export class VehicleMeshBuilder {
       ant.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
       ant.position.copy(dir.clone().multiplyScalar(1.9)).add(new THREE.Vector3(0, 0.8, 0));
       parent.add(ant);
+    }
+  }
+
+  // =========================================================================
+  // 7. 哈勃太空望远镜 (Hubble Space Telescope - HST)
+  // =========================================================================
+  private static buildHubble(parent: THREE.Group): void {
+    const hullTex = getHullPanelTexture();
+    const solarTex = getSolarPanelTexture();
+    const darkTex = getDarkCarbonTexture();
+
+    // 材质定义
+    // A. 前部遮光罩高反光镜面钛银隔热多层隔热毯 (Silver MLI Blanket)
+    const silverMliMat = new THREE.MeshStandardMaterial({
+      color: 0xd8e2dc,
+      metalness: 0.9,
+      roughness: 0.2,
+    });
+    // B. 后部仪器设备舱 (Aft Shroud) 涂层面板与航天器外壳
+    const aftHullMat = new THREE.MeshStandardMaterial({
+      map: hullTex,
+      color: 0xf1f5f9,
+      metalness: 0.6,
+      roughness: 0.35,
+    });
+    // C. 筒内超黑吸光消光涂层 (High-absorption Black Anodized / Z306)
+    const interiorBlackMat = new THREE.MeshStandardMaterial({
+      color: 0x050508,
+      metalness: 0.1,
+      roughness: 0.95,
+      side: THREE.DoubleSide,
+    });
+    // D. 2.4 米超高精度双曲面镀铝主反射镜
+    const primaryMirrorMat = new THREE.MeshStandardMaterial({
+      color: 0x93c5fd, // 极淡微蓝银光高反射
+      metalness: 0.98,
+      roughness: 0.04,
+    });
+    // E. 太阳翼光伏板 (ESA SA3 柔性硅光伏阵列)
+    const solarMat = new THREE.MeshStandardMaterial({
+      map: solarTex,
+      metalness: 0.85,
+      roughness: 0.25,
+      side: THREE.DoubleSide,
+    });
+    // F. 深色碳素结构桁架与天线支架
+    const darkStructureMat = new THREE.MeshStandardMaterial({
+      map: darkTex,
+      color: 0x334155,
+      metalness: 0.8,
+      roughness: 0.3,
+    });
+    // G. 高增益抛物面天线白色高反射复合材料
+    const dishMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      metalness: 0.3,
+      roughness: 0.4,
+      side: THREE.DoubleSide,
+    });
+
+    // -----------------------------------------------------------------------
+    // 1. 前部遮光镜筒 (Forward Light Shield - 长度 4.5m，直径 3.0m)
+    // -----------------------------------------------------------------------
+    const lightShieldGeo = new THREE.CylinderGeometry(1.5, 1.5, 4.2, 32, 1, true);
+    const lightShieldMesh = new THREE.Mesh(lightShieldGeo, silverMliMat);
+    lightShieldMesh.position.y = 2.4;
+    parent.add(lightShieldMesh);
+
+    // 内部消光衬套（防止外壳内壁透光）
+    const innerShieldGeo = new THREE.CylinderGeometry(1.48, 1.48, 4.18, 32, 1, true);
+    const innerShieldMesh = new THREE.Mesh(innerShieldGeo, interiorBlackMat);
+    innerShieldMesh.position.y = 2.4;
+    parent.add(innerShieldMesh);
+
+    // 镜筒开口前端加强保护环
+    const rimGeo = new THREE.TorusGeometry(1.5, 0.05, 16, 32);
+    const rimMesh = new THREE.Mesh(rimGeo, silverMliMat);
+    rimMesh.rotation.x = Math.PI / 2;
+    rimMesh.position.y = 4.5;
+    parent.add(rimMesh);
+
+    // -----------------------------------------------------------------------
+    // 2. 活动遮光保护门 (Aperture Door - 倾斜 45° 敞开)
+    // -----------------------------------------------------------------------
+    const doorGroup = new THREE.Group();
+    doorGroup.position.set(0, 4.5, -1.5); // 铰链位于 Z 轴负侧边缘
+
+    const doorOuterMesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.52, 1.52, 0.06, 32),
+      silverMliMat
+    );
+    doorOuterMesh.position.set(0, 0, 1.5); // 相对铰链偏移回圆心
+    doorGroup.add(doorOuterMesh);
+
+    const doorInnerMesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.5, 1.5, 0.04, 32),
+      interiorBlackMat
+    );
+    doorInnerMesh.position.set(0, -0.02, 1.5);
+    doorGroup.add(doorInnerMesh);
+
+    // 铰链机构
+    const hingeGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.8, 16);
+    const hingeMesh = new THREE.Mesh(hingeGeo, darkStructureMat);
+    hingeMesh.rotation.z = Math.PI / 2;
+    doorGroup.add(hingeMesh);
+
+    // 开启 42° 仰角
+    doorGroup.rotation.x = -Math.PI * 0.23;
+    parent.add(doorGroup);
+
+    // -----------------------------------------------------------------------
+    // 3. 2.4 米主反射镜与次镜支撑光轴系统 (Primary & Secondary Mirrors)
+    // -----------------------------------------------------------------------
+    // 主镜基座底盘与凹面反射镜
+    const primaryMirror = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.2, 1.2, 0.15, 32),
+      primaryMirrorMat
+    );
+    primaryMirror.position.y = 1.2;
+    parent.add(primaryMirror);
+
+    // 主镜中心挡光锥筒 (Central Baffle Tube)
+    const centralBaffle = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.28, 0.32, 1.2, 24),
+      interiorBlackMat
+    );
+    centralBaffle.position.y = 1.8;
+    parent.add(centralBaffle);
+
+    // 次镜总成与遮光罩 (Secondary Mirror Assembly at y = 3.8)
+    const secondaryMirror = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.24, 0.24, 0.4, 24),
+      interiorBlackMat
+    );
+    secondaryMirror.position.y = 3.8;
+    parent.add(secondaryMirror);
+
+    // 次镜 4 根支撑十字架 (Secondary Support Spider Vanes)
+    for (let i = 0; i < 4; i++) {
+      const angle = (i * Math.PI) / 2;
+      const spider = new THREE.Mesh(
+        new THREE.BoxGeometry(0.02, 0.06, 1.24),
+        darkStructureMat
+      );
+      spider.position.set(
+        0.74 * Math.sin(angle),
+        3.8,
+        0.74 * Math.cos(angle)
+      );
+      spider.rotation.y = angle;
+      parent.add(spider);
+    }
+
+    // -----------------------------------------------------------------------
+    // 4. 后部仪器设备舱 (Equipment Section & Aft Shroud - 直径 4.2m)
+    // -----------------------------------------------------------------------
+    // 锥形过渡过渡壳体 (Conical Transition: 3.0m -> 4.2m)
+    const coneTransGeo = new THREE.CylinderGeometry(1.5, 2.1, 0.8, 32);
+    const coneTransMesh = new THREE.Mesh(coneTransGeo, aftHullMat);
+    coneTransMesh.position.y = -0.1;
+    parent.add(coneTransMesh);
+
+    // 仪器舱主圆筒体 (Aft Shroud Main Cylinder: 直径 4.2m, 高度 3.6m)
+    const aftShroudGeo = new THREE.CylinderGeometry(2.1, 2.1, 3.6, 32);
+    const aftShroudMesh = new THREE.Mesh(aftShroudGeo, aftHullMat);
+    aftShroudMesh.position.y = -2.3;
+    parent.add(aftShroudMesh);
+
+    // 后端主框架密封底板 (Aft Bulkhead)
+    const aftBaseGeo = new THREE.CylinderGeometry(2.1, 2.05, 0.2, 32);
+    const aftBaseMesh = new THREE.Mesh(aftBaseGeo, darkStructureMat);
+    aftBaseMesh.position.y = -4.2;
+    parent.add(aftBaseMesh);
+
+    // 环绕加强结构筋带 (Reinforcement Ribs)
+    for (const yRib of [-0.6, -2.1, -3.8]) {
+      const ribGeo = new THREE.TorusGeometry(2.12, 0.04, 8, 32);
+      const ribMesh = new THREE.Mesh(ribGeo, darkStructureMat);
+      ribMesh.rotation.x = Math.PI / 2;
+      ribMesh.position.y = yRib;
+      parent.add(ribMesh);
+    }
+
+    // 宇航员太空行走维护抓握扶手 (Yellow/Gold EVA Handrails)
+    const handrailMat = new THREE.MeshStandardMaterial({
+      color: 0xfacc15,
+      metalness: 0.7,
+      roughness: 0.3,
+    });
+    for (let j = 0; j < 6; j++) {
+      const angle = (j * Math.PI * 2) / 6;
+      const handrail = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.02, 0.02, 1.8, 8),
+        handrailMat
+      );
+      handrail.position.set(2.14 * Math.sin(angle), -2.4, 2.14 * Math.cos(angle));
+      parent.add(handrail);
+    }
+
+    // -----------------------------------------------------------------------
+    // 5. 双翼柔性太阳能电池翼 (Solar Array 3 - SA3 翼展达 12 米)
+    // -----------------------------------------------------------------------
+    for (const side of [-1, 1]) {
+      // 太阳翼旋转驱动机构 (Solar Array Drive Mechanism - SADM)
+      const sadm = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.18, 0.18, 0.6, 16),
+        darkStructureMat
+      );
+      sadm.rotation.z = Math.PI / 2;
+      sadm.position.set(side * 2.3, 0.0, 0);
+      parent.add(sadm);
+
+      // 横向伸展支承圆管
+      const boom = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.06, 0.06, 1.2, 12),
+        silverMliMat
+      );
+      boom.rotation.z = Math.PI / 2;
+      boom.position.set(side * 3.0, 0.0, 0);
+      parent.add(boom);
+
+      // 太阳能电池翼主板 (每侧板长 5.5m，宽 2.2m)
+      const panel = new THREE.Mesh(
+        new THREE.BoxGeometry(0.04, 5.5, 2.2),
+        solarMat
+      );
+      panel.position.set(side * 4.4, 0.0, 0);
+      parent.add(panel);
+
+      // 太阳翼展开张力支撑横梁 (Spreader Bars)
+      for (const yEnd of [-2.75, 2.75]) {
+        const spreader = new THREE.Mesh(
+          new THREE.BoxGeometry(0.08, 0.08, 2.3),
+          handrailMat
+        );
+        spreader.position.set(side * 4.4, yEnd, 0);
+        parent.add(spreader);
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // 6. 双高增益抛物面微波天线 (Dual High Gain Antennas - HGA)
+    // -----------------------------------------------------------------------
+    for (const side of [-1, 1]) {
+      const hgaBoom = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.04, 0.04, 1.4, 8),
+        darkStructureMat
+      );
+      // 倾斜伸向设备舱前侧斜上方
+      hgaBoom.position.set(side * 2.5, 0.6, side * 0.8);
+      hgaBoom.rotation.z = side * 0.5;
+      hgaBoom.rotation.x = side * 0.4;
+      parent.add(hgaBoom);
+
+      // 抛物面主反射天线锅 (直径 1.3m)
+      const dish = new THREE.Mesh(
+        new THREE.ConeGeometry(0.65, 0.25, 24, 1, true),
+        dishMat
+      );
+      dish.position.set(side * 3.1, 0.9, side * 1.3);
+      dish.rotation.z = -side * 0.6;
+      dish.rotation.x = Math.PI / 2 + side * 0.4;
+      parent.add(dish);
+
+      // 天线馈源杆
+      const feed = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.015, 0.015, 0.35, 6),
+        darkStructureMat
+      );
+      feed.position.copy(dish.position).add(new THREE.Vector3(0, 0.15, 0.15));
+      parent.add(feed);
+    }
+
+    // -----------------------------------------------------------------------
+    // 7. 航天飞机机械臂抓取固定销钉 (RMS Grapple Fixtures)
+    // -----------------------------------------------------------------------
+    for (const angle of [0, Math.PI]) {
+      const grapple = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.05, 0.05, 0.35, 12),
+        handrailMat
+      );
+      grapple.position.set(2.15 * Math.cos(angle), -1.8, 2.15 * Math.sin(angle));
+      grapple.rotation.z = Math.PI / 2;
+      parent.add(grapple);
     }
   }
 }

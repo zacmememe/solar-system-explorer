@@ -17,14 +17,19 @@ import {
   getNavOrbitRadius,
   getNavDisplayRadius,
   getPlanetNavPosition,
-  getSatelliteNavPosition,
 } from '../astronomy/bodies';
+import {
+  BodyPoseProvider,
+  PresentationPolicy,
+} from '../astronomy/BodyPoseProvider';
 import { AssetManager } from '../assets/AssetManager';
 import {
   createEarthSurfaceMaterial,
   createEarthCloudMaterial,
   createAtmosphereHaloMaterial,
 } from '../rendering/EarthMaterial';
+import { SurfaceTileManager } from '../surface/SurfaceTileManager';
+import { SurfaceDatasetManifest } from '../contracts/surface';
 import {
   createSaturnRingMaterial,
   createRingShadowPlanetMaterial,
@@ -134,6 +139,7 @@ export class SolarEngine {
   private camera: THREE.PerspectiveCamera;
   private cameraController: CameraController;
   private assetManager: AssetManager;
+  private bodyPoseProvider = new BodyPoseProvider('NAV_SCHEMATIC');
 
   // 场景星空背景
   private skyboxMesh: THREE.Mesh | null = null;
@@ -185,6 +191,7 @@ export class SolarEngine {
   private ganymedeMaterial: THREE.ShaderMaterial | null = null;
   private callistoMaterial: THREE.ShaderMaterial | null = null;
   private tempQuat: THREE.Quaternion = new THREE.Quaternion();
+  private earthTileManager: SurfaceTileManager | null = null;
 
   // 航天器伴飞系统
   private currentVehicleId: VehicleId | null = null;
@@ -311,6 +318,7 @@ export class SolarEngine {
 
     if (typeof window !== 'undefined') {
       (window as any).__SOLAR_ENGINE__ = this;
+      (window as any).THREE = THREE;
     }
   }
 
@@ -456,7 +464,7 @@ export class SolarEngine {
         node.orbitLine = orbitLine;
       }
 
-      // 5. 地球专属多层：独立自旋云层与大气光晕（同心挂载在 poleFrame）
+      // 5. 地球专属多层：独立自旋云层、大气光晕与高精多分辨率地理瓦片金字塔 (挂载在 poleFrame)
       if (id === 'earth') {
         const cloudGeo = new THREE.SphereGeometry(displayRadius * 1.012, 48, 36);
         const defaultCloudMat = new THREE.MeshBasicMaterial({
@@ -474,6 +482,28 @@ export class SolarEngine {
         const haloMesh = new THREE.Mesh(haloGeo, this.earthHaloMaterial);
         poleFrame.add(haloMesh);
         node.haloMesh = haloMesh;
+
+        // 批次 B3：初始化高精度地球多级地理经纬度双根四叉树瓦片管理器
+        const earthTileManifest: SurfaceDatasetManifest = {
+          bodyId: 'earth',
+          datasetId: 'nasa-blue-marble-200409-tiles',
+          version: '1.0.0',
+          source: 'NASA Earth Observatory / Blue Marble Next Generation',
+          sourceDate: '2004-09',
+          projection: 'equirectangular-dual-root',
+          referenceRadiusKm: data.radiusKm,
+          maxLevel: 3,
+          tileSizePixels: 512,
+          colorSpace: 'sRGB',
+          tileRootPath: '/assets/tiles/earth',
+        };
+        this.earthTileManager = new SurfaceTileManager({
+          manifest: earthTileManifest,
+          radius: displayRadius * 1.0005, // 细微贴合底球，杜绝 Z-fighting
+          maxMemoryTiles: 64,
+          sseThreshold: 2.0,
+        });
+        poleFrame.add(this.earthTileManager.group);
       }
 
       // 6. 金星专属：浓厚硫酸大气层外壳与金黄色散射高层大气晕（挂载在 poleFrame）
@@ -1395,6 +1425,18 @@ export class SolarEngine {
     return this.venusRadarMode;
   }
 
+  public setPresentationPolicy(policy: PresentationPolicy, durationSec = 1.2): void {
+    this.bodyPoseProvider.setPresentationPolicy(policy, durationSec);
+  }
+
+  public getPresentationPolicy(): PresentationPolicy {
+    return this.bodyPoseProvider.getPresentationPolicy();
+  }
+
+  public getBodyPoseProvider(): BodyPoseProvider {
+    return this.bodyPoseProvider;
+  }
+
   public setVehicle(id: VehicleId | null): void {
     if (this.currentVehicleMesh) {
       this.vehicleGroup.remove(this.currentVehicleMesh);
@@ -1483,6 +1525,9 @@ export class SolarEngine {
     const deltaSec = Math.min((now - this.lastTime) / 1000, 0.1);
     this.lastTime = now;
 
+    // 0. 更新展示策略平滑过渡（物理局部空间 vs 导航示意模式）
+    this.bodyPoseProvider.updateTransition(deltaSec);
+
     // 1. 推进模拟时间
     if (!this.isPaused) {
       this.simTimeHours += (deltaSec * this.timeScale) / 3600.0;
@@ -1515,7 +1560,7 @@ export class SolarEngine {
         const rotRad = ((2.0 * Math.PI) / node.data.rotationPeriodHours) * this.simTimeHours + spinOffset;
         node.mesh.rotation.y = rotRad;
 
-        // 地球专属：更新光照向量与自旋云层流动
+        // 地球专属：更新光照向量、自旋云层流动与高精地理瓦片金字塔
         if (id === 'earth') {
           const sunDir = node.systemGroup.position.clone().negate().normalize();
           if (this.earthMaterial) {
@@ -1524,6 +1569,15 @@ export class SolarEngine {
           if (this.earthCloudMaterial && node.cloudMesh) {
             this.earthCloudMaterial.uniforms.sunDirection.value.copy(sunDir);
             node.cloudMesh.rotation.y = rotRad * 1.04 + (this.simTimeHours * 0.01);
+          }
+          if (this.earthTileManager) {
+            this.earthTileManager.group.rotation.y = rotRad;
+            this.earthTileManager.update(
+              this.camera,
+              sunDir,
+              this.teachingLight ? 1.0 : 0.0,
+              deltaSec
+            );
           }
         }
 
@@ -1602,12 +1656,20 @@ export class SolarEngine {
       }
 
       if (node.data.type === 'moon') {
-        // 依据开普勒真实周期与审美分层计算卫星局部位置，杜绝天体穿模挤压
-        const [mx, my, mz] = getSatelliteNavPosition(id, this.simTimeHours);
-        node.systemGroup.position.set(mx, my, mz);
+        // 由 BodyPoseProvider 统一解算卫星局部位置与展示半径（支持物理观察与导航示意平滑过渡）
+        const pose = this.bodyPoseProvider.getBodyPose(id, this.simTimeHours);
+        node.systemGroup.position.copy(pose.position);
+
+        // 若展示半径发生过渡（如月球在物理观察模式与示意模式切换），动态按比例平滑缩放网格
+        if (node.displayRadius > 0 && pose.displayRadius > 0) {
+          const scaleRatio = pose.displayRadius / node.displayRadius;
+          node.mesh.scale.setScalar(scaleRatio);
+          if (node.cloudMesh) node.cloudMesh.scale.setScalar(scaleRatio);
+          if (node.haloMesh) node.haloMesh.scale.setScalar(scaleRatio);
+        }
 
         // 潮汐锁定与特征景观自转相位
-        const moonOrbitAngle = Math.atan2(mz, mx);
+        const moonOrbitAngle = Math.atan2(pose.position.z, pose.position.x);
         const spinOffset = PLANET_SPIN_OFFSETS[id] || 0;
         node.mesh.rotation.y = -moonOrbitAngle + spinOffset;
 
@@ -1861,6 +1923,23 @@ export class SolarEngine {
     }
   };
 
+  public getEarthTileManager(): SurfaceTileManager | null {
+    return this.earthTileManager;
+  }
+
+  public getCameraController(): CameraController {
+    return this.cameraController;
+  }
+
+  public getCamera(): THREE.PerspectiveCamera {
+    return this.camera;
+  }
+
+  public getBodyNode(id: BodyId): BodyRenderNode | undefined {
+    return this.bodyNodes.get(id);
+  }
+
+
   public dispose(): void {
     this.isRunning = false;
     cancelAnimationFrame(this.animFrameId);
@@ -1919,6 +1998,11 @@ export class SolarEngine {
         node.orbitLine.geometry.dispose();
         safeDisposeMaterial(node.orbitLine.material);
       }
+    }
+
+    if (this.earthTileManager) {
+      this.earthTileManager.dispose();
+      this.earthTileManager = null;
     }
 
     this.renderer.dispose();

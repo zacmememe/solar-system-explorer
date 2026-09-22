@@ -106,9 +106,11 @@ export const BookmarkModal: React.FC<BookmarkModalProps> = ({
 
     const newBm: BookmarkItem = {
       id: 'bm-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
-      schemaVersion: 1,
+      schemaVersion: 2,
       title: newTitle.trim(),
       targetBodyId: currentBodyId,
+      presentationPolicy: 'NAV_SCHEMATIC',
+      epochIso: '2026-09-22T00:00:00Z',
       spherical: {
         radius: Number(spherical.radius.toFixed(3)),
         phi: Number(spherical.phi.toFixed(3)),
