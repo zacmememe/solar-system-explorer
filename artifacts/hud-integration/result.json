@@ -1,0 +1,66 @@
+{
+  "checks": [
+    {
+      "name": "Existing application canvas has WebGL2",
+      "pass": true
+    },
+    {
+      "name": "Operable visible control: [aria-label=\"暂停模拟\"]",
+      "pass": true
+    },
+    {
+      "name": "Pause really freezes engine simulation time",
+      "pass": true
+    },
+    {
+      "name": "Operable visible control: [aria-label=\"调整时间流速\"]",
+      "pass": true
+    },
+    {
+      "name": "Operable visible control: [data-speed=\"86400\"]",
+      "pass": true
+    },
+    {
+      "name": "Escape closes popover",
+      "pass": true
+    },
+    {
+      "name": "Operable visible control: [aria-label=\"继续模拟\"]",
+      "pass": true
+    },
+    {
+      "name": "Resume advances the shared engine clock",
+      "pass": true
+    },
+    {
+      "name": "Operable visible control: [aria-label=\"暂停模拟\"]",
+      "pass": true
+    },
+    {
+      "name": "Real app HUD layout 1920x1080",
+      "pass": true
+    },
+    {
+      "name": "Real app HUD layout 1440x900",
+      "pass": true
+    },
+    {
+      "name": "Real app HUD layout 1024x768",
+      "pass": true
+    },
+    {
+      "name": "Real app HUD layout 768x1024",
+      "pass": true
+    },
+    {
+      "name": "Real app HUD layout 390x844",
+      "pass": true
+    },
+    {
+      "name": "No captured JavaScript or resource errors",
+      "pass": true
+    }
+  ],
+  "failures": [],
+  "limitations": "No shader/texture authenticity judgement, no complete 32-body visual regression, no production deployment validation."
+}

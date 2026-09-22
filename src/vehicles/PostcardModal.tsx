@@ -81,14 +81,16 @@ export const PostcardModal: React.FC<PostcardModalProps> = ({
 
           <button
             onClick={onClose}
-            title="关闭"
-            aria-label="关闭"
+            title="关闭明信片"
+            aria-label="关闭明信片"
             style={{
               background: 'rgba(255, 255, 255, 0.05)',
               border: '1px solid rgba(255, 255, 255, 0.1)',
               borderRadius: '50%',
-              width: 32,
-              height: 32,
+              width: 44,
+              height: 44,
+              minWidth: 44,
+              minHeight: 44,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -96,7 +98,7 @@ export const PostcardModal: React.FC<PostcardModalProps> = ({
               cursor: 'pointer',
             }}
           >
-            <X size={16} />
+            <X size={18} />
           </button>
         </div>
 

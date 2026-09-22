@@ -11,7 +11,9 @@
     "test:watch": "vitest",
     "test:e2e": "tsx scripts/run-browser-acceptance.ts",
     "verify-assets": "tsx scripts/verify-assets.ts",
-    "deploy": "tsx scripts/deploy-to-vercel.ts"
+    "launch": "node scripts/launch.mjs",
+    "deploy": "tsx scripts/deploy-to-vercel.ts",
+    "review:export": "node scripts/export-review.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.454.0",

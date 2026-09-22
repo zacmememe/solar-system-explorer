@@ -94,31 +94,26 @@ export const TrajectoryArcHUD: React.FC<TrajectoryArcHUDProps> = ({
       data-testid="spacex-trajectory-arc"
       style={{
         position: 'absolute',
-        bottom: 16,
+        bottom: 4,
         left: '50%',
         transform: 'translateX(-50%)',
-        width: 560,
-        maxWidth: 'calc(100vw - 720px)',
-        height: 72,
-        background: 'rgba(8, 14, 24, 0.72)',
-        backdropFilter: 'blur(20px)',
-        border: '1px solid rgba(255, 255, 255, 0.14)',
-        borderRadius: 14,
-        boxShadow: '0 8px 32px rgba(0,0,0,0.65)',
-        zIndex: 14,
+        width: 460,
+        maxWidth: 'calc(100vw - 880px)',
+        height: 70,
+        zIndex: 16,
         color: '#f8fafc',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '4px 10px 6px 10px',
+        padding: '2px 8px 3px 8px',
         userSelect: 'none',
-        overflow: 'hidden',
+        pointerEvents: 'auto',
       }}
     >
       <svg
         viewBox="0 0 560 54"
-        style={{ width: '100%', height: 48, overflow: 'visible' }}
+        style={{ width: '100%', height: 46, overflow: 'visible' }}
       >
         <defs>
           <linearGradient id="arcGlowGradient" x1="0%" y1="0%" x2="100%" y2="0%">

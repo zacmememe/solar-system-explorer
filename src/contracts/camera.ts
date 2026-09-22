@@ -8,8 +8,13 @@ import type { BodyId } from './body';
 
 export type CameraMode = 'OVERVIEW' | 'ORBIT_TARGET' | 'TRANSITION';
 
+export type CameraAnchor =
+  | { kind: 'body'; bodyId: BodyId }
+  | { kind: 'free'; pivotScene: [number, number, number] };
+
 export interface CameraStateSnapshot {
   mode: CameraMode;
+  anchor?: CameraAnchor;
   targetBodyId: BodyId | null;
   selectedBodyId: BodyId | null;
   sourceBodyId?: BodyId | null;

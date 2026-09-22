@@ -10,7 +10,7 @@
 
 import * as THREE from 'three';
 import type { BodyId } from '../contracts/body';
-import type { CameraCommand, CameraMode, CameraStateSnapshot } from '../contracts/camera';
+import type { CameraCommand, CameraMode, CameraStateSnapshot, CameraAnchor } from '../contracts/camera';
 import { BODIES, getNavDisplayRadius } from '../astronomy/bodies';
 
 export interface CameraControllerOptions {
@@ -22,13 +22,14 @@ export interface CameraControllerOptions {
 export class CameraController {
   private camera: THREE.PerspectiveCamera;
   private mode: CameraMode = 'ORBIT_TARGET';
+  private anchor: CameraAnchor = { kind: 'body', bodyId: 'earth' };
   private targetBodyId: BodyId = 'earth';
   private selectedBodyId: BodyId = 'earth';
   private sourceBodyId: BodyId | null = 'earth';
 
   // 观察状态（球坐标：相对于 targetPosition）
   private targetPosition: THREE.Vector3 = new THREE.Vector3(0, 0, 0);
-  private spherical: THREE.Spherical = new THREE.Spherical(20, Math.PI / 2.5, Math.PI / 4);
+  private spherical: THREE.Spherical = new THREE.Spherical(6.2, Math.PI / 2.22, Math.PI / 4);
   private minDistance: number = 7.5;
   private maxDistance: number = 800;
 
@@ -62,7 +63,8 @@ export class CameraController {
   public getSnapshot(): CameraStateSnapshot {
     return {
       mode: this.mode,
-      targetBodyId: this.targetBodyId,
+      anchor: this.anchor,
+      targetBodyId: this.anchor.kind === 'body' ? this.anchor.bodyId : this.targetBodyId,
       selectedBodyId: this.selectedBodyId,
       sourceBodyId: this.sourceBodyId,
       transitionProgress: this.transitionProgress,
@@ -142,7 +144,7 @@ export class CameraController {
    * 设置目标在场景中的最新物理位置（支持运动天体跟随平移）
    */
   public updateTargetPosition(targetPos: THREE.Vector3, targetRadius: number): void {
-    if (!this.isTransitioning) {
+    if (!this.isTransitioning && this.anchor.kind === 'body') {
       this.targetPosition.copy(targetPos);
       this.minDistance = Math.max(1.5, targetRadius * 1.2);
       this.maxDistance = Math.max(100, targetRadius * 100);
@@ -170,7 +172,8 @@ export class CameraController {
     this.mode = 'TRANSITION';
     this.targetBodyId = targetId;
     this.selectedBodyId = targetId;
-    this.transitionDurationSec = Math.max(1.0, durationSec);
+    this.anchor = { kind: 'body', bodyId: targetId };
+    this.transitionDurationSec = Number.isFinite(durationSec) ? Math.max(0.05, durationSec) : (this.reduceMotion ? 0.15 : 2.5);
     this.transitionProgress = 0;
 
     this.transitionStartSpherical.copy(this.spherical);
@@ -242,7 +245,8 @@ export class CameraController {
     this.mode = 'TRANSITION';
     this.targetBodyId = 'sun';
     this.selectedBodyId = 'sun';
-    this.transitionDurationSec = Math.max(0.1, durationSec);
+    this.anchor = { kind: 'body', bodyId: 'sun' };
+    this.transitionDurationSec = Number.isFinite(durationSec) ? Math.max(0.05, durationSec) : (this.reduceMotion ? 0.15 : 2.5);
     this.transitionProgress = 0;
 
     this.transitionStartSpherical.copy(this.spherical);
@@ -268,7 +272,8 @@ export class CameraController {
     this.mode = 'TRANSITION';
     this.targetBodyId = targetId;
     this.selectedBodyId = targetId;
-    this.transitionDurationSec = Math.max(0.1, durationSec);
+    this.anchor = { kind: 'body', bodyId: targetId };
+    this.transitionDurationSec = Number.isFinite(durationSec) ? Math.max(0.05, durationSec) : (this.reduceMotion ? 0.15 : 2.5);
     this.transitionProgress = 0;
 
     this.transitionStartSpherical.copy(this.spherical);
@@ -288,6 +293,10 @@ export class CameraController {
     if (this.isTransitioning) {
       this.isTransitioning = false;
       this.mode = 'ORBIT_TARGET';
+      this.anchor = {
+        kind: 'free',
+        pivotScene: [this.targetPosition.x, this.targetPosition.y, this.targetPosition.z],
+      };
       this.updateCameraTransform();
     }
   }
@@ -302,6 +311,7 @@ export class CameraController {
         this.transitionProgress = 1.0;
         this.isTransitioning = false;
         this.mode = 'ORBIT_TARGET';
+        this.anchor = { kind: 'body', bodyId: this.targetBodyId };
       }
 
       // Perlin Smootherstep 极佳丝滑缓动: 6t^5 - 15t^4 + 10t^3 (一阶二阶导数在起终点均为0)
@@ -331,11 +341,15 @@ export class CameraController {
       this.minDistance = targetInfo.radius * 1.2;
       this.maxDistance = targetInfo.radius * 100;
     } else {
-      // 处于目标观察模式，跟随天体物理平移
-      const targetInfo = getBodyPos(this.targetBodyId);
-      this.targetPosition.copy(targetInfo.pos);
-      this.minDistance = targetInfo.radius * 1.2;
-      this.maxDistance = targetInfo.radius * 100;
+      // 处于目标观察模式：跟随天体物理平移或保持自由观察锚点
+      if (this.anchor.kind === 'body') {
+        const targetInfo = getBodyPos(this.anchor.bodyId);
+        this.targetPosition.copy(targetInfo.pos);
+        this.minDistance = targetInfo.radius * 1.2;
+        this.maxDistance = targetInfo.radius * 100;
+      } else {
+        this.targetPosition.set(this.anchor.pivotScene[0], this.anchor.pivotScene[1], this.anchor.pivotScene[2]);
+      }
     }
 
     this.updateCameraTransform();

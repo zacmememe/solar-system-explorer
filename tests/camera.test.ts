@@ -80,4 +80,53 @@ describe('CameraController 单一控制与防篡改测试', () => {
     expect(t3).toBeGreaterThan(t2);
     expect(controller.getSnapshot().commandId).toBe(t3);
   });
+
+  it('CAM-05: 取消转场后下一帧 update(0) 保持位置零跳变，并在目标继续公转时维持自由观察锚点', () => {
+    const { controller, camera, getBodyPos } = createTestRig();
+
+    controller.executeCommand({ type: 'flyTo', bodyId: 'moon', durationSec: 3.0 });
+    controller.update(1.0, getBodyPos);
+    controller.executeCommand({ type: 'cancelFlight' });
+
+    const posAfterCancel = camera.position.clone();
+    // 下一帧 update(0) 验证
+    controller.update(0, getBodyPos);
+    expect(camera.position.distanceTo(posAfterCancel)).toBeLessThan(1e-8);
+
+    // 随后继续更新数帧，月球位置即便移动，自由观察锚点也保持稳定
+    const movingMoon = (id: string) => {
+      if (id === 'moon') return { pos: new THREE.Vector3(500, 100, 0), radius: 1.737 };
+      return getBodyPos(id);
+    };
+    controller.update(1.0, movingMoon);
+    expect(camera.position.distanceTo(posAfterCancel)).toBeLessThan(1e-8);
+  });
+
+  it('CAM-06: 开启减弱动态后，0.15s 过渡在 0.2s 采样时确切完成', () => {
+    const { controller, getBodyPos } = createTestRig();
+    controller.setReduceMotion(true);
+
+    controller.executeCommand({ type: 'flyTo', bodyId: 'moon' });
+    expect(controller.getSnapshot().isTransitioning).toBe(true);
+
+    controller.update(0.2, getBodyPos);
+    expect(controller.getSnapshot().isTransitioning).toBe(false);
+  });
+
+  it('CAM-07: 连续切换飞行目标时不发生状态竞争与跳变', () => {
+    const { controller, getBodyPos } = createTestRig();
+
+    controller.executeCommand({ type: 'flyTo', bodyId: 'moon', durationSec: 3.0 });
+    controller.update(0.5, getBodyPos);
+
+    // 飞行途中切向太阳
+    controller.executeCommand({ type: 'flyTo', bodyId: 'sun', durationSec: 2.0 });
+    expect(controller.getSnapshot().targetBodyId).toBe('sun');
+    expect(controller.getSnapshot().isTransitioning).toBe(true);
+
+    // 推进 2.5 秒，应平滑进入太阳特写
+    controller.update(2.5, getBodyPos);
+    expect(controller.getSnapshot().isTransitioning).toBe(false);
+    expect(controller.getSnapshot().targetBodyId).toBe('sun');
+  });
 });

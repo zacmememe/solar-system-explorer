@@ -1,0 +1,46 @@
+# 太阳系漫游 · Solar System Explorer
+
+使用 React、TypeScript、Three.js 和 Vite 构建的浏览器太阳系探索项目。包含行星与卫星观察、镜头转场、时间控制、航天器展示、书签和探索明信片。
+
+本项目采用适合探索的展示比例和简化轨道模型；画面不代表精确星历或统一真实比例。观测来源贴图与程序生成示意应分别标明，资产出处见 `sources/production-assets.json`。
+
+## 本地开发
+
+项目继续在原来的 D 盘目录中使用 Antigravity 开发，GitHub 保存提交后的版本。
+
+```powershell
+# 已有 node_modules 时无需重复安装。
+# 首次安装在 Windows 上把 npm 缓存放到 D 盘：
+npm ci --cache D:\Caches\npm
+npm run dev
+```
+
+- `npm run build`：TypeScript 检查和生产构建。
+- `npm test`：Vitest 单元与回归测试。
+- `npm run preview`：预览生产构建，默认端口 4173。
+- `npm run launch`：现有交互式本地启动器。
+- `npm run review:export`：导出 HEAD 提交的审查材料，不提交、不推送、不部署。
+
+现有 `npm run test:e2e` 默认访问线上地址。测试当前本地构建时，先运行 build 和 preview，再设置 `$env:TEST_URL = 'http://localhost:4173'`。该脚本使用本机已有 Chrome / Edge，浏览器测试前应检查脚本配置。`verify-assets` 涉及外部资产下载；它不是离线检查命令。
+
+## 代码阅读入口
+
+| 路径 | 作用 |
+| --- | --- |
+| `src/main.tsx` → `src/app/App.tsx` | React 入口、界面与引擎联动 |
+| `src/engine/SolarEngine.ts` | Three.js 场景、渲染循环、天体与 HUD 状态发布 |
+| `src/camera/CameraController.ts` | 相机控制、转场、跟随与取消 |
+| `src/astronomy/bodies.ts` | 天体参数、轨道位置和展示尺度 |
+| `src/app/hud/`、`src/contracts/hud.ts` | HUD 界面、订阅状态、位置示意及数据契约 |
+| `src/rendering/`、`src/astronomy/MoonTextures.ts` | 材质、光照与程序纹理 |
+| `src/assets/`、`sources/` | 资产加载、来源和校验清单 |
+| `src/vehicles/`、`src/utils/` | 航天器、明信片与书签 |
+| `tests/`、`scripts/` | 回归测试、浏览器验收和开发脚本 |
+
+`前置方案打磨/` 包含早期讨论和交接材料，不能当作当前实现的事实。当前代码、实际测试和已确认的任务方案优先。
+
+## Pro 审视 → Antigravity 执行
+
+操作方法和 ChatGPT 连接验证见 [协作流程](docs/review-workflow.md)。可直接复用 [审查提示词](docs/review-prompt.md) 和 [执行计划模板](docs/implementation-plan-template.md)。
+
+每轮讨论固定 commit 编号；Antigravity 执行已确认的方案，测试后提交和推送；重大审查同时提供代码材料和相应版本的画面证据。

@@ -35,3 +35,21 @@ coverage/
 
 # Vercel
 .vercel/
+
+# Credentials and local machine state
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.npmrc
+
+# Local backups and generated review bundles
+/.backup-*/
+/.hud-backup-*/
+/review-exports/
+/artifacts/pro-review/
+
+# Raw conversations and packaged historical experiments stay local.
+# Previously tracked material remains in history; new review plans belong in docs/.
+/前置方案打磨/260921Pro model优化审计/

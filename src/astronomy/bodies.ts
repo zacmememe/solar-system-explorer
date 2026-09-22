@@ -831,9 +831,9 @@ export function getSatelliteNavPosition(
   const normDist = Math.pow((sat.orbitSemiMajorAxisKm || 100000) / 100000.0, 0.52);
   const visualOrbitR = baseClearance + normDist * (parentR * 1.35);
 
-  const periodHours = sat.orbitPeriodDays * 24.0;
+  const periodHours = Math.abs(sat.orbitPeriodDays) * 24.0;
   const initialPhase = SATELLITE_INITIAL_PHASES[satelliteId] || 0;
-  // 负周期自动实现如海卫一的顺滑物理逆行公转
+  // 逆行公转由大于 90 度的轨道倾角（如海卫一 156.8°）自然表达，周期统一取绝对值避免重复反转
   const angleRad = ((2.0 * Math.PI) / periodHours) * timeHours + initialPhase;
   const incRad = ((sat.orbitalInclinationDeg || 0) * Math.PI) / 180.0;
 
@@ -852,11 +852,11 @@ export function getSatelliteRelativePositionKm(
   timeHours: number
 ): [number, number, number] {
   const sat = BODIES[satelliteId];
-  if (!sat || sat.orbitPeriodDays <= 0) {
+  if (!sat || Math.abs(sat.orbitPeriodDays) <= 0) {
     return [0, 0, 0];
   }
 
-  const periodHours = sat.orbitPeriodDays * 24.0;
+  const periodHours = Math.abs(sat.orbitPeriodDays) * 24.0;
   const angleRad = ((2.0 * Math.PI) / periodHours) * timeHours;
   const distKm = sat.orbitSemiMajorAxisKm;
   const incRad = ((sat.orbitalInclinationDeg || 0) * Math.PI) / 180.0;

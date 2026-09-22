@@ -116,12 +116,16 @@ export const HangarModal: React.FC<HangarModalProps> = ({
 
           <button
             onClick={onClose}
+            aria-label="关闭机库"
+            title="关闭机库"
             style={{
               background: 'rgba(255, 255, 255, 0.05)',
               border: '1px solid rgba(255, 255, 255, 0.1)',
               borderRadius: '50%',
-              width: 32,
-              height: 32,
+              width: 44,
+              height: 44,
+              minWidth: 44,
+              minHeight: 44,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -130,7 +134,7 @@ export const HangarModal: React.FC<HangarModalProps> = ({
               transition: 'all 0.2s',
             }}
           >
-            <X size={16} />
+            <X size={18} />
           </button>
         </div>
 
