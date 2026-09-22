@@ -2,7 +2,7 @@ import { configDefaults, defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    // Exported source copies are review material, not a second test suite.
-    exclude: [...configDefaults.exclude, 'review-exports/**'],
+    // Exported source copies and handoff docs are review material, not Vitest suites.
+    exclude: [...configDefaults.exclude, 'review-exports/**', 'docs/**', '前置方案打磨/**'],
   },
 });

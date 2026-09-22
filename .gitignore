@@ -52,4 +52,6 @@ coverage/
 
 # Raw conversations and packaged historical experiments stay local.
 # Previously tracked material remains in history; new review plans belong in docs/.
-/前置方案打磨/260921Pro model优化审计/
+/前置方案打磨/
+/artifacts/source-probes*.json
+

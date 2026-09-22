@@ -1,0 +1,359 @@
+{
+  "sourceRoot": "/mnt/data/solar-audit/snapshot",
+  "threeVersion": "170",
+  "typescriptVersion": "5.9.3",
+  "method": "Actual source transpiled with installed TypeScript; standalone deterministic probes, not original Vitest tests. Asset loader transport mocked; no GPU allocations tested.",
+  "observations": [
+    {
+      "name": "single_wheel_event_earth",
+      "kind": "baseline-defect",
+      "status": "observed",
+      "evidence": {
+        "wheelDeltaY": -100,
+        "sceneDelta": -8,
+        "beforeDistance": 5.820738008524257,
+        "afterDistance": 1.62,
+        "minimum": 1.62,
+        "relativeDistanceDrop": 0.7216847764617529,
+        "cameraDisplacement": 4.200738008524257
+      }
+    },
+    {
+      "name": "tiny_outward_wheel_during_overview_to_phobos",
+      "kind": "baseline-defect",
+      "status": "observed",
+      "evidence": {
+        "wheelDeltaY": 1,
+        "beforeRadius": 279.8331424695116,
+        "destinationMax": 38,
+        "afterRadius": 38,
+        "cameraJump": 241.83314246951159,
+        "anchor": {
+          "kind": "free",
+          "pivotScene": [
+            0.013536159465544456,
+            -0.0006307357423446957,
+            -0.019311091436684264
+          ]
+        }
+      }
+    },
+    {
+      "name": "explicit_cancel_keeps_pose",
+      "kind": "baseline-good",
+      "status": "observed",
+      "evidence": {
+        "positionError": 0,
+        "orientationErrorRadians": 0,
+        "anchor": {
+          "kind": "free",
+          "pivotScene": [
+            -45.24226020768142,
+            -0.009484294460256297,
+            -10.960480024695633
+          ]
+        }
+      }
+    },
+    {
+      "name": "planet_pole_moves_as_mesh_rotation_y_changes",
+      "kind": "baseline-defect",
+      "status": "observed",
+      "evidence": {
+        "earth": {
+          "poleChangeDeg": 32.673102670883395,
+          "initialPole": [
+            -0.39778850739794974,
+            0.9174771405229186,
+            0
+          ],
+          "quarterTurnPole": [
+            -8.326672684688674e-17,
+            0.9174771405229185,
+            0.39778850739794974
+          ]
+        },
+        "saturn": {
+          "poleChangeDeg": 37.08974124538804,
+          "initialPole": [
+            -0.4497867051679302,
+            0.8931360029996425,
+            0
+          ],
+          "quarterTurnPole": [
+            -8.326672684688674e-17,
+            0.8931360029996425,
+            0.4497867051679302
+          ]
+        },
+        "uranus": {
+          "poleChangeDeg": 88.95267941616075,
+          "initialPole": [
+            -0.9908187651661832,
+            -0.13519679949821306,
+            0
+          ],
+          "quarterTurnPole": [
+            -2.220446049250313e-16,
+            -0.13519679949821306,
+            0.9908187651661832
+          ]
+        }
+      }
+    },
+    {
+      "name": "non_coplanar_but_schematic_orbits",
+      "kind": "baseline-fact",
+      "status": "observed",
+      "evidence": {
+        "mercuryAtTime0": [
+          14.482910222739529,
+          2.0091831466643804,
+          16.3634835836828
+        ],
+        "earthAtTime0": [
+          -28.241927729861708,
+          0,
+          -15.738368008878647
+        ],
+        "satellitePositions": [
+          {
+            "id": "moon",
+            "pos": [
+              5.982239474919841,
+              0.3666608639848736,
+              4.076212623203147
+            ]
+          },
+          {
+            "id": "io",
+            "pos": [
+              17.987737727365975,
+              0.016162504572640842,
+              18.520861265982045
+            ]
+          },
+          {
+            "id": "titan",
+            "pos": [
+              11.889445154933806,
+              0.1868103200192222,
+              30.58088506001741
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "earth_moon_schematic_vs_physical",
+      "kind": "baseline-limitation",
+      "status": "observed",
+      "evidence": {
+        "schematicMoonToEarthRadius": 0.5088150519538618,
+        "physicalMoonToEarthRadius": 0.27270444200282534,
+        "schematicDistanceInEarthRadii": 5.369074616300869,
+        "physicalDistanceInEarthRadii": 60.335897033432744,
+        "earthApparentDiameterFromMoonCenterPhysicalDeg": 1.8993138673568093,
+        "earthApparentDiameterSchematicDeg": 21.46825172219187,
+        "earthCloudShellEquivalentAltitudeKm": 76.452
+      }
+    },
+    {
+      "name": "spacecraft_geometry_counts_and_dimensions",
+      "kind": "baseline-fact",
+      "status": "observed",
+      "evidence": [
+        {
+          "id": "apollo-lm",
+          "meshes": 63,
+          "triangles": 2758,
+          "boxUnits": [
+            6.307392457838272,
+            6.0750000208616255,
+            6.307392457838274
+          ],
+          "catalogDimensions": {
+            "lengthM": 9.4,
+            "widthM": 9.4,
+            "heightM": 7.04
+          }
+        },
+        {
+          "id": "voyager-1",
+          "meshes": 19,
+          "triangles": 3360,
+          "boxUnits": [
+            8.010000004470347,
+            3.1200000244379043,
+            3.759999990463257
+          ],
+          "catalogDimensions": {
+            "lengthM": 3.7,
+            "widthM": 3.7,
+            "heightM": 2.5
+          }
+        },
+        {
+          "id": "james-webb",
+          "meshes": 32,
+          "triangles": 420,
+          "boxUnits": [
+            8.800000190734863,
+            5.2833191704058695,
+            12.800000190734863
+          ],
+          "catalogDimensions": {
+            "lengthM": 20.2,
+            "widthM": 14.2,
+            "heightM": 8
+          }
+        },
+        {
+          "id": "iss",
+          "meshes": 41,
+          "triangles": 2592,
+          "boxUnits": [
+            10.649999952316284,
+            5.4,
+            6.25
+          ],
+          "catalogDimensions": {
+            "lengthM": 109,
+            "widthM": 73,
+            "heightM": 20
+          }
+        },
+        {
+          "id": "tiangong",
+          "meshes": 19,
+          "triangles": 1916,
+          "boxUnits": [
+            6.8,
+            3.5999999046325684,
+            4.9000000059604645
+          ],
+          "catalogDimensions": {
+            "lengthM": 37,
+            "widthM": 33,
+            "heightM": 10
+          }
+        },
+        {
+          "id": "cassini",
+          "meshes": 13,
+          "triangles": 1512,
+          "boxUnits": [
+            7.103789639636833,
+            5.005838948306202,
+            5.8184209146891614
+          ],
+          "catalogDimensions": {
+            "lengthM": 6.7,
+            "widthM": 4,
+            "heightM": 4
+          }
+        }
+      ]
+    },
+    {
+      "name": "texture_sampling_and_uncompressed_gpu_budget",
+      "kind": "calculation",
+      "status": "observed",
+      "evidence": [
+        {
+          "width": 2048,
+          "height": 1024,
+          "equatorialKmPerTexel": 19.54598319923884,
+          "RGBA8WithMipMiB": 10.666666666666666
+        },
+        {
+          "width": 8192,
+          "height": 4096,
+          "equatorialKmPerTexel": 4.88649579980971,
+          "RGBA8WithMipMiB": 170.66666666666666
+        },
+        {
+          "width": 16384,
+          "height": 8192,
+          "equatorialKmPerTexel": 2.443247899904855,
+          "RGBA8WithMipMiB": 682.6666666666666
+        },
+        {
+          "width": 65536,
+          "height": 32768,
+          "equatorialKmPerTexel": 0.6108119749762138,
+          "RGBA8WithMipMiB": 10922.666666666666
+        },
+        {
+          "width": 86400,
+          "height": 43200,
+          "equatorialKmPerTexel": 0.46331219435232807,
+          "RGBA8WithMipMiB": 18984.375
+        }
+      ]
+    },
+    {
+      "name": "similarity_frame_change_preserves_projected_direction",
+      "kind": "proposed-math",
+      "status": "observed",
+      "evidence": {
+        "maxDirectionVectorError": 2.4920002687397523e-8,
+        "note": "Similarity of all positions and radii only; does not preserve schematic nonuniform sizes/distances when converting to physical proportions."
+      }
+    },
+    {
+      "name": "camera_relative_double_before_float",
+      "kind": "proposed-math",
+      "status": "observed",
+      "evidence": {
+        "subtractAfterFloatMetres": 0,
+        "subtractBeforeFloatMetres": 10,
+        "trueDifferenceMetres": 10
+      }
+    },
+    {
+      "name": "proposed_log_clearance_damping_frame_rate_independent",
+      "kind": "proposed-math",
+      "status": "observed",
+      "evidence": {
+        "tauSeconds": 0.09,
+        "after1s": [
+          {
+            "fps": 30,
+            "altitude": 1000.0344135058273
+          },
+          {
+            "fps": 60,
+            "altitude": 1000.0344135058273
+          },
+          {
+            "fps": 144,
+            "altitude": 1000.0344135058291
+          }
+        ],
+        "note": "Math kernel only; requires integration with target cancellation, terrain safety and user input. No claim of integrated camera fix."
+      }
+    },
+    {
+      "name": "asset_stale_token_and_inflight_dedup",
+      "kind": "baseline-defect",
+      "status": "observed",
+      "evidence": {
+        "loaderCalls": 2,
+        "stalePromiseReturnsTexture": true,
+        "currentPromiseReturnsTexture": true,
+        "cachedTextureIsSecond": true
+      }
+    },
+    {
+      "name": "late_asset_after_dispose",
+      "kind": "baseline-defect",
+      "status": "observed",
+      "evidence": {
+        "disposedEventCount": 0,
+        "returnedTextureAfterManagerDisposed": true,
+        "cacheEntryAbsent": true
+      }
+    }
+  ]
+}
