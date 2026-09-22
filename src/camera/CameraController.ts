@@ -10,7 +10,7 @@
 
 import * as THREE from 'three';
 import type { BodyId } from '../contracts/body';
-import type { CameraCommand, CameraMode, CameraStateSnapshot, CameraAnchor } from '../contracts/camera';
+import type { CameraCommand, CameraMode, CameraStateSnapshot, CameraAnchor, CameraLookTarget } from '../contracts/camera';
 import { BODIES, getNavDisplayRadius } from '../astronomy/bodies';
 
 export interface CameraControllerOptions {
@@ -23,9 +23,16 @@ export class CameraController {
   private camera: THREE.PerspectiveCamera;
   private mode: CameraMode = 'ORBIT_TARGET';
   private anchor: CameraAnchor = { kind: 'body', bodyId: 'earth' };
+  private lookTarget: CameraLookTarget = { kind: 'center' };
   private targetBodyId: BodyId = 'earth';
   private selectedBodyId: BodyId = 'earth';
   private sourceBodyId: BodyId | null = 'earth';
+  private latestGetBodyPos?: (id: BodyId) => {
+    pos: THREE.Vector3;
+    radius: number;
+    surfaceRadius?: number;
+    framingRadius?: number;
+  };
 
   // 观察状态（球坐标：相对于 targetPosition）
   private targetPosition: THREE.Vector3 = new THREE.Vector3(0, 0, 0);
@@ -76,6 +83,7 @@ export class CameraController {
     return {
       mode: this.mode,
       anchor: this.anchor,
+      lookTarget: this.lookTarget,
       targetBodyId: this.anchor.kind === 'body' ? this.anchor.bodyId : this.targetBodyId,
       selectedBodyId: this.selectedBodyId,
       sourceBodyId: this.sourceBodyId,
@@ -93,6 +101,19 @@ export class CameraController {
     };
   }
 
+  public setLookTarget(lookTarget: CameraLookTarget): void {
+    this.lookTarget = lookTarget;
+    this.updateCameraTransform();
+  }
+
+  public getLookTarget(): CameraLookTarget {
+    return this.lookTarget;
+  }
+
+  public getMinDistance(): number {
+    return this.minDistance;
+  }
+
   /**
    * 处理相机外部命令
    */
@@ -106,7 +127,14 @@ export class CameraController {
 
       case 'flyTo': {
         const dur = command.durationSec ?? (this.reduceMotion ? 0.15 : 2.5);
+        this.lookTarget = command.lookTarget ?? { kind: 'center' };
         this.initiateFlight(command.bodyId, dur, token, command.targetPos);
+        break;
+      }
+
+      case 'setLookTarget': {
+        this.lookTarget = command.lookTarget;
+        this.updateCameraTransform();
         break;
       }
 
@@ -144,18 +172,21 @@ export class CameraController {
 
       case 'overview': {
         const dur = this.reduceMotion ? 0.15 : 2.5;
+        this.lookTarget = { kind: 'center' };
         this.initiateOverviewFlight(token, dur);
         break;
       }
 
       case 'restoreBookmark': {
         const dur = command.durationSec ?? (this.reduceMotion ? 0.15 : 2.5);
+        this.lookTarget = command.lookTarget ?? { kind: 'center' };
         this.initiateBookmarkFlight(command.targetBodyId, command.spherical, dur, token);
         break;
       }
 
       case 'focusRegion': {
         const dur = command.durationSec ?? (this.reduceMotion ? 0.15 : 2.5);
+        this.lookTarget = { kind: 'center' };
         this.initiateFocusRegionFlight(
           command.bodyId,
           command.lat,
@@ -460,9 +491,31 @@ export class CameraController {
    */
   public update(
     deltaSec: number,
-    getBodyPos?: (id: BodyId) => { pos: THREE.Vector3; radius: number }
+    getBodyPos?: (id: BodyId) => {
+      pos: THREE.Vector3;
+      radius: number;
+      surfaceRadius?: number;
+      framingRadius?: number;
+    }
   ): void {
-    const getPos = getBodyPos ?? ((_id: BodyId) => ({ pos: this.targetPosition, radius: this.surfaceRadius }));
+    type BodyWorldOutput = {
+      pos: THREE.Vector3;
+      radius: number;
+      surfaceRadius?: number;
+      framingRadius?: number;
+    };
+    if (getBodyPos) {
+      this.latestGetBodyPos = getBodyPos;
+    }
+    const getPos: (id: BodyId) => BodyWorldOutput =
+      getBodyPos ??
+      this.latestGetBodyPos ??
+      ((_id: BodyId): BodyWorldOutput => ({
+        pos: this.targetPosition,
+        radius: this.surfaceRadius,
+        surfaceRadius: this.surfaceRadius,
+        framingRadius: this.framingRadius,
+      }));
 
     if (this.isTransitioning) {
       this.transitionProgress += deltaSec / this.transitionDurationSec;
@@ -472,10 +525,11 @@ export class CameraController {
         this.mode = 'ORBIT_TARGET';
         this.anchor = { kind: 'body', bodyId: this.targetBodyId };
         const targetInfo = getPos(this.targetBodyId);
-        this.surfaceRadius = targetInfo.radius;
-        this.collisionClearance = Math.max(0.01, targetInfo.radius * 0.02);
-        this.minDistance = Math.max(0.1, targetInfo.radius + this.collisionClearance);
-        this.maxDistance = targetInfo.radius * 100;
+        this.surfaceRadius = targetInfo.surfaceRadius ?? targetInfo.radius;
+        this.framingRadius = targetInfo.framingRadius ?? targetInfo.radius;
+        this.collisionClearance = Math.max(0.01, this.surfaceRadius * 0.02);
+        this.minDistance = Math.max(0.1, this.surfaceRadius + this.collisionClearance);
+        this.maxDistance = this.framingRadius * 100;
         this.syncLogDollyFromRadius();
       }
 
@@ -503,23 +557,26 @@ export class CameraController {
       );
       this.spherical.makeSafe();
 
-      this.surfaceRadius = targetInfo.radius;
-      this.collisionClearance = Math.max(0.01, targetInfo.radius * 0.02);
-      this.minDistance = Math.max(0.1, targetInfo.radius + this.collisionClearance);
-      this.maxDistance = targetInfo.radius * 100;
+      this.surfaceRadius = targetInfo.surfaceRadius ?? targetInfo.radius;
+      this.framingRadius = targetInfo.framingRadius ?? targetInfo.radius;
+      this.collisionClearance = Math.max(0.01, this.surfaceRadius * 0.02);
+      this.minDistance = Math.max(0.1, this.surfaceRadius + this.collisionClearance);
+      this.maxDistance = this.framingRadius * 100;
       this.syncLogDollyFromRadius();
     } else {
       // 处于目标观察模式：跟随天体物理平移或保持自由观察锚点
       if (this.anchor.kind === 'body') {
         const targetInfo = getPos(this.anchor.bodyId);
         this.targetPosition.copy(targetInfo.pos);
-        this.surfaceRadius = targetInfo.radius;
-        this.collisionClearance = Math.max(0.01, targetInfo.radius * 0.02);
-        this.minDistance = Math.max(0.1, targetInfo.radius + this.collisionClearance);
-        this.maxDistance = targetInfo.radius * 100;
+        this.surfaceRadius = targetInfo.surfaceRadius ?? targetInfo.radius;
+        this.framingRadius = targetInfo.framingRadius ?? targetInfo.radius;
+        this.collisionClearance = Math.max(0.01, this.surfaceRadius * 0.02);
+        this.minDistance = Math.max(0.1, this.surfaceRadius + this.collisionClearance);
+        this.maxDistance = this.framingRadius * 100;
       } else {
         this.targetPosition.set(this.anchor.pivotScene[0], this.anchor.pivotScene[1], this.anchor.pivotScene[2]);
         this.surfaceRadius = 0;
+        this.framingRadius = 0;
         this.collisionClearance = 0.01;
         this.minDistance = 0.5;
         this.maxDistance = Math.max(20000, this.spherical.radius * 3);
@@ -555,12 +612,21 @@ export class CameraController {
 
   /**
    * 写入 Three.js Camera 变换与动态近裁剪面自适应调度 (CAM-04)
-   * 唯一相机写入者！
+   * 唯一相机写入者！支持 lookTarget 视线朝向解耦
    */
   private updateCameraTransform(): void {
     const offset = new THREE.Vector3().setFromSpherical(this.spherical);
     this.camera.position.copy(this.targetPosition).add(offset);
-    this.camera.lookAt(this.targetPosition);
+
+    // 观察朝向解耦：支持依附当前锚点天体，但视线正对 lookTarget 目标天体（如月球看地球）
+    if (this.lookTarget.kind === 'body' && this.latestGetBodyPos) {
+      const lookPos = this.latestGetBodyPos(this.lookTarget.bodyId).pos;
+      this.camera.lookAt(lookPos);
+    } else if (this.lookTarget.kind === 'point') {
+      this.camera.lookAt(new THREE.Vector3(...this.lookTarget.point));
+    } else {
+      this.camera.lookAt(this.targetPosition);
+    }
 
     // 动态调整近裁剪面，彻底杜绝近地观察时地表被裁剪 (CAM-04)
     const isBody = this.anchor.kind === 'body';

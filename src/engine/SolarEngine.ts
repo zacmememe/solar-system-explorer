@@ -56,6 +56,7 @@ import type { BodyId, CelestialBodyData } from '../contracts/body';
 import type { CameraCommand, CameraStateSnapshot } from '../contracts/camera';
 import type { HudFrame } from '../contracts/hud';
 import type { VehicleId, ViewCameraMode } from '../contracts/vehicle';
+import type { BookmarkItemV2 } from '../contracts/bookmark';
 import {
   getMoonTextureByBodyId,
   getTitanHazeTexture,
@@ -1555,6 +1556,12 @@ export class SolarEngine {
     }
 
     // 2. 更新所有天体的位置与自转
+    const isPhysicalObservation = this.bodyPoseProvider.getPolicy() === 'PHYSICAL_OBSERVATION';
+    const sunNode = this.bodyNodes.get('sun');
+    if (sunNode) {
+      sunNode.systemGroup.visible = !isPhysicalObservation;
+    }
+
     for (const [id, node] of this.bodyNodes.entries()) {
       if (node.data.type === 'star') {
         // 太阳位于原点，缓慢自转
@@ -1564,6 +1571,13 @@ export class SolarEngine {
       }
 
       if (node.data.type === 'planet') {
+        if (isPhysicalObservation && id !== 'earth') {
+          node.systemGroup.visible = false;
+          continue;
+        } else {
+          node.systemGroup.visible = true;
+        }
+
         // 计算行星在太阳系全景中的开普勒公转坐标
         const [px, py, pz] = getPlanetNavPosition(id, this.simTimeHours);
         node.systemGroup.position.set(px, py, pz);
@@ -1575,7 +1589,7 @@ export class SolarEngine {
 
         // 地球专属：更新光照向量、自旋云层流动与高精地理瓦片金字塔
         if (id === 'earth') {
-          const sunDir = node.systemGroup.position.clone().negate().normalize();
+          const sunDir = this.bodyPoseProvider.getPhysicalSunDirection('earth', this.simTimeHours);
           if (this.earthMaterial) {
             this.earthMaterial.uniforms.sunDirection.value.copy(sunDir);
           }
@@ -1596,7 +1610,7 @@ export class SolarEngine {
 
         // 金星专属：高层大气 4 天超自转与实时同步太阳向量
         if (id === 'venus') {
-          const sunDir = node.systemGroup.position.clone().negate().normalize();
+          const sunDir = this.bodyPoseProvider.getPhysicalSunDirection('venus', this.simTimeHours);
           if (this.venusAtmosphereMaterial) {
             this.venusAtmosphereMaterial.uniforms.sunDirection.value.copy(sunDir);
           }
@@ -1612,37 +1626,37 @@ export class SolarEngine {
 
         // 木星专属：实时同步太阳光照方向向量至 Minnaert 着色器
         if (id === 'jupiter' && this.jupiterMaterial) {
-          const sunDir = node.systemGroup.position.clone().negate().normalize();
+          const sunDir = this.bodyPoseProvider.getPhysicalSunDirection('jupiter', this.simTimeHours);
           this.jupiterMaterial.uniforms.sunDirection.value.copy(sunDir);
         }
 
         // 火星专属：实时同步太阳光照方向向量至 MarsMaterial 着色器
         if (id === 'mars' && this.marsMaterial) {
-          const sunDir = node.systemGroup.position.clone().negate().normalize();
+          const sunDir = this.bodyPoseProvider.getPhysicalSunDirection('mars', this.simTimeHours);
           this.marsMaterial.uniforms.sunDirection.value.copy(sunDir);
         }
 
         // 水星专属：实时同步太阳光照方向向量至 MercuryMaterial 着色器
         if (id === 'mercury' && this.mercuryMaterial) {
-          const sunDir = node.systemGroup.position.clone().negate().normalize();
+          const sunDir = this.bodyPoseProvider.getPhysicalSunDirection('mercury', this.simTimeHours);
           this.mercuryMaterial.uniforms.sunDirection.value.copy(sunDir);
         }
 
         // 天王星专属：实时同步太阳光照方向向量至 IceGiantMaterial 着色器
         if (id === 'uranus' && this.uranusPlanetMaterial) {
-          const sunDir = node.systemGroup.position.clone().negate().normalize();
+          const sunDir = this.bodyPoseProvider.getPhysicalSunDirection('uranus', this.simTimeHours);
           this.uranusPlanetMaterial.uniforms.sunDirection.value.copy(sunDir);
         }
 
         // 海王星专属：实时同步太阳光照方向向量至 IceGiantMaterial 着色器
         if (id === 'neptune' && this.neptunePlanetMaterial) {
-          const sunDir = node.systemGroup.position.clone().negate().normalize();
+          const sunDir = this.bodyPoseProvider.getPhysicalSunDirection('neptune', this.simTimeHours);
           this.neptunePlanetMaterial.uniforms.sunDirection.value.copy(sunDir);
         }
 
         // 土星、天王星、海王星专属：更新投射到光环与行星本体的太阳方向与遮挡投影
         if (id === 'saturn' && node.ringMesh) {
-          const sunDir = node.systemGroup.position.clone().negate().normalize();
+          const sunDir = this.bodyPoseProvider.getPhysicalSunDirection('saturn', this.simTimeHours);
           node.ringMesh.getWorldQuaternion(this.tempQuat).invert();
           const localRingSunDir = sunDir.clone().applyQuaternion(this.tempQuat);
           if (this.saturnRingMaterial) {
@@ -1655,13 +1669,13 @@ export class SolarEngine {
           }
         }
         if (id === 'uranus' && this.uranusRingMaterial && node.ringMesh) {
-          const sunDir = node.systemGroup.position.clone().negate().normalize();
+          const sunDir = this.bodyPoseProvider.getPhysicalSunDirection('uranus', this.simTimeHours);
           node.ringMesh.getWorldQuaternion(this.tempQuat).invert();
           const localSunDir = sunDir.clone().applyQuaternion(this.tempQuat);
           this.uranusRingMaterial.uniforms.sunDirection.value.copy(localSunDir);
         }
         if (id === 'neptune' && this.neptuneRingMaterial && node.ringMesh) {
-          const sunDir = node.systemGroup.position.clone().negate().normalize();
+          const sunDir = this.bodyPoseProvider.getPhysicalSunDirection('neptune', this.simTimeHours);
           node.ringMesh.getWorldQuaternion(this.tempQuat).invert();
           const localSunDir = sunDir.clone().applyQuaternion(this.tempQuat);
           this.neptuneRingMaterial.uniforms.sunDirection.value.copy(localSunDir);
@@ -1669,6 +1683,13 @@ export class SolarEngine {
       }
 
       if (node.data.type === 'moon') {
+        if (isPhysicalObservation && node.data.parentId !== 'earth') {
+          node.systemGroup.visible = false;
+          continue;
+        } else {
+          node.systemGroup.visible = true;
+        }
+
         // 由 BodyPoseProvider 统一解算卫星局部位置与展示半径（支持物理观察与导航示意平滑过渡）
         const pose = this.bodyPoseProvider.getBodyPose(id, this.simTimeHours);
         node.systemGroup.position.copy(pose.position);
@@ -1698,7 +1719,9 @@ export class SolarEngine {
           node.mesh.updateWorldMatrix(true, false);
           node.mesh.getWorldPosition(satWorldPos);
         }
-        const satSunDir = satWorldPos.clone().negate().normalize();
+
+        // 核心修复：基于统一物理空间公里矢量获取太阳光方向，杜绝非线性地月间距造成的 170° 巨额光照偏差 (R3)
+        const satSunDir = this.bodyPoseProvider.getPhysicalSunDirection(id, this.simTimeHours);
 
         // 月球专属：更新世界空间太阳方向向量至 MoonMaterial
         if (id === 'moon' && this.moonMaterial) {
@@ -1809,14 +1832,12 @@ export class SolarEngine {
         node.mesh.getWorldPosition(worldPos);
       }
 
-      let effectiveRadius = node.displayRadius;
-      if (node.ringMesh && node.data.ringConfig) {
-        effectiveRadius *= node.data.ringConfig.outerRadiusRatio;
-      }
-
+      const pose = this.bodyPoseProvider.getBodyPose(id, this.simTimeHours);
       return {
         pos: worldPos,
-        radius: effectiveRadius,
+        radius: pose.renderFramingRadius,
+        surfaceRadius: pose.renderSurfaceRadius,
+        framingRadius: pose.renderFramingRadius,
       };
     });
 
@@ -1969,6 +1990,53 @@ export class SolarEngine {
 
   public getBodyNode(id: BodyId): BodyRenderNode | undefined {
     return this.bodyNodes.get(id);
+  }
+
+  /**
+   * 捕获当前同一次观察快照 (captureObservationSnapshot)
+   * 严格遵循 R3 规范：捕获真实模拟时钟、展示策略、相机机位与 lookTarget、图层开关与载具 (不再硬编码 NAV/0.0)
+   */
+  public captureObservationSnapshot(title = '当前观察点'): BookmarkItemV2 {
+    const camSnap = this.cameraController.getSnapshot();
+    const currentTargetId = camSnap.targetBodyId || camSnap.selectedBodyId || 'earth';
+    const policy = this.bodyPoseProvider.getPolicy();
+    const epochDate = new Date(Date.parse(BodyPoseProvider.BASE_EPOCH_ISO) + this.simTimeHours * 3600 * 1000);
+
+    return {
+      id: `bm-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      schemaVersion: 2,
+      title,
+      targetBodyId: currentTargetId,
+      presentationPolicy: policy,
+      epochIso: epochDate.toISOString(),
+      spherical: {
+        radius: camSnap.spherical.radius,
+        phi: camSnap.spherical.phi,
+        theta: camSnap.spherical.theta,
+      },
+      lookTarget: camSnap.lookTarget,
+      viewCameraMode: this.viewCameraMode,
+      vehicleId: this.currentVehicleId,
+      layers: {
+        showClouds: this.showClouds,
+        showAtmosphere: this.showAtmosphere,
+        teachingLight: this.teachingLight,
+        showOrbits: this.showOrbits,
+        venusRadarMode: this.venusRadarMode,
+      },
+      simTimeHours: this.simTimeHours,
+      createdAtIso: new Date().toISOString(),
+    };
+  }
+
+  public setSimTimeHours(hours: number): void {
+    if (Number.isFinite(hours)) {
+      this.simTimeHours = hours;
+    }
+  }
+
+  public getSimTimeHours(): number {
+    return this.simTimeHours;
   }
 
 

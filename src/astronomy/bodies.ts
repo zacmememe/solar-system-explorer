@@ -727,7 +727,7 @@ export function getNavDisplayRadius(radiusKm: number, type: string): number {
   return Math.max(0.38, Math.min(4.70, computed));
 }
 
-const PLANET_INITIAL_PHASES: Record<string, number> = {
+export const PLANET_INITIAL_PHASES: Record<string, number> = {
   mercury: 0.85,  // ~49°
   venus: 2.25,    // ~129°
   earth: 3.65,    // ~209°
@@ -779,7 +779,7 @@ export function getMoonPositionKm(timeHours: number): [number, number, number] {
   return [x, y, z];
 }
 
-const SATELLITE_INITIAL_PHASES: Record<string, number> = {
+export const SATELLITE_INITIAL_PHASES: Record<string, number> = {
   moon: 0.6,
   phobos: 0.3,
   deimos: 3.5,

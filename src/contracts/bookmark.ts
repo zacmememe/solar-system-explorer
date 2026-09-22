@@ -8,6 +8,7 @@
 
 import type { BodyId } from './body';
 import type { ViewCameraMode, VehicleId } from './vehicle';
+import type { CameraLookTarget } from './camera';
 
 export type PresentationPolicy = 'NAV_SCHEMATIC' | 'PHYSICAL_OBSERVATION';
 
@@ -50,6 +51,7 @@ export interface BookmarkItemV2 {
     phi: number;
     theta: number;
   };
+  lookTarget?: CameraLookTarget;
   geographicCoord?: {
     lat: number;
     lon: number;
@@ -75,6 +77,7 @@ export function upgradeBookmarkToV2(raw: any): BookmarkItemV2 {
       ...raw,
       presentationPolicy: raw.presentationPolicy || 'NAV_SCHEMATIC',
       epochIso: raw.epochIso || '2026-09-22T00:00:00Z',
+      lookTarget: raw.lookTarget,
       vehicleId: raw.vehicleId ?? null,
     };
   }
@@ -92,6 +95,7 @@ export function upgradeBookmarkToV2(raw: any): BookmarkItemV2 {
       phi: typeof raw.spherical?.phi === 'number' ? raw.spherical.phi : Math.PI / 2.22,
       theta: typeof raw.spherical?.theta === 'number' ? raw.spherical.theta : Math.PI / 4,
     },
+    lookTarget: raw.lookTarget,
     geographicCoord: raw.geographicCoord,
     viewCameraMode: raw.viewCameraMode || 'PLANET_OBSERVE',
     vehicleId: raw.vehicleId ?? null,

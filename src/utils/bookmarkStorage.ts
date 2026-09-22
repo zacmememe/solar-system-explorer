@@ -44,7 +44,8 @@ export const PRESET_BOOKMARKS: BookmarkItemV2[] = [
     targetBodyId: 'moon',
     presentationPolicy: 'PHYSICAL_OBSERVATION',
     epochIso: '2026-09-22T00:00:00.000Z',
-    spherical: { radius: 3.5, phi: 1.57, theta: 3.14 },
+    spherical: { radius: 0.65, phi: 1.55, theta: 1.74 },
+    lookTarget: { kind: 'body', bodyId: 'earth' },
     viewCameraMode: 'PLANET_OBSERVE',
     vehicleId: null,
     layers: {
@@ -54,9 +55,9 @@ export const PRESET_BOOKMARKS: BookmarkItemV2[] = [
       showOrbits: false,
       venusRadarMode: false,
     },
-    simTimeHours: 0.0,
-    createdAtIso: '2026-09-22T00:00:00.000Z',
-    notes: '地月真实物理间距 384,400km，从月球回望地球呈现严密符合物理光学法则的 1.90° 壮丽视圆盘。',
+    simTimeHours: 280.0,
+    createdAtIso: '2026-09-20T00:00:00.000Z',
+    notes: '地月真实物理间距 384,400km，站在月球近地侧朝向地球眺望，蔚蓝母星在深邃星空中呈现严密符合物理光学法则的 1.90° 壮丽居中视圆盘。',
     isPreset: true,
   },
   {
@@ -126,6 +127,8 @@ export const PRESET_BOOKMARKS: BookmarkItemV2[] = [
     isPreset: true,
   },
 ];
+
+export const PRESET_BOOKMARKS_V2 = PRESET_BOOKMARKS;
 
 /**
  * 读取当前所有书签（预置 + 用户自定义，自动无缝升级迁移旧版）
@@ -281,7 +284,7 @@ export function importBookmarksJson(jsonStr: string): {
 }
 
 /**
- * 严格校验书签合法性（支持 V1 和 V2）
+ * 严格校验书签合法性（支持 V1 和 V2，使用 Number.isFinite 防御 Infinity 与非法数值）
  */
 export function isValidBookmarkAnyVersion(obj: any): boolean {
   if (!obj || typeof obj !== 'object') return false;
@@ -290,16 +293,63 @@ export function isValidBookmarkAnyVersion(obj: any): boolean {
   if (typeof obj.title !== 'string') return false;
   if (typeof obj.targetBodyId !== 'string' || !BODIES[obj.targetBodyId]) return false;
 
+  // 球坐标必须为严格有限正数，且 phi 在 [0, PI] 合法球面角区间，防 Infinity
   if (
     !obj.spherical ||
-    typeof obj.spherical.radius !== 'number' ||
-    typeof obj.spherical.phi !== 'number' ||
-    typeof obj.spherical.theta !== 'number' ||
-    isNaN(obj.spherical.radius) ||
-    isNaN(obj.spherical.phi) ||
-    isNaN(obj.spherical.theta)
+    !Number.isFinite(obj.spherical.radius) ||
+    obj.spherical.radius <= 0 ||
+    !Number.isFinite(obj.spherical.phi) ||
+    obj.spherical.phi < 0 ||
+    obj.spherical.phi > Math.PI ||
+    !Number.isFinite(obj.spherical.theta)
   ) {
     return false;
+  }
+
+  // 模拟时间若存在必须为有限数，杜绝 NaN / Infinity
+  if (obj.simTimeHours !== undefined && !Number.isFinite(obj.simTimeHours)) {
+    return false;
+  }
+
+  // 展示策略校验
+  if (
+    obj.presentationPolicy !== undefined &&
+    obj.presentationPolicy !== 'NAV_SCHEMATIC' &&
+    obj.presentationPolicy !== 'PHYSICAL_OBSERVATION'
+  ) {
+    return false;
+  }
+
+  // 视线朝向 lookTarget 校验
+  if (obj.lookTarget) {
+    if (obj.lookTarget.kind === 'body') {
+      if (typeof obj.lookTarget.bodyId !== 'string' || !BODIES[obj.lookTarget.bodyId]) {
+        return false;
+      }
+    } else if (obj.lookTarget.kind === 'point') {
+      if (
+        !Array.isArray(obj.lookTarget.point) ||
+        obj.lookTarget.point.length !== 3 ||
+        !obj.lookTarget.point.every(Number.isFinite)
+      ) {
+        return false;
+      }
+    } else if (obj.lookTarget.kind !== 'center') {
+      return false;
+    }
+  }
+
+  // 地理坐标若存在必须在合法大地测量范围
+  if (obj.geographicCoord) {
+    const { lat, lon, altitudeKm } = obj.geographicCoord;
+    if (
+      !Number.isFinite(lat) ||
+      Math.abs(lat) > 90 ||
+      !Number.isFinite(lon) ||
+      !Number.isFinite(altitudeKm)
+    ) {
+      return false;
+    }
   }
 
   if (

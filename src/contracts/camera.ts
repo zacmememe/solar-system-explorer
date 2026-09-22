@@ -12,9 +12,15 @@ export type CameraAnchor =
   | { kind: 'body'; bodyId: BodyId }
   | { kind: 'free'; pivotScene: [number, number, number] };
 
+export type CameraLookTarget =
+  | { kind: 'center' }
+  | { kind: 'body'; bodyId: BodyId }
+  | { kind: 'point'; point: [number, number, number] };
+
 export interface CameraStateSnapshot {
   mode: CameraMode;
   anchor?: CameraAnchor;
+  lookTarget?: CameraLookTarget;
   targetBodyId: BodyId | null;
   selectedBodyId: BodyId | null;
   sourceBodyId?: BodyId | null;
@@ -33,17 +39,19 @@ export interface CameraStateSnapshot {
 
 export type CameraCommand =
   | { type: 'select'; bodyId: BodyId }
-  | { type: 'flyTo'; bodyId: BodyId; durationSec?: number; targetPos?: [number, number, number] }
+  | { type: 'flyTo'; bodyId: BodyId; durationSec?: number; targetPos?: [number, number, number]; lookTarget?: CameraLookTarget }
   | { type: 'cancelFlight' }
   | { type: 'orbit'; deltaPhi: number; deltaTheta: number }
   | { type: 'zoom'; deltaDist: number }
   | { type: 'zoomInput'; logDelta: number }
   | { type: 'overview' }
+  | { type: 'setLookTarget'; lookTarget: CameraLookTarget }
   | {
       type: 'restoreBookmark';
       targetBodyId: BodyId;
       spherical: { radius: number; phi: number; theta: number };
       durationSec?: number;
+      lookTarget?: CameraLookTarget;
     }
   | {
       type: 'focusRegion';

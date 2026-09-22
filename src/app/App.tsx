@@ -260,7 +260,12 @@ export const App: React.FC = () => {
 
     // 同步展示策略（V2 规范：NAV_SCHEMATIC 导航示意 或 PHYSICAL_OBSERVATION 物理真实尺度）
     const policy = (bm as any).presentationPolicy || 'NAV_SCHEMATIC';
-    engineRef.current?.setPresentationPolicy(policy);
+    engineRef.current?.setPresentationPolicy(policy, 1.2);
+
+    // 恢复权威时间标尺 (simTimeHours)
+    if (typeof (bm as any).simTimeHours === 'number' && Number.isFinite((bm as any).simTimeHours)) {
+      engineRef.current?.setSimTimeHours((bm as any).simTimeHours);
+    }
 
     setShowClouds(bm.layers.showClouds);
     engineRef.current?.setShowClouds(bm.layers.showClouds);
@@ -277,10 +282,12 @@ export const App: React.FC = () => {
     setVenusRadarMode(bm.layers.venusRadarMode);
     engineRef.current?.setShowVenusSurface(bm.layers.venusRadarMode);
 
+    const lookTarget = (bm as any).lookTarget;
     engineRef.current?.executeCameraCommand({
       type: 'restoreBookmark',
       targetBodyId: bm.targetBodyId,
       spherical: bm.spherical,
+      lookTarget,
     });
   };
 
@@ -376,6 +383,7 @@ export const App: React.FC = () => {
             <button
               onClick={() => setShowBookmarkModal(true)}
               className="app-toolbar-btn"
+              data-testid="toolbar-bookmark-btn"
               title="打开太阳系观察点与书签库"
               aria-label="打开太阳系观察点与书签库"
             >
@@ -659,10 +667,13 @@ export const App: React.FC = () => {
         isOpen={showBookmarkModal}
         onClose={() => setShowBookmarkModal(false)}
         onRestoreBookmark={handleRestoreBookmark}
+        onCaptureSnapshot={(title) => engineRef.current?.captureObservationSnapshot(title) as BookmarkItem}
         currentSnapshot={cameraSnapshot}
         currentBodyId={selectedBodyId}
         currentVehicleId={currentVehicleId}
         currentViewCameraMode={viewCameraMode}
+        currentPresentationPolicy={engineRef.current?.getPresentationPolicy()}
+        currentSimTimeHours={engineRef.current?.getSimTimeHours() ?? 0}
         currentLayers={{
           showClouds,
           showAtmosphere,

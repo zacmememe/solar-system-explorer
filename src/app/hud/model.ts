@@ -57,20 +57,37 @@ export function buildContextMap(frame: HudFrame, centerId: BodyId, width: number
   const ids = Object.values(BODIES)
     .filter(b => centerId === 'sun' ? b.type === 'planet' : b.type === 'moon' && b.parentId === centerId)
     .map(b => b.id);
-  // Share the existing position functions; do not create a second orbit simulation.
+  const relative = (p: HudVector): HudVector => [p[0] - center[0], p[1] - center[1], p[2] - center[2]];
+
+  // Share the existing position functions; scale tracks dynamically if body is in physical observation mode (R3)
   const tracks = ids.map(id => {
     const body = BODIES[id];
-    return { id, points: Array.from({ length: 97 }, (_, i) => {
-      const t = frame.simTimeHours + Math.abs(body.orbitPeriodDays) * 24 * i / 96;
-      return centerId === 'sun' ? getPlanetNavPosition(id, t) : getSatelliteNavPosition(id, t);
-    }) };
+    const bPos = frame.bodies.find(b => b.id === id)?.position;
+    const actualDist = bPos ? Math.hypot(...relative(bPos)) : 0;
+
+    return {
+      id,
+      points: Array.from({ length: 97 }, (_, i) => {
+        const t = frame.simTimeHours + Math.abs(body.orbitPeriodDays) * 24 * i / 96;
+        if (centerId === 'sun') {
+          return getPlanetNavPosition(id, t);
+        }
+        const navPos = getSatelliteNavPosition(id, t);
+        const navDist = Math.hypot(...navPos);
+        if (actualDist > 0 && navDist > 0 && actualDist > navDist * 1.5) {
+          const scale = actualDist / navDist;
+          return [navPos[0] * scale, navPos[1] * scale, navPos[2] * scale] as [number, number, number];
+        }
+        return navPos;
+      }),
+    };
   });
-  const extent = Math.max(1, ...tracks.flatMap(t => t.points.map(p => Math.hypot(...p))));
+  const bodyDists = frame.bodies.filter(b => ids.includes(b.id)).map(b => Math.hypot(...relative(b.position)));
+  const extent = Math.max(1, ...tracks.flatMap(t => t.points.map(p => Math.hypot(...p))), ...bodyDists);
   // Fit width and height independently: the diagram intentionally foreshortens depth.
   // A fixed world basis is retained across frames; no idle camera-like rotation.
   const scaleX = (w - 32) / (2 * extent), scaleY = (h - 20) / (2 * extent);
   const project = (p: HudVector): MapPoint => ({ x: w / 2 + p[0] * scaleX, y: h / 2 + (p[2] * .908 - p[1] * .419) * scaleY });
-  const relative = (p: HudVector): HudVector => [p[0] - center[0], p[1] - center[1], p[2] - center[2]];
   const rawObserver = project(relative(frame.observerPosition));
   const observerOutside = rawObserver.x < 10 || rawObserver.x > w - 10 || rawObserver.y < 10 || rawObserver.y > h - 10;
   return {

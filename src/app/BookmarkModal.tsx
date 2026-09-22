@@ -39,10 +39,13 @@ interface BookmarkModalProps {
   isOpen: boolean;
   onClose: () => void;
   onRestoreBookmark: (bookmark: BookmarkItem) => void;
+  onCaptureSnapshot?: (title?: string) => BookmarkItem;
   currentSnapshot: CameraStateSnapshot | null;
   currentBodyId: BodyId;
   currentVehicleId: VehicleId | null;
   currentViewCameraMode: ViewCameraMode;
+  currentPresentationPolicy?: 'NAV_SCHEMATIC' | 'PHYSICAL_OBSERVATION';
+  currentSimTimeHours?: number;
   currentLayers: {
     showClouds: boolean;
     showAtmosphere: boolean;
@@ -57,10 +60,13 @@ export const BookmarkModal: React.FC<BookmarkModalProps> = ({
   isOpen,
   onClose,
   onRestoreBookmark,
+  onCaptureSnapshot,
   currentSnapshot,
   currentBodyId,
   currentVehicleId,
   currentViewCameraMode,
+  currentPresentationPolicy,
+  currentSimTimeHours,
   currentLayers,
   onToast,
 }) => {
@@ -98,31 +104,40 @@ export const BookmarkModal: React.FC<BookmarkModalProps> = ({
       return;
     }
 
-    const spherical = currentSnapshot?.spherical || {
-      radius: 12.0,
-      phi: Math.PI / 2.8,
-      theta: 0.0,
-    };
+    let newBm: BookmarkItem;
+    if (onCaptureSnapshot) {
+      newBm = onCaptureSnapshot(newTitle.trim());
+      if (newNotes.trim()) {
+        newBm.notes = newNotes.trim();
+      }
+    } else {
+      const spherical = currentSnapshot?.spherical || {
+        radius: 12.0,
+        phi: Math.PI / 2.8,
+        theta: 0.0,
+      };
 
-    const newBm: BookmarkItem = {
-      id: 'bm-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
-      schemaVersion: 2,
-      title: newTitle.trim(),
-      targetBodyId: currentBodyId,
-      presentationPolicy: 'NAV_SCHEMATIC',
-      epochIso: '2026-09-22T00:00:00Z',
-      spherical: {
-        radius: Number(spherical.radius.toFixed(3)),
-        phi: Number(spherical.phi.toFixed(3)),
-        theta: Number(spherical.theta.toFixed(3)),
-      },
-      viewCameraMode: currentViewCameraMode,
-      vehicleId: currentVehicleId,
-      layers: { ...currentLayers },
-      simTimeHours: 0.0,
-      createdAtIso: new Date().toISOString(),
-      notes: newNotes.trim() || undefined,
-    };
+      newBm = {
+        id: 'bm-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
+        schemaVersion: 2,
+        title: newTitle.trim(),
+        targetBodyId: currentBodyId,
+        presentationPolicy: currentPresentationPolicy || 'NAV_SCHEMATIC',
+        epochIso: '2026-09-22T00:00:00Z',
+        spherical: {
+          radius: Number(spherical.radius.toFixed(3)),
+          phi: Number(spherical.phi.toFixed(3)),
+          theta: Number(spherical.theta.toFixed(3)),
+        },
+        lookTarget: currentSnapshot?.lookTarget || { kind: 'center' },
+        viewCameraMode: currentViewCameraMode,
+        vehicleId: currentVehicleId,
+        layers: { ...currentLayers },
+        simTimeHours: currentSimTimeHours ?? 0.0,
+        createdAtIso: new Date().toISOString(),
+        notes: newNotes.trim() || undefined,
+      };
+    }
 
     saveBookmark(newBm);
     refreshList();
@@ -234,6 +249,7 @@ export const BookmarkModal: React.FC<BookmarkModalProps> = ({
 
           <button
             onClick={onClose}
+            data-testid="bookmark-modal-close-btn"
             title="关闭书签库"
             aria-label="关闭书签库"
             style={{
@@ -273,6 +289,7 @@ export const BookmarkModal: React.FC<BookmarkModalProps> = ({
           <div style={{ display: 'flex', gap: 8 }}>
             <button
               onClick={() => setActiveTab('presets')}
+              data-testid="bookmark-tab-presets"
               style={{
                 padding: '6px 14px',
                 borderRadius: 8,
@@ -288,6 +305,7 @@ export const BookmarkModal: React.FC<BookmarkModalProps> = ({
             </button>
             <button
               onClick={() => setActiveTab('custom')}
+              data-testid="bookmark-tab-custom"
               style={{
                 padding: '6px 14px',
                 borderRadius: 8,
@@ -307,6 +325,7 @@ export const BookmarkModal: React.FC<BookmarkModalProps> = ({
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <button
               onClick={() => setShowAddForm(!showAddForm)}
+              data-testid="bookmark-btn-add"
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -396,6 +415,7 @@ export const BookmarkModal: React.FC<BookmarkModalProps> = ({
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
               <input
                 type="text"
+                data-testid="bookmark-save-title-input"
                 value={newTitle}
                 onChange={(e) => setNewTitle(e.target.value)}
                 placeholder="书签名（例如：从极轨遥望土星光环）"
@@ -430,6 +450,7 @@ export const BookmarkModal: React.FC<BookmarkModalProps> = ({
               />
               <button
                 type="submit"
+                data-testid="bookmark-save-submit-btn"
                 style={{
                   padding: '8px 18px',
                   backgroundColor: '#0284c7',
