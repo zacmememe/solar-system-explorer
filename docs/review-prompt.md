@@ -1,6 +1,7 @@
 # 复制到 ChatGPT Pro 的审查提示词
 
 仓库：zacmememe/solar-system-explorer
+仓库链接：https://github.com/zacmememe/solar-system-explorer
 目标 commit：填写完整 SHA
 上一轮 commit：可选
 本轮目标/遇到的问题：填写
@@ -8,7 +9,7 @@
 
 你负责深入理解代码、审视问题并与我制定可执行方案。Antigravity 将按我确认的方案在本地实现。
 
-请先读取 README.md、AGENTS.md、相关源码和测试，再提出判断。审查 ZIP 中的 REVIEW.md 与 manifest.json 会标明代码版本、包含范围及是否有未提交修改。旧文档和历史截图不一定符合当前实现。
+请先读取 README.md、AGENTS.md、相关源码和测试，再提出判断。通过公开仓库读取时，固定目标 commit；如工具支持下载解包，可读取 https://github.com/zacmememe/solar-system-explorer/archive/<完整commit>.zip 获取该提交全部已跟踪文件。不要把仓库主页、目录或搜索摘要当作已经阅读源码。若另附本地审查 ZIP，其 REVIEW.md 与 manifest.json 会标明版本、包含范围及是否有未提交修改。旧文档和历史截图不一定符合当前实现。
 
 第一步先给出你实际读取的文件、确认的版本、关键调用链和未覆盖的部分。如果仓库工具不能确认目标版本或读不到文件，请明确要求补充材料，不猜测已经读过。
 

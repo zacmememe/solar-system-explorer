@@ -1,11 +1,11 @@
 # Pro 审查与 Antigravity 执行
 
-私有仓库：https://github.com/zacmememe/solar-system-explorer 。本地 `main` 跟踪 `origin/main`。
+仓库：https://github.com/zacmememe/solar-system-explorer 。本地 `main` 跟踪 `origin/main`。
 
 ## 日常一轮
 
 1. Antigravity 完成一个边界明确的改动后，检查 `git status` 和 diff，运行相关测试。只提交这一轮需要的文件。
-2. `git push` 推送到私有远程仓库。用 `git rev-parse HEAD` 取得完整 commit；用 `git status --short` 确认还有哪些内容仅在本地。
+2. `git push` 推送到远程仓库。用 `git rev-parse HEAD` 取得完整 commit；用 `git status --short` 确认还有哪些内容仅在本地。
 3. 在 ChatGPT 网页选择平时使用的 Pro 模型，用 `docs/review-prompt.md` 发起审查，填写仓库、commit、目标和本轮测试结果。
 4. 检查其实际读取的文件和引用。不能确认目标版本、无法读取的模块，应补充原文或使用导出包，不要把推测当作审查结果。
 5. 讨论并确认方案后，按 `docs/implementation-plan-template.md` 保存到 `docs/plans/日期-主题.md`，交给 Antigravity 执行。
@@ -13,9 +13,17 @@
 
 提交保存的是本地版本；推送才会更新 GitHub。未提交文件和未推送提交不会通过 GitHub 连接出现在 ChatGPT 中。审查期间如继续开发，必须保持审查的 commit 不变，避免双方讨论不同版本。
 
-## 首次连接 ChatGPT
+## 通过公开链接审查
 
-在 ChatGPT 网页的 Apps / Plugins 中选择 GitHub，登录目标个人账户，只授权本项目的私有仓库。GitHub CLI 登录用于本机推送，ChatGPT 的授权在网页独立完成。
+仓库公开后，优先将仓库网址和完整 commit 发给 Pro。公开网页访问无需私有仓库连接授权，也不要求为此启用 GitHub 插件。
+
+公开的是 Git 已跟踪并推送的内容，不包括本地未提交、未推送或被忽略的文件。它也不会自动把全仓库载入模型上下文。要求模型实际读取源码、报告覆盖范围；工具无法读取的文件应明确列出。
+
+如果模型具备下载解包能力，可让它读取固定提交的完整 GitHub 源码归档：`https://github.com/zacmememe/solar-system-explorer/archive/<完整commit>.zip`。该归档包含此提交的所有已跟踪文件，与本地精简审查包的选择范围不同。无法下载或解包时，改为逐文件读取并报告缺口。
+
+## 可选：连接 GitHub 插件
+
+如仍需要插件检索，在 ChatGPT 网页的 Apps / Plugins 中选择 GitHub，登录目标个人账户，只授权本项目。GitHub CLI 登录用于本机推送，ChatGPT 的授权在网页独立完成；若页面要求 MFA 且不希望开启，使用公开链接审查。
 
 选择平时使用的 Pro 模型后，要求它：
 
