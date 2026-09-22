@@ -1,5 +1,12 @@
 # 调试经验与回归记录 (Debug Notes)
 
+## [Review export] 双击环境找不到 Git
+
+- 现象：双击 `导出Pro审查材料.bat` 报 `spawnSync git ENOENT`，在首次 `rev-parse` 时退出，本次尚未创建输出目录。
+- 根因：Codex 运行环境临时把其内置 Git 加入 PATH，普通 Windows 双击环境没有该路径；此前只在 Codex 环境验证，未覆盖桌面启动。
+- 修复：导出器自动探测已有 Git，可用 `REVIEW_GIT_PATH` 指定路径；BAT 在 PATH 缺少 Node.js 时沿用 D 盘现有安装。保留退出码，只在成功后写入 `review-exports/LATEST.txt`。
+- 回归：`node scripts/verify-review-export.mjs` 在隔离仓库中用仅含 Windows 系统目录的 PATH 执行实际 BAT，验证 Git 确实不在 PATH、导出成功、ZIP 可读，以及后续失败不会更新成功路径。
+
 本文档依照 `AGENTS.md` 规范建立，用于长期记录工程关键调试经验、根因分析、修复策略与回归用例，防止历史经验在后续迭代中丢失。
 
 ---

@@ -32,6 +32,8 @@
 
 Windows 可直接双击项目根目录的 `导出Pro审查材料.bat`；它导出 HEAD 并附带已有的预选截图。若要包含尚未提交的修改，使用下面的 `--working-tree` 命令。
 
+双击入口会寻找已有的 Node.js；导出脚本会寻找已有的 Git，包括本机 Codex 自带的 Git，不修改系统 PATH。成功时显示 `SUCCESS:` 和新 ZIP 的完整路径；`review-exports/LATEST.txt` 始终指向最近一次成功导出的文件，失败不会更新它。目录里的旧包会保留，因此看到文件不等于本次执行成功。
+
 ```powershell
 # 推荐：导出刚提交、推送的 HEAD
 npm run review:export

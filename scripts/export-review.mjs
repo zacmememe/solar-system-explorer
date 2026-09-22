@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -20,8 +20,26 @@ for (let i = 0; i < args.length; i++) {
   } else throw new Error(`Unknown or incomplete option: ${args[i]}`);
 }
 
+function findGit() {
+  const candidates = [process.env.REVIEW_GIT_PATH, 'git'];
+  if (process.platform === 'win32') {
+    candidates.push('D:/Apps/Git/cmd/git.exe', 'D:/Tools/Git/cmd/git.exe');
+    if (process.env.ProgramFiles) candidates.push(path.join(process.env.ProgramFiles, 'Git/cmd/git.exe'));
+    if (process.env.LOCALAPPDATA) candidates.push(path.join(process.env.LOCALAPPDATA, 'Programs/Git/cmd/git.exe'));
+    // Reuse the existing Codex runtime on this machine; do not install another Git.
+    if (process.env.USERPROFILE) candidates.push(path.join(process.env.USERPROFILE,
+      '.cache/codex-runtimes/codex-primary-runtime/dependencies/native/git/cmd/git.exe'));
+  }
+  for (const candidate of candidates.filter(Boolean)) {
+    const check = spawnSync(candidate, ['--version'], { cwd: root, encoding: 'utf8', windowsHide: true });
+    if (check.status === 0 && check.stdout.startsWith('git version ')) return candidate;
+  }
+  console.error('Git was not found. No export was created. Set REVIEW_GIT_PATH to an existing git.exe and try again.');
+  process.exit(1);
+}
+const gitExecutable = findGit();
 function git(args, encoding = 'utf8') {
-  return execFileSync('git', args, { cwd: root, encoding, maxBuffer: 64 * 1024 * 1024 });
+  return execFileSync(gitExecutable, args, { cwd: root, encoding, windowsHide: true, maxBuffer: 64 * 1024 * 1024 });
 }
 function resolveCommit(ref) {
   return git(['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`]).trim();
@@ -186,3 +204,7 @@ if (process.platform === 'win32') {
 console.log(`Review: ${path.join(output, 'REVIEW.md')}`);
 console.log(`Commit: ${commit}; mode: ${manifest.mode}; files: ${snapshots.length}`);
 console.log('No tests, commit, push or deployment were performed by this exporter.');
+// Only update this pointer after every export step has succeeded.
+const latest = process.platform === 'win32' ? output + '.zip' : path.join(output, 'REVIEW.md');
+fs.writeFileSync(path.join(root, 'review-exports', 'LATEST.txt'), latest + '\r\n', 'utf8');
+console.log(`SUCCESS: ${latest}`);

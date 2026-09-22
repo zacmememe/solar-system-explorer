@@ -46,6 +46,7 @@ function exported(result) {
 }
 
 write('scripts/export-review.mjs', fs.readFileSync(path.join(root, 'scripts/export-review.mjs')));
+write('导出Pro审查材料.bat', fs.readFileSync(path.join(root, '导出Pro审查材料.bat')));
 write('.gitignore', 'review-exports/\n.env\n');
 write('README.md', '# Fixture\n');
 write('src/中文.ts', 'export const value = 1;\n');
@@ -75,13 +76,30 @@ assert.ok(fs.existsSync(path.join(working.folder, 'snapshot/src/new.ts')));
 assert.ok(fs.readFileSync(path.join(working.folder, 'changes.patch'), 'utf8').includes('+export const value = 2;'));
 assert.equal(working.manifest.images.missing.length, 5);
 
+if (process.platform === 'win32') {
+  const desktopEnv = { ...process.env };
+  for (const key of Object.keys(desktopEnv)) {
+    if (key.toLowerCase() === 'path' || key === 'REVIEW_GIT_PATH') delete desktopEnv[key];
+  }
+  const systemRoot = process.env.SystemRoot || 'C:\\Windows';
+  desktopEnv.Path = `${systemRoot}\\System32;${systemRoot}\\System32\\WindowsPowerShell\\v1.0`;
+  const missingGit = spawnSync('git', ['--version'], { cwd: fixture, env: desktopEnv });
+  assert.equal(missingGit.error?.code, 'ENOENT', 'Fixture must reproduce Git missing from PATH');
+  const desktop = exported(spawnSync(path.join(systemRoot, 'System32/cmd.exe'),
+    ['/d', '/c', '导出Pro审查材料.bat --no-pause'], { cwd: fixture, env: desktopEnv, encoding: 'utf8' }));
+  assert.equal(desktop.manifest.mode, 'committed');
+  assert.equal(fs.readFileSync(path.join(fixture, 'review-exports/LATEST.txt'), 'utf8').trim(), desktop.folder + '.zip');
+}
+
 // Deliberately synthetic credential-like string; never a real credential.
 const synthetic = ['gh', 'p_', 'a'.repeat(30)].join('');
 write('src/secret.ts', `export const secret = '${synthetic}';\n`);
+const latestBeforeFailure = fs.readFileSync(path.join(fixture, 'review-exports/LATEST.txt'), 'utf8');
 const blocked = run('--working-tree');
 assert.notEqual(blocked.status, 0);
 assert.ok(blocked.stderr.includes('Possible credential'));
 assert.ok(!blocked.stderr.includes(synthetic));
+assert.equal(fs.readFileSync(path.join(fixture, 'review-exports/LATEST.txt'), 'utf8'), latestBeforeFailure);
 assert.notEqual(run('--base').status, 0);
-console.log('PASS: committed snapshot, dirty snapshot, untracked source, Unicode paths, hashes, ZIP, asset inventory, diff, missing images, secret rejection and invalid options.');
+console.log('PASS: snapshots, Unicode paths, hashes, portable ZIP, assets, diff, secret rejection, invalid options, desktop BAT without Git/Node in PATH and last-success pointer.');
 console.log(`Fixture retained for inspection: ${fixture}`);
