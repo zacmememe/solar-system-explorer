@@ -34,7 +34,10 @@ export class CameraController {
   private maxDistance: number = 800;
 
   // 对数间距与时间衰减平滑状态 (B1 连续无级缩放内核)
+  // 分离物理地表半径、全景观赏构图半径与安全避障净空 (CAM-04)
   private surfaceRadius: number = 2.0;
+  private framingRadius: number = 2.0;
+  private collisionClearance: number = 0.04;
   private readonly shift: number = 1.0;
   private qActual: number = Math.log(6.2 + 1.0);
   private qTarget: number = Math.log(6.2 + 1.0);
@@ -161,7 +164,9 @@ export class CameraController {
   public updateTargetPosition(targetPos: THREE.Vector3, targetRadius: number): void {
     if (!this.isTransitioning && this.anchor.kind === 'body') {
       this.targetPosition.copy(targetPos);
-      this.minDistance = Math.max(0.1, targetRadius * 1.02);
+      this.surfaceRadius = targetRadius;
+      this.collisionClearance = Math.max(0.01, targetRadius * 0.02);
+      this.minDistance = Math.max(0.1, targetRadius + this.collisionClearance);
       this.maxDistance = Math.max(100, targetRadius * 100);
       if (this.spherical.radius < this.minDistance) {
         this.spherical.radius = this.minDistance;
@@ -385,7 +390,8 @@ export class CameraController {
         this.anchor = { kind: 'body', bodyId: this.targetBodyId };
         const targetInfo = getBodyPos(this.targetBodyId);
         this.surfaceRadius = targetInfo.radius;
-        this.minDistance = Math.max(0.1, targetInfo.radius * 1.02);
+        this.collisionClearance = Math.max(0.01, targetInfo.radius * 0.02);
+        this.minDistance = Math.max(0.1, targetInfo.radius + this.collisionClearance);
         this.maxDistance = targetInfo.radius * 100;
         this.syncLogDollyFromRadius();
       }
@@ -415,7 +421,8 @@ export class CameraController {
       this.spherical.makeSafe();
 
       this.surfaceRadius = targetInfo.radius;
-      this.minDistance = Math.max(0.1, targetInfo.radius * 1.02);
+      this.collisionClearance = Math.max(0.01, targetInfo.radius * 0.02);
+      this.minDistance = Math.max(0.1, targetInfo.radius + this.collisionClearance);
       this.maxDistance = targetInfo.radius * 100;
       this.syncLogDollyFromRadius();
     } else {
@@ -424,11 +431,13 @@ export class CameraController {
         const targetInfo = getBodyPos(this.anchor.bodyId);
         this.targetPosition.copy(targetInfo.pos);
         this.surfaceRadius = targetInfo.radius;
-        this.minDistance = Math.max(0.1, targetInfo.radius * 1.02);
+        this.collisionClearance = Math.max(0.01, targetInfo.radius * 0.02);
+        this.minDistance = Math.max(0.1, targetInfo.radius + this.collisionClearance);
         this.maxDistance = targetInfo.radius * 100;
       } else {
         this.targetPosition.set(this.anchor.pivotScene[0], this.anchor.pivotScene[1], this.anchor.pivotScene[2]);
         this.surfaceRadius = 0;
+        this.collisionClearance = 0.01;
         this.minDistance = 0.5;
         this.maxDistance = Math.max(20000, this.spherical.radius * 3);
       }
@@ -451,12 +460,47 @@ export class CameraController {
   }
 
   /**
-   * 写入 Three.js Camera 变换
+   * 依据当前相机到物理地表的净高度计算动态近裁剪面 (CAM-04)
+   * near = min(nearMax, clearance / 4), 且不低于 nearFloor
+   */
+  public static nearFromClearance(clearance: number, nearMax = 0.1, nearFloor = 1e-4): number {
+    if (!Number.isFinite(clearance) || clearance <= 0) {
+      return nearFloor;
+    }
+    return Math.max(nearFloor, Math.min(nearMax, clearance * 0.25));
+  }
+
+  /**
+   * 写入 Three.js Camera 变换与动态近裁剪面自适应调度 (CAM-04)
    * 唯一相机写入者！
    */
   private updateCameraTransform(): void {
     const offset = new THREE.Vector3().setFromSpherical(this.spherical);
     this.camera.position.copy(this.targetPosition).add(offset);
     this.camera.lookAt(this.targetPosition);
+
+    // 动态调整近裁剪面，彻底杜绝近地观察时地表被裁剪 (CAM-04)
+    const isBody = this.anchor.kind === 'body';
+    const clearance = isBody
+      ? Math.max(0.001, this.spherical.radius - this.surfaceRadius)
+      : Math.max(0.001, this.spherical.radius);
+    const dynamicNear = CameraController.nearFromClearance(clearance, 0.1, 1e-4);
+
+    if (Math.abs(this.camera.near - dynamicNear) > 1e-6) {
+      this.camera.near = dynamicNear;
+      this.camera.updateProjectionMatrix();
+    }
+  }
+
+  public getSurfaceRadius(): number {
+    return this.surfaceRadius;
+  }
+
+  public getFramingRadius(): number {
+    return this.framingRadius;
+  }
+
+  public getCollisionClearance(): number {
+    return this.collisionClearance;
   }
 }

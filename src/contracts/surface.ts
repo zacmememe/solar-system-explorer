@@ -28,7 +28,7 @@ export interface TileBoundingBox {
 }
 
 /**
- * 瓦片加载与生命周期状态
+ * 瓦片加载与生命周期状态 (向后兼容)
  */
 export type TileLoadState =
   | 'idle'
@@ -37,6 +37,16 @@ export type TileLoadState =
   | 'fading-in'
   | 'fading-out'
   | 'disposed';
+
+/**
+ * 瓦片 IO 资源请求状态 (解耦 IO 与平滑渐变混合)
+ */
+export type TileIOState =
+  | 'unrequested'
+  | 'queued'
+  | 'loading'
+  | 'ready'
+  | 'failed';
 
 /**
  * 地表瓦片数据集清单规范
@@ -73,7 +83,9 @@ export interface SurfaceTileItem {
   mesh: THREE.Mesh;
   material: THREE.ShaderMaterial;
   loadState: TileLoadState;
-  fadeAlpha: number; // 0.0 ~ 1.0 用于父子瓦片交叉渐变淡入
+  ioState: TileIOState;
+  imageMix: number; // 0.0 ~ 1.0 纹理混合收敛进度 (收图后持续收敛至 1.0)
+  fadeAlpha: number; // 0.0 ~ 1.0 兼容字段
   children?: SurfaceTileItem[];
   parent?: SurfaceTileItem;
   lastUsedTimestamp: number;

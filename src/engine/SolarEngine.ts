@@ -499,11 +499,12 @@ export class SolarEngine {
         };
         this.earthTileManager = new SurfaceTileManager({
           manifest: earthTileManifest,
-          radius: displayRadius * 1.0005, // 细微贴合底球，杜绝 Z-fighting
+          radius: displayRadius, // 瓦片地表全权作为物理地表
           maxMemoryTiles: 64,
           sseThreshold: 2.0,
         });
         poleFrame.add(this.earthTileManager.group);
+        node.mesh.visible = false; // 由 EarthTileManager 独占接管地表渲染，彻底消除双球穿插与 Z-fighting
       }
 
       // 6. 金星专属：浓厚硫酸大气层外壳与金黄色散射高层大气晕（挂载在 poleFrame）
@@ -1171,7 +1172,11 @@ export class SolarEngine {
     this.pointerNdc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
 
     this.raycaster.setFromCamera(this.pointerNdc, this.camera);
-    const intersects = this.raycaster.intersectObjects(this.pickableMeshes);
+    const pickables: THREE.Object3D[] = [...this.pickableMeshes];
+    if (this.earthTileManager) {
+      pickables.push(this.earthTileManager.group);
+    }
+    const intersects = this.raycaster.intersectObjects(pickables, true);
 
     if (intersects.length > 0) {
       const hit = intersects[0].object;

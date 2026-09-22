@@ -97,6 +97,10 @@ export class SurfaceTileScheme {
 
   /**
    * 地理经纬度转局部三维球体笛卡尔坐标
+   * 遵循规范与 Three.js 原生 SphereGeometry 完全对齐：
+   * - +Y 为地理北极；
+   * - 全球 UV(0.5, 0.5) 映射在 +X 轴 (本初子午线经度 0°, 赤道 0°)；
+   * - 东经 90° 映射在 -Z 轴；西经 90° 映射在 +Z 轴；
    * @param latDeg 纬度 (-90 到 +90)
    * @param lonDeg 经度 (-180 到 +180)
    * @param radius 球体物理半径
@@ -111,11 +115,101 @@ export class SurfaceTileScheme {
     const lonRad = THREE.MathUtils.degToRad(lonDeg);
 
     const cosLat = Math.cos(latRad);
-    target.x = radius * cosLat * Math.sin(lonRad);
+    target.x = radius * cosLat * Math.cos(lonRad);
     target.y = radius * Math.sin(latRad);
-    target.z = radius * cosLat * Math.cos(lonRad);
+    target.z = -radius * cosLat * Math.sin(lonRad);
 
     return target;
+  }
+
+  /**
+   * 计算子瓦片在祖先瓦片纹理中的对应 UV 坐标
+   * y 瓦片由北向南递增，纹理 v 由南向北递增
+   */
+  public static ancestorUv(
+    child: TileCoordinate,
+    ancestor: TileCoordinate,
+    u: number,
+    v: number
+  ): [number, number] {
+    if (ancestor.z > child.z) {
+      throw new RangeError('Ancestor level cannot be greater than child level');
+    }
+    const n = Math.pow(2, child.z - ancestor.z);
+    if (Math.floor(child.x / n) !== ancestor.x || Math.floor(child.y / n) !== ancestor.y) {
+      throw new RangeError('Provided ancestor tile does not cover child tile');
+    }
+    const ox = child.x - ancestor.x * n;
+    const oy = child.y - ancestor.y * n;
+    return [(ox + u) / n, (n - 1 - oy + v) / n];
+  }
+
+  /**
+   * 计算子瓦片采样祖先纹理的仿射变换 offset 与 scale
+   * coarseUv = offset + childUv * scale
+   */
+  public static getAncestorUvTransform(
+    child: TileCoordinate,
+    ancestor: TileCoordinate
+  ): { offset: THREE.Vector2; scale: THREE.Vector2 } {
+    if (ancestor.z > child.z) {
+      throw new RangeError('Ancestor level cannot be greater than child level');
+    }
+    const n = Math.pow(2, child.z - ancestor.z);
+    if (Math.floor(child.x / n) !== ancestor.x || Math.floor(child.y / n) !== ancestor.y) {
+      throw new RangeError('Provided ancestor tile does not cover child tile');
+    }
+    const ox = child.x - ancestor.x * n;
+    const oy = child.y - ancestor.y * n;
+    return {
+      offset: new THREE.Vector2(ox / n, (n - 1 - oy) / n),
+      scale: new THREE.Vector2(1 / n, 1 / n),
+    };
+  }
+
+  /**
+   * 屏幕空间像素误差 (Screen Space Error, SSE) 计算
+   * @param errorWorld 世界空间几何误差 (与 distanceWorld 同单位)
+   * @param distanceWorld 相机到瓦片的视距
+   * @param viewportHeightPixels 视口高度 (像素)
+   * @param fovDegrees 垂直视场角 (度)
+   */
+  public static screenSpaceError(
+    errorWorld: number,
+    distanceWorld: number,
+    viewportHeightPixels: number,
+    fovDegrees: number
+  ): number {
+    if (distanceWorld <= 0 || viewportHeightPixels <= 0 || fovDegrees <= 0 || fovDegrees >= 179) {
+      return 0;
+    }
+    const focalPixels = viewportHeightPixels / (2 * Math.tan((fovDegrees * Math.PI) / 360));
+    return (errorWorld * focalPixels) / distanceWorld;
+  }
+
+  /**
+   * 检查特定瓦片是否在数据集覆盖范围或 ROI 范围内
+   */
+  public static isTileCoveredByRoi(
+    coord: TileCoordinate,
+    rois?: Array<{ lonMin: number; lonMax: number; latMin: number; latMax: number; targetLevel: number }>
+  ): boolean {
+    // L0, L1, L2 是全球全覆盖金字塔
+    if (coord.z <= 2) return true;
+    if (!rois || rois.length === 0) return false;
+
+    const bbox = this.getTileBoundingBox(coord);
+    for (const roi of rois) {
+      if (coord.z <= roi.targetLevel) {
+        // 包围盒相交测试
+        const lonOverlap = !(bbox.lonMax < roi.lonMin || bbox.lonMin > roi.lonMax);
+        const latOverlap = !(bbox.latMax < roi.latMin || bbox.latMin > roi.latMax);
+        if (lonOverlap && latOverlap) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   /**
@@ -138,7 +232,14 @@ export class SurfaceTileScheme {
     // 选取 4 个角点测量最大外接欧式距离
     const p1 = this.latLonToCartesian(bbox.latMin, bbox.lonMin, radius);
     const p2 = this.latLonToCartesian(bbox.latMax, bbox.lonMax, radius);
-    const maxDist = Math.max(center.distanceTo(p1), center.distanceTo(p2));
+    const p3 = this.latLonToCartesian(bbox.latMin, bbox.lonMax, radius);
+    const p4 = this.latLonToCartesian(bbox.latMax, bbox.lonMin, radius);
+    const maxDist = Math.max(
+      center.distanceTo(p1),
+      center.distanceTo(p2),
+      center.distanceTo(p3),
+      center.distanceTo(p4)
+    );
 
     return new THREE.Sphere(center, maxDist * 1.05); // 附带 5% 安全边界
   }

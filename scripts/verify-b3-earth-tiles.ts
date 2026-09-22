@@ -95,7 +95,7 @@ async function runB3Verification() {
     };
     console.log('初始瓦片系统状态:', initialStatus);
 
-    // 辅助函数评估代码：精准将天体旋转使特定经纬度正对太阳正午，并将相机垂直置于该区域正上方
+    // 辅助函数评估代码：精准将天体旋转使特定经纬度正对太阳正午，并将相机垂直置于该区域正上方 (已完全对齐原生基准，杜绝凑图偏置)
     const setFocusRoi = async (lat: number, lon: number, distanceFactor: number, unmaskClouds: boolean) => {
       await page.evaluate(`
         (() => {
@@ -115,19 +115,16 @@ async function runB3Verification() {
           const latRad = ${lat} * (Math.PI / 180);
           const lonRad = ${lon} * (Math.PI / 180);
 
-          // 地面局部法线 (未旋转时)
-          const phi = Math.PI / 2 - latRad;
-          const theta = lonRad + Math.PI;
+          // 地面局部法线 (与统一后的 SurfaceTileScheme 及 SphereGeometry 绝对对齐)
+          const cosLat = Math.cos(latRad);
           const localNormal = new window.THREE.Vector3(
-            -Math.sin(phi) * Math.cos(theta),
-            Math.cos(phi),
-            Math.sin(phi) * Math.sin(theta)
+            cosLat * Math.cos(lonRad),
+            Math.sin(latRad),
+            -cosLat * Math.sin(lonRad)
           ).normalize();
 
-          // 计算将该经度旋转至面向太阳的自转角
-          // 加上 65 度纹理经度基准对齐偏置，精确正对向阳正午
-          const localXZAngle = Math.atan2(localNormal.z, localNormal.x);
-          const rotY = sunAngle - localXZAngle + Math.PI + (65.0 * (Math.PI / 180));
+          // 将指定经度旋转对准向阳面正午：严格基于天体坐标系物理几何，无任何人工加度凑图偏置
+          const rotY = sunAngle + lonRad;
 
           earthNode.mesh.rotation.y = rotY;
           if (engine.earthTileManager) {
@@ -142,7 +139,7 @@ async function runB3Verification() {
           const camDist = R * ${distanceFactor};
           const camOffset = worldNormal.clone().multiplyScalar(camDist);
 
-          // 转换至 Controller 的 Spherical
+          // 转换至 Controller 的 Spherical (由单一相机控制器执行)
           const spherical = new window.THREE.Spherical().setFromVector3(camOffset);
           const controller = engine.getCameraController();
           controller.setSphericalDirect(spherical.radius, spherical.phi, spherical.theta);

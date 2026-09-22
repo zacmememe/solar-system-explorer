@@ -57,6 +57,8 @@ export class TileGeometryBuilder {
     }
 
     // 生成三角形面索引 (网格拓扑)
+    // 严格逆时针朝外：三角形 (a, b, c) 与 (b, d, c)
+    // 跳过极点处的退化三角形 (顶点重合导致面积为0)
     const rowStride = widthSegments + 1;
     for (let j = 0; j < heightSegments; j++) {
       for (let i = 0; i < widthSegments; i++) {
@@ -65,9 +67,20 @@ export class TileGeometryBuilder {
         const c = a + rowStride;
         const d = c + 1;
 
-        // 逆时针朝外：三角形 (a, c, b) 与 (b, c, d)
-        indices.push(a, c, b);
-        indices.push(b, c, d);
+        const posA = new THREE.Vector3(positions[a * 3], positions[a * 3 + 1], positions[a * 3 + 2]);
+        const posB = new THREE.Vector3(positions[b * 3], positions[b * 3 + 1], positions[b * 3 + 2]);
+        const posC = new THREE.Vector3(positions[c * 3], positions[c * 3 + 1], positions[c * 3 + 2]);
+        const posD = new THREE.Vector3(positions[d * 3], positions[d * 3 + 1], positions[d * 3 + 2]);
+
+        // 三角形 (a, b, c): 逆时针朝外
+        if (posA.distanceToSquared(posB) > 1e-12 && posA.distanceToSquared(posC) > 1e-12 && posB.distanceToSquared(posC) > 1e-12) {
+          indices.push(a, b, c);
+        }
+
+        // 三角形 (b, d, c): 逆时针朝外
+        if (posB.distanceToSquared(posD) > 1e-12 && posB.distanceToSquared(posC) > 1e-12 && posD.distanceToSquared(posC) > 1e-12) {
+          indices.push(b, d, c);
+        }
       }
     }
 
