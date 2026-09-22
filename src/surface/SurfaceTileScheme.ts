@@ -194,7 +194,7 @@ export class SurfaceTileScheme {
     coord: TileCoordinate,
     rois?: Array<{ lonMin: number; lonMax: number; latMin: number; latMax: number; targetLevel: number }>
   ): boolean {
-    // L0, L1, L2 是全球全覆盖金字塔
+    // 基础全覆盖层级 (L0–L2，若无显式 ROI 约束或显式白名单)
     if (coord.z <= 2) return true;
     if (!rois || rois.length === 0) return false;
 

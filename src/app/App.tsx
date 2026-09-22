@@ -509,6 +509,23 @@ export const App: React.FC = () => {
               </button>
             );
           })}
+          {selectedBodyId === 'earth' && (
+            <>
+              <div style={{ width: 1, height: 12, background: 'rgba(255,255,255,0.15)', margin: '0 4px', flexShrink: 0 }} />
+              <button
+                data-testid="earth-region-prd-btn"
+                onClick={() => {
+                  engineRef.current?.focusEarthRegion('pearl-river-delta');
+                  showToast('🌏 正在飞向地表高精区域：珠江口大湾区 (NASA 500m 真实观测)');
+                }}
+                className="app-satellite-btn"
+                style={{ borderColor: 'rgba(56, 189, 248, 0.45)', color: '#38bdf8' }}
+                aria-label="观测地表高精区域 珠江口大湾区"
+              >
+                <span>📍 珠江口 (500m高精)</span>
+              </button>
+            </>
+          )}
         </div>
       )}
 
@@ -604,6 +621,10 @@ export const App: React.FC = () => {
         onToggleReduceMotion={toggleReduceMotion} onToggleVenus={toggleVenusRadar} onToggleTitan={toggleTitanInfrared}
         onReframe={() => handleFlyTo(selectedBodyId)}
         onCancelTransition={() => engineRef.current?.executeCameraCommand({ type: 'cancelFlight' })}
+        onFocusRegion={(regionKey) => {
+          engineRef.current?.focusEarthRegion(regionKey);
+          showToast('🌏 正在飞向地表高精区域：珠江口大湾区 (NASA 500m 真实观测)');
+        }}
       />
 
       {engineError && <div role="alert" style={{ position: 'absolute', top: '40%', left: '10%', right: '10%',

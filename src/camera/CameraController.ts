@@ -153,6 +153,19 @@ export class CameraController {
         this.initiateBookmarkFlight(command.targetBodyId, command.spherical, dur, token);
         break;
       }
+
+      case 'focusRegion': {
+        const dur = command.durationSec ?? (this.reduceMotion ? 0.15 : 2.5);
+        this.initiateFocusRegionFlight(
+          command.bodyId,
+          command.lat,
+          command.lon,
+          command.altitude ?? 0.08,
+          dur,
+          token
+        );
+        break;
+      }
     }
 
     return token;
@@ -313,11 +326,76 @@ export class CameraController {
 
     this.transitionStartSpherical.copy(this.spherical);
     this.transitionStartTargetPos.copy(this.targetPosition);
-
     this.transitionTargetSpherical.set(
       targetSpherical.radius,
       targetSpherical.phi,
       targetSpherical.theta
+    );
+  }
+
+  /**
+   * 启动飞向特定地表地理区域 (focusRegion)
+   * 严格遵循 R2 规范：
+   * 1. 结合经纬度计算真实地表法线单位向量；
+   * 2. 转换为相机的目标 (radius, phi, theta) 球坐标；
+   * 3. 目标高度为 surfaceRadius + altitude，且不低于 minDistance；
+   * 4. 执行可打断的平滑飞行插值。
+   */
+  private initiateFocusRegionFlight(
+    targetId: BodyId,
+    lat: number,
+    lon: number,
+    altitude: number,
+    durationSec: number,
+    token: number
+  ): void {
+    if (token !== this.currentCommandId) return;
+
+    this.sourceBodyId = this.targetBodyId || this.selectedBodyId || 'earth';
+    this.isTransitioning = true;
+    this.mode = 'TRANSITION';
+    this.targetBodyId = targetId;
+    this.selectedBodyId = targetId;
+    this.anchor = { kind: 'body', bodyId: targetId };
+    this.transitionDurationSec = Number.isFinite(durationSec)
+      ? Math.max(0.05, durationSec)
+      : (this.reduceMotion ? 0.15 : 2.5);
+    this.transitionProgress = 0;
+
+    this.transitionStartSpherical.copy(this.spherical);
+    this.transitionStartTargetPos.copy(this.targetPosition);
+
+    // 计算地表渲染法线方向向量
+    // 与 SurfaceTileScheme.latLonToCartesian 一致的基：
+    // x = cos(lat) * cos(lon)
+    // y = sin(lat)
+    // z = -cos(lat) * sin(lon)
+    const latRad = THREE.MathUtils.degToRad(lat);
+    const lonRad = THREE.MathUtils.degToRad(lon);
+    const cosLat = Math.cos(latRad);
+    const normal = new THREE.Vector3(
+      cosLat * Math.cos(lonRad),
+      Math.sin(latRad),
+      -cosLat * Math.sin(lonRad)
+    ).normalize();
+
+    // 转换为 Three.js 球坐标 (r, phi, theta)
+    const targetSph = new THREE.Spherical().setFromVector3(normal);
+
+    // 目标半径：物理地表半径 + altitude 净高度
+    const safeAltitude = Math.max(this.collisionClearance, altitude);
+    const targetRadius = Math.max(this.minDistance, this.surfaceRadius + safeAltitude);
+    targetSph.radius = targetRadius;
+
+    // 最短球面角路径，防止跨周期大圈翻转
+    const deltaTheta =
+      THREE.MathUtils.euclideanModulo(targetSph.theta - this.spherical.theta + Math.PI, 2 * Math.PI) - Math.PI;
+    const finalTheta = this.spherical.theta + deltaTheta;
+
+    this.transitionTargetSpherical.set(
+      targetRadius,
+      Math.max(0.01, Math.min(Math.PI - 0.01, targetSph.phi)),
+      finalTheta
     );
   }
 
@@ -380,7 +458,12 @@ export class CameraController {
   /**
    * 每帧由单一 render loop 调用，更新相机位置与平滑缓动
    */
-  public update(deltaSec: number, getBodyPos: (id: BodyId) => { pos: THREE.Vector3; radius: number }): void {
+  public update(
+    deltaSec: number,
+    getBodyPos?: (id: BodyId) => { pos: THREE.Vector3; radius: number }
+  ): void {
+    const getPos = getBodyPos ?? ((_id: BodyId) => ({ pos: this.targetPosition, radius: this.surfaceRadius }));
+
     if (this.isTransitioning) {
       this.transitionProgress += deltaSec / this.transitionDurationSec;
       if (this.transitionProgress >= 1.0) {
@@ -388,7 +471,7 @@ export class CameraController {
         this.isTransitioning = false;
         this.mode = 'ORBIT_TARGET';
         this.anchor = { kind: 'body', bodyId: this.targetBodyId };
-        const targetInfo = getBodyPos(this.targetBodyId);
+        const targetInfo = getPos(this.targetBodyId);
         this.surfaceRadius = targetInfo.radius;
         this.collisionClearance = Math.max(0.01, targetInfo.radius * 0.02);
         this.minDistance = Math.max(0.1, targetInfo.radius + this.collisionClearance);
@@ -400,7 +483,7 @@ export class CameraController {
       const t = this.transitionProgress;
       const easeT = t * t * t * (t * (t * 6 - 15) + 10);
 
-      const targetInfo = getBodyPos(this.targetBodyId);
+      const targetInfo = getPos(this.targetBodyId);
       this.targetPosition.lerpVectors(this.transitionStartTargetPos, targetInfo.pos, easeT);
 
       this.spherical.radius = THREE.MathUtils.lerp(
@@ -428,7 +511,7 @@ export class CameraController {
     } else {
       // 处于目标观察模式：跟随天体物理平移或保持自由观察锚点
       if (this.anchor.kind === 'body') {
-        const targetInfo = getBodyPos(this.anchor.bodyId);
+        const targetInfo = getPos(this.anchor.bodyId);
         this.targetPosition.copy(targetInfo.pos);
         this.surfaceRadius = targetInfo.radius;
         this.collisionClearance = Math.max(0.01, targetInfo.radius * 0.02);

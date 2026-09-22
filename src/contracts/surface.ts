@@ -57,12 +57,20 @@ export interface SurfaceDatasetManifest {
   version: string;
   source: string;
   sourceDate: string;
+  sourceUrl?: string;
+  sourceSha256?: string;
+  sourceResolution?: string;
+  nativeGsdKm?: number;
+  processingVersion?: string;
   projection: 'equirectangular-dual-root';
   referenceRadiusKm: number;
   maxLevel: number;
   tileSizePixels: number;
   colorSpace: 'sRGB';
   tileRootPath: string; // 相对 public/ 目录
+  tileCount?: number;
+  availableTiles?: string[]; // 实际已离线生成的合法瓦片 key 清单 (如 "3/13/3")
+  attribution?: string;
   coverageRoi?: Array<{
     name: string;
     lonMin: number;
@@ -70,6 +78,8 @@ export interface SurfaceDatasetManifest {
     latMin: number;
     latMax: number;
     targetLevel: number;
+    nativeGsdKm?: number;
+    source?: string;
   }>;
 }
 

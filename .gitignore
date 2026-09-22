@@ -49,6 +49,7 @@ coverage/
 /.hud-backup-*/
 /review-exports/
 /artifacts/pro-review/
+/scratch/
 
 # Raw conversations and packaged historical experiments stay local.
 # Previously tracked material remains in history; new review plans belong in docs/.

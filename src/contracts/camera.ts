@@ -44,5 +44,13 @@ export type CameraCommand =
       targetBodyId: BodyId;
       spherical: { radius: number; phi: number; theta: number };
       durationSec?: number;
+    }
+  | {
+      type: 'focusRegion';
+      bodyId: BodyId;
+      lat: number;
+      lon: number;
+      altitude?: number;
+      durationSec?: number;
     };
 

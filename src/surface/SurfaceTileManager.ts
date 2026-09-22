@@ -46,12 +46,18 @@ export class SurfaceTileManager {
 
   // 默认极简占位纹理 (1x1 纯中性底色，仅用于根瓦片未到达时的绝对底层防空)
   private fallbackTexture: THREE.Texture;
+  private availableTilesSet: Set<string> | null = null;
+  private frameSplits: number = 0; // 单帧分裂计数器，平摊 LOD 细分峰值开销
 
   constructor(options: SurfaceTileManagerOptions) {
     this.manifest = options.manifest;
     this.radius = options.radius;
     this.maxMemoryTiles = options.maxMemoryTiles ?? 64;
     this.sseThreshold = options.sseThreshold ?? 1.0;
+
+    if (this.manifest.availableTiles && this.manifest.availableTiles.length > 0) {
+      this.availableTilesSet = new Set(this.manifest.availableTiles);
+    }
 
     this.group = new THREE.Group();
     this.group.name = `SurfaceTiles_${this.manifest.bodyId}`;
@@ -154,7 +160,16 @@ export class SurfaceTileManager {
   public requestTileTexture(coord: TileCoordinate): Promise<THREE.Texture | null> {
     const key = SurfaceTileScheme.tileKey(coord);
 
-    // 1. 数据集可用性过滤：若不在 manifest 覆盖范围内，不发请求，直接返回 null (TILE-04)
+    // 1. 数据集可用性过滤：若不在 manifest 可用清单或覆盖范围内，不发请求，直接返回 null (TILE-04)
+    if (this.availableTilesSet && !this.availableTilesSet.has(key)) {
+      const tile = this.activeTiles.get(key);
+      if (tile) {
+        tile.ioState = 'unrequested';
+        tile.material.uniforms.hasFineTexture.value = 0.0;
+      }
+      return Promise.resolve(null);
+    }
+
     if (!SurfaceTileScheme.isTileCoveredByRoi(coord, this.manifest.coverageRoi)) {
       const tile = this.activeTiles.get(key);
       if (tile) {
@@ -262,6 +277,7 @@ export class SurfaceTileManager {
     dtSeconds: number
   ): void {
     const now = performance.now();
+    this.frameSplits = 0; // 重置单帧分裂计数
 
     // 更新视锥体
     this.projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
@@ -364,8 +380,15 @@ export class SurfaceTileManager {
 
     if (shouldSplit) {
       if (!tile.children) {
+        // 预算守卫与平摊控制：若活跃瓦片将超出上限或单帧分裂次数已满，推迟至后续帧平滑细分 (TILE-08)
+        if (this.activeTiles.size + 4 > this.maxMemoryTiles || this.frameSplits >= 2) {
+          return;
+        }
+
         const childCoords = SurfaceTileScheme.getChildCoordinates(tile.coord);
         tile.children = childCoords.map((c) => this.createTileItem(c, tile));
+        this.frameSplits++;
+
         for (const child of tile.children) {
           this.activeTiles.set(child.key, child);
           this.group.add(child.mesh);
@@ -376,9 +399,11 @@ export class SurfaceTileManager {
             child.ioState = 'unrequested';
           }
         }
+        // 新分裂的子节点本帧不立即递归，留给后续帧自然评估，平摊帧开销
+        return;
       }
 
-      // 递归细分子节点
+      // 递归细分已有子节点
       for (const child of tile.children) {
         this.evaluateTileLOD(child, camera, localCameraPos, altitude, now);
       }
@@ -445,6 +470,19 @@ export class SurfaceTileManager {
 
   public getCachedTextureCount(): number {
     return this.textureCache.size;
+  }
+
+  public getManifest(): SurfaceDatasetManifest {
+    return this.manifest;
+  }
+
+  public updateManifest(newManifest: SurfaceDatasetManifest): void {
+    this.manifest = newManifest;
+    if (newManifest.availableTiles && newManifest.availableTiles.length > 0) {
+      this.availableTilesSet = new Set(newManifest.availableTiles);
+    } else {
+      this.availableTilesSet = null;
+    }
   }
 
   /**

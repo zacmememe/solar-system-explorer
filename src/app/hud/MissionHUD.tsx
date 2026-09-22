@@ -36,6 +36,7 @@ export interface MissionHUDProps {
   onToggleTitan(): void;
   onReframe(): void;
   onCancelTransition(): void;
+  onFocusRegion?(regionKey: string): void;
 }
 
 function ContextGraphic({ frame, centerId, selectedId }: { frame: HudFrame; centerId: BodyId; selectedId: BodyId }) {
@@ -200,6 +201,25 @@ export function MissionHUD(props: MissionHUDProps) {
             <div><dt>公转周期{body.orbitPeriodDays < 0 ? '（逆行）' : ''}</dt><dd>{formatPeriod(body.orbitPeriodDays)}</dd></div>
             <div><dt>自转周期</dt><dd>{Math.abs(body.rotationPeriodHours).toFixed(1)} 小时</dd></div></dl>
           <p className="hud-source-note">{materialNote(body.id, props.titanInfraredMode)}<br />原项目标注来源：{body.sourceRef}</p>
+          {body.id === 'earth' && (
+            <div style={{ marginTop: 10, padding: '8px 10px', background: 'rgba(56, 189, 248, 0.08)', borderRadius: 6, border: '1px solid rgba(56, 189, 248, 0.25)' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: '#38bdf8', marginBottom: 3 }}>🌍 真实地表高精区域 (R2)</div>
+              <div style={{ fontSize: 10, color: '#cbd5e1', marginBottom: 6, lineHeight: 1.4 }}>
+                NASA BMNG 真实观测 · 珠江口大湾区 (500m/px · 30–50km 尺度)
+              </div>
+              <button
+                data-testid="hud-focus-prd-btn"
+                className="hud-action"
+                style={{ width: '100%', margin: 0, padding: '5px 8px', fontSize: 11 }}
+                onClick={() => {
+                  props.onFocusRegion?.('pearl-river-delta');
+                  closePanel();
+                }}
+              >
+                🔍 飞向珠江口大湾区
+              </button>
+            </div>
+          )}
           <button className="hud-action" disabled={!ready} onClick={transitioning ? props.onCancelTransition : props.onReframe}>
             {transitioning ? '取消镜头转场' : '重新取景'}</button>
         </>}

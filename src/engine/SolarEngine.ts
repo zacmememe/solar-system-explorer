@@ -30,6 +30,7 @@ import {
 } from '../rendering/EarthMaterial';
 import { SurfaceTileManager } from '../surface/SurfaceTileManager';
 import { SurfaceDatasetManifest } from '../contracts/surface';
+import { loadEarthTileManifest } from '../surface/manifestLoader';
 import {
   createSaturnRingMaterial,
   createRingShadowPlanetMaterial,
@@ -483,16 +484,16 @@ export class SolarEngine {
         poleFrame.add(haloMesh);
         node.haloMesh = haloMesh;
 
-        // 批次 B3：初始化高精度地球多级地理经纬度双根四叉树瓦片管理器
+        // 批次 R2：初始化高精度地球多级地理经纬度双根四叉树瓦片管理器
         const earthTileManifest: SurfaceDatasetManifest = {
           bodyId: 'earth',
           datasetId: 'nasa-blue-marble-200409-tiles',
-          version: '1.0.0',
+          version: '2.0.0',
           source: 'NASA Earth Observatory / Blue Marble Next Generation',
           sourceDate: '2004-09',
           projection: 'equirectangular-dual-root',
           referenceRadiusKm: data.radiusKm,
-          maxLevel: 3,
+          maxLevel: 9,
           tileSizePixels: 512,
           colorSpace: 'sRGB',
           tileRootPath: '/assets/tiles/earth',
@@ -505,6 +506,13 @@ export class SolarEngine {
         });
         poleFrame.add(this.earthTileManager.group);
         node.mesh.visible = false; // 由 EarthTileManager 独占接管地表渲染，彻底消除双球穿插与 Z-fighting
+
+        // 异步载入真实离线构建生成的 manifest.json (R2: 只读构建输出 manifest，不手写分离)
+        loadEarthTileManifest().then((realManifest) => {
+          if (this.earthTileManager) {
+            this.earthTileManager.updateManifest(realManifest);
+          }
+        });
       }
 
       // 6. 金星专属：浓厚硫酸大气层外壳与金黄色散射高层大气晕（挂载在 poleFrame）
@@ -1930,6 +1938,25 @@ export class SolarEngine {
 
   public getEarthTileManager(): SurfaceTileManager | null {
     return this.earthTileManager;
+  }
+
+  /**
+   * 飞向地球特定地表区域 (focusEarthRegion)
+   * 严格遵循 R2 规范：由唯一 CameraController 统一执行地理命令
+   */
+  public focusEarthRegion(regionKey: 'pearl-river-delta' | string): void {
+    if (regionKey === 'pearl-river-delta') {
+      // 珠江口大湾区核心伶仃洋与香港/澳门/深圳/珠海 (经度 113.8°E, 纬度 22.3°N)
+      // 近地观察净高度 0.05 场景单位 (对应地表近地高精观察，真实细节展开)
+      this.cameraController.executeCommand({
+        type: 'focusRegion',
+        bodyId: 'earth',
+        lat: 22.3,
+        lon: 113.8,
+        altitude: 0.05,
+        durationSec: 2.2,
+      });
+    }
   }
 
   public getCameraController(): CameraController {
