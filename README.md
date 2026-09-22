@@ -44,3 +44,5 @@ npm run dev
 操作方法和 ChatGPT 连接验证见 [协作流程](docs/review-workflow.md)。可直接复用 [审查提示词](docs/review-prompt.md) 和 [执行计划模板](docs/implementation-plan-template.md)。
 
 每轮讨论固定 commit 编号；Antigravity 执行已确认的方案，测试后提交和推送；重大审查同时提供代码材料和相应版本的画面证据。
+
+Windows 可双击 `导出Pro审查材料.bat`，将当前已提交版本与预选截图导出到 `review-exports/`。

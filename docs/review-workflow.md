@@ -28,6 +28,8 @@
 
 ## 一键生成材料
 
+Windows 可直接双击项目根目录的 `导出Pro审查材料.bat`；它导出 HEAD 并附带已有的预选截图。若要包含尚未提交的修改，使用下面的 `--working-tree` 命令。
+
 ```powershell
 # 推荐：导出刚提交、推送的 HEAD
 npm run review:export
