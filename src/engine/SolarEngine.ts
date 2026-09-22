@@ -11,6 +11,7 @@
 
 import * as THREE from 'three';
 import { CameraController } from '../camera/CameraController';
+import { normalizeWheelDelta, pinchLogDelta } from '../camera/inputKernels';
 import {
   BODIES,
   getNavOrbitRadius,
@@ -183,8 +184,8 @@ export class SolarEngine {
   private ganymedeMaterial: THREE.ShaderMaterial | null = null;
   private callistoMaterial: THREE.ShaderMaterial | null = null;
 
-  // 载具航天器系统
-  private currentVehicleId: VehicleId | null = 'apollo-lm';
+  // 航天器伴飞系统
+  private currentVehicleId: VehicleId | null = null;
   private vehicleGroup: THREE.Group = new THREE.Group();
   private currentVehicleMesh: THREE.Group | null = null;
   private viewCameraMode: ViewCameraMode = 'PLANET_OBSERVE';
@@ -958,6 +959,8 @@ export class SolarEngine {
     this.canvas.addEventListener('pointerdown', this.onPointerDown);
     window.addEventListener('pointermove', this.onPointerMove);
     window.addEventListener('pointerup', this.onPointerUp);
+    window.addEventListener('pointercancel', this.onPointerUp);
+    this.canvas.addEventListener('lostpointercapture', this.onPointerUp);
     this.canvas.addEventListener('dblclick', this.onDoubleClick);
     this.canvas.addEventListener('wheel', this.onWheel, { passive: false });
     document.addEventListener('visibilitychange', this.onVisibilityChange);
@@ -991,18 +994,17 @@ export class SolarEngine {
   };
 
   private onResize = (): void => {
-    const width = this.container.clientWidth;
-    const height = this.container.clientHeight;
-    if (width === 0 || height === 0) return;
-
+    const width = this.canvas.parentElement?.clientWidth || window.innerWidth;
+    const height = this.canvas.parentElement?.clientHeight || window.innerHeight;
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height);
   };
 
   private onPointerDown = (e: PointerEvent): void => {
-    this.activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    // 忽略鼠标非左键点击，且不记入 activePointers
     if (e.pointerType === 'mouse' && e.button !== 0) return;
+    this.activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
     if (this.activePointers.size === 1) {
       this.isPointerDown = true;
@@ -1042,13 +1044,13 @@ export class SolarEngine {
     if (!this.activePointers.has(e.pointerId)) return;
     this.activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
-    // 双指触控捏合缩放
+    // 双指触控捏合缩放（连续无量纲对数比值）
     if (this.activePointers.size === 2) {
       const pts = Array.from(this.activePointers.values());
       const currentDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-      if (this.lastPinchDistance > 0) {
-        const delta = (this.lastPinchDistance - currentDist) * 0.25;
-        this.cameraController.executeCommand({ type: 'zoom', deltaDist: delta });
+      if (this.lastPinchDistance > 0 && currentDist > 0) {
+        const logDelta = pinchLogDelta(this.lastPinchDistance, currentDist);
+        this.cameraController.executeCommand({ type: 'zoomInput', logDelta });
         this.emitSnapshot();
       }
       this.lastPinchDistance = currentDist;
@@ -1088,22 +1090,34 @@ export class SolarEngine {
   private onPointerUp = (e: PointerEvent): void => {
     this.activePointers.delete(e.pointerId);
 
-    if (this.activePointers.size === 0) {
+    if (this.activePointers.size === 1) {
+      // 关键修复：从双指退回单指时重置单指基准点，防镜头跳跃
+      const remaining = Array.from(this.activePointers.values())[0];
+      this.lastPointerX = remaining.x;
+      this.lastPointerY = remaining.y;
+      this.pointerStartX = remaining.x;
+      this.pointerStartY = remaining.y;
       this.lastPinchDistance = 0;
-      if (!this.isPointerDown) return;
-      this.isPointerDown = false;
-
-      // 若未发生拖拽位移，视为一次精准点击拾取
-      if (!this.hasDragged) {
-        this.handlePick(e.clientX, e.clientY);
+    } else if (this.activePointers.size === 0) {
+      this.lastPinchDistance = 0;
+      if (this.isPointerDown) {
+        this.isPointerDown = false;
+        // 若未发生拖拽位移，视为一次精准点击拾取
+        if (!this.hasDragged) {
+          this.handlePick(e.clientX, e.clientY);
+        }
       }
     }
   };
 
   private onWheel = (e: WheelEvent): void => {
     e.preventDefault();
-    const zoomFactor = e.deltaY * 0.08;
-    this.cameraController.executeCommand({ type: 'zoom', deltaDist: zoomFactor });
+    const rect = this.canvas.getBoundingClientRect();
+    const viewportHeight = Math.max(100, rect.height || window.innerHeight);
+    const normalizedPx = normalizeWheelDelta(e.deltaY, e.deltaMode, viewportHeight, 16);
+    // 连续对数缩放增益：每次 100px 滚轮刻度约改变目标间距 14%
+    const logDelta = normalizedPx * 0.0014;
+    this.cameraController.executeCommand({ type: 'zoomInput', logDelta });
     this.emitSnapshot();
   };
 
@@ -1127,6 +1141,10 @@ export class SolarEngine {
         this.emitSnapshot();
       }
     }
+  }
+
+  public getCameraSnapshot(): CameraStateSnapshot {
+    return this.cameraController.getSnapshot();
   }
 
   public executeCameraCommand(cmd: CameraCommand): void {
@@ -1832,6 +1850,8 @@ export class SolarEngine {
     this.canvas.removeEventListener('pointerdown', this.onPointerDown);
     window.removeEventListener('pointermove', this.onPointerMove);
     window.removeEventListener('pointerup', this.onPointerUp);
+    window.removeEventListener('pointercancel', this.onPointerUp);
+    this.canvas.removeEventListener('lostpointercapture', this.onPointerUp);
     this.canvas.removeEventListener('dblclick', this.onDoubleClick);
     this.canvas.removeEventListener('wheel', this.onWheel);
     document.removeEventListener('visibilitychange', this.onVisibilityChange);

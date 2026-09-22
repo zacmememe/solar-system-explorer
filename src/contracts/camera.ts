@@ -37,6 +37,7 @@ export type CameraCommand =
   | { type: 'cancelFlight' }
   | { type: 'orbit'; deltaPhi: number; deltaTheta: number }
   | { type: 'zoom'; deltaDist: number }
+  | { type: 'zoomInput'; logDelta: number }
   | { type: 'overview' }
   | {
       type: 'restoreBookmark';

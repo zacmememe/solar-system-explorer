@@ -129,4 +129,76 @@ describe('CameraController 单一控制与防篡改测试', () => {
     expect(controller.getSnapshot().isTransitioning).toBe(false);
     expect(controller.getSnapshot().targetBodyId).toBe('sun');
   });
+
+  it('CAM-08: 滚轮缩放采用对数间距与时间衰减平滑，且在不同帧率下保持一致时间收敛', () => {
+    // 30Hz 与 60Hz 模拟 1 秒后的衰减结果对比
+    const runDamping = (fps: number) => {
+      const { controller, getBodyPos } = createTestRig();
+      const dt = 1.0 / fps;
+      // 模拟一次缩放输入
+      controller.executeCommand({ type: 'zoomInput', logDelta: 0.5 });
+      for (let i = 0; i < fps; i++) {
+        controller.update(dt, getBodyPos);
+      }
+      return controller.getSnapshot().distanceToTarget;
+    };
+
+    const dist30 = runDamping(30);
+    const dist60 = runDamping(60);
+    const dist144 = runDamping(144);
+
+    // 经过 1 秒后（tau = 0.09s，约 11 个时间常数），各帧率间差异应极小
+    expect(Math.abs(dist30 - dist60)).toBeLessThan(0.005);
+    expect(Math.abs(dist60 - dist144)).toBeLessThan(0.005);
+  });
+
+  it('CAM-09: 缩放反向输入立即改变下一帧方向，不再执行旧方向 pending 余量', () => {
+    const { controller, getBodyPos } = createTestRig();
+    const initialDist = controller.getSnapshot().distanceToTarget;
+
+    // 向外大幅拉远
+    controller.executeCommand({ type: 'zoomInput', logDelta: 1.0 });
+    controller.update(0.016, getBodyPos);
+    const distAfterOut = controller.getSnapshot().distanceToTarget;
+    expect(distAfterOut).toBeGreaterThan(initialDist);
+
+    // 立即反向推近
+    controller.executeCommand({ type: 'zoomInput', logDelta: -1.0 });
+    controller.update(0.016, getBodyPos);
+    const distAfterIn = controller.getSnapshot().distanceToTarget;
+    expect(distAfterIn).toBeLessThan(distAfterOut);
+  });
+
+  it('CAM-10: 全景飞向微小天体（如火卫一）途中向外微滚，相机自由锚点范围解耦，绝不再向内跳跃 240+ 单位', () => {
+    const camera = new THREE.PerspectiveCamera(45, 16 / 9, 0.1, 2000);
+    const controller = new CameraController({ camera });
+    const getPhobosPos = (id: string) => {
+      if (id === 'phobos') return { pos: new THREE.Vector3(228, 0, 0), radius: 0.38 };
+      return { pos: new THREE.Vector3(0, 0, 0), radius: 6.371 };
+    };
+
+    // 初始处于全景状态（半径 280）
+    controller.executeCommand({ type: 'overview' });
+    controller.update(2.5, getPhobosPos); // 完成全景飞行动画
+    const overviewDist = controller.getSnapshot().distanceToTarget;
+    expect(overviewDist).toBeGreaterThan(250);
+
+    // 发起飞向火卫一（持续 2.5 秒）
+    controller.executeCommand({ type: 'flyTo', bodyId: 'phobos' as any, durationSec: 2.5 });
+    // 刚飞行 0.1 秒，距离仍在约 279
+    controller.update(0.1, getPhobosPos);
+    const distBeforeWheel = controller.getSnapshot().distanceToTarget;
+    expect(distBeforeWheel).toBeGreaterThan(250);
+
+    // 用户在飞行中向外微滚（logDelta > 0）
+    controller.executeCommand({ type: 'zoomInput', logDelta: 0.05 });
+
+    // 关键断言：飞行必须被取消，切换为自由锚点，且距离绝对不能被火卫一的 maxDistance (38) 夹紧向内跳跃！
+    const snap = controller.getSnapshot();
+    expect(snap.isTransitioning).toBe(false);
+    expect(snap.anchor?.kind).toBe('free');
+    expect(snap.distanceToTarget).toBeGreaterThanOrEqual(distBeforeWheel - 0.01);
+    // 绝不能跳到 38 附近！
+    expect(snap.distanceToTarget).toBeGreaterThan(200);
+  });
 });

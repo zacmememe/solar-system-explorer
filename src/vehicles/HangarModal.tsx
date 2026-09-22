@@ -16,6 +16,7 @@ import { X, Rocket, Ruler, Eye, Sparkles } from 'lucide-react';
 interface HangarModalProps {
   currentVehicleId: VehicleId | null;
   onSelectVehicle: (id: VehicleId) => void;
+  onClearVehicle?: () => void;
   onClose: () => void;
 }
 
@@ -31,6 +32,7 @@ const VEHICLE_LIST: VehicleId[] = [
 export const HangarModal: React.FC<HangarModalProps> = ({
   currentVehicleId,
   onSelectVehicle,
+  onClearVehicle,
   onClose,
 }) => {
   const [selectedId, setSelectedId] = useState<VehicleId>(currentVehicleId || 'apollo-lm');
@@ -511,7 +513,7 @@ export const HangarModal: React.FC<HangarModalProps> = ({
             </div>
 
             {/* 底部行动按钮 */}
-            <div style={{ marginTop: 'auto', paddingTop: 10 }}>
+            <div style={{ marginTop: 'auto', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
               <button
                 onClick={handleBoard}
                 style={{
@@ -535,6 +537,34 @@ export const HangarModal: React.FC<HangarModalProps> = ({
                 <Rocket size={16} />
                 <span>搭乘这艘飞船出征伴飞 (Board & Fly)</span>
               </button>
+
+              {currentVehicleId && onClearVehicle && (
+                <button
+                  onClick={() => {
+                    onClearVehicle();
+                    onClose();
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '10px 0',
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    color: '#fca5a5',
+                    border: '1px solid rgba(239, 68, 68, 0.35)',
+                    borderRadius: 12,
+                    fontWeight: 600,
+                    fontSize: 13,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <X size={15} />
+                  <span>结束伴飞 · 移除航天器 (Clear Vehicle)</span>
+                </button>
+              )}
             </div>
           </div>
         </div>

@@ -24,6 +24,7 @@ import {
   VolumeX,
   Maximize2,
   Minimize2,
+  X,
 } from 'lucide-react';
 import { soundEffects } from '../audio/SoundEffects';
 
@@ -71,8 +72,8 @@ export const App: React.FC = () => {
   const [isMuted, setIsMuted] = useState<boolean>(soundEffects.getIsMuted());
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
 
-  // 载具与伴飞视角系统
-  const [currentVehicleId, setCurrentVehicleId] = useState<VehicleId | null>('apollo-lm');
+  // 载具与伴飞视角系统（默认纯净无载具观察，支持在机库自由选择或结束伴飞）
+  const [currentVehicleId, setCurrentVehicleId] = useState<VehicleId | null>(null);
   const [viewCameraMode, setViewCameraMode] = useState<ViewCameraMode>('PLANET_OBSERVE');
   const [showHangar, setShowHangar] = useState<boolean>(false);
 
@@ -241,12 +242,19 @@ export const App: React.FC = () => {
     showToast(next ? '⚡ 减弱动态模式：已开启（平缓降噪，过渡 150ms）' : '🎬 动效漫游模式：已开启');
   };
 
+  const handleClearVehicle = () => {
+    setCurrentVehicleId(null);
+    engineRef.current?.setVehicle(null);
+    engineRef.current?.setViewCameraMode('PLANET_OBSERVE');
+    setViewCameraMode('PLANET_OBSERVE');
+    showToast('🪐 已结束伴飞，切回行星自由观察');
+  };
+
   const handleRestoreBookmark = (bm: BookmarkItem) => {
     setSelectedBodyId(bm.targetBodyId);
-    if (bm.vehicleId) {
-      setCurrentVehicleId(bm.vehicleId);
-      engineRef.current?.setVehicle(bm.vehicleId);
-    }
+    const nextVeh = bm.vehicleId ?? null;
+    setCurrentVehicleId(nextVeh);
+    engineRef.current?.setVehicle(nextVeh);
     setViewCameraMode(bm.viewCameraMode);
     engineRef.current?.setViewCameraMode(bm.viewCameraMode);
 
@@ -325,27 +333,40 @@ export const App: React.FC = () => {
           {/* 右端：功能与工具栏（机库、书签、音效、全屏、诊断） */}
           <div className="app-toolbar">
             {/* 航天器机库 */}
-            <button
-              onClick={() => setShowHangar(true)}
-              className="app-toolbar-btn btn-hangar"
-              title="打开航天器机库选择搭乘载具"
-              aria-label="打开航天器机库"
-            >
-              <Rocket size={13} color="#38bdf8" />
-              <span>机库</span>
-              <span
-                style={{
-                  fontSize: 9,
-                  padding: '1px 5px',
-                  borderRadius: 4,
-                  backgroundColor: 'rgba(234, 179, 8, 0.25)',
-                  color: '#fde047',
-                  border: '1px solid rgba(234, 179, 8, 0.4)',
-                }}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <button
+                onClick={() => setShowHangar(true)}
+                className="app-toolbar-btn btn-hangar"
+                title="打开航天器机库选择搭乘载具"
+                aria-label="打开航天器机库"
               >
-                {activeVehicle ? activeVehicle.name : '未登船'}
-              </span>
-            </button>
+                <Rocket size={13} color="#38bdf8" />
+                <span>机库</span>
+                <span
+                  style={{
+                    fontSize: 9,
+                    padding: '1px 5px',
+                    borderRadius: 4,
+                    backgroundColor: activeVehicle ? 'rgba(34, 197, 94, 0.25)' : 'rgba(255, 255, 255, 0.08)',
+                    color: activeVehicle ? '#4ade80' : '#94a3b8',
+                    border: activeVehicle ? '1px solid rgba(34, 197, 94, 0.4)' : '1px solid rgba(255, 255, 255, 0.15)',
+                  }}
+                >
+                  {activeVehicle ? activeVehicle.name : '未登船'}
+                </span>
+              </button>
+              {activeVehicle && (
+                <button
+                  onClick={handleClearVehicle}
+                  className="app-toolbar-btn"
+                  style={{ padding: '6px 7px', color: '#fca5a5' }}
+                  title="结束伴飞 · 移除航天器"
+                  aria-label="结束伴飞"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
 
             {/* 观察点书签 */}
             <button
@@ -593,6 +614,7 @@ export const App: React.FC = () => {
         <HangarModal
           currentVehicleId={currentVehicleId}
           onSelectVehicle={handleSelectVehicle}
+          onClearVehicle={handleClearVehicle}
           onClose={() => setShowHangar(false)}
         />
       )}

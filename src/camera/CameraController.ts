@@ -33,6 +33,14 @@ export class CameraController {
   private minDistance: number = 7.5;
   private maxDistance: number = 800;
 
+  // 对数间距与时间衰减平滑状态 (B1 连续无级缩放内核)
+  private surfaceRadius: number = 2.0;
+  private readonly shift: number = 1.0;
+  private qActual: number = Math.log(6.2 + 1.0);
+  private qTarget: number = Math.log(6.2 + 1.0);
+  private lastInputSign: number = 0;
+  private readonly tauSec: number = 0.09; // 90ms 指数衰减时间常数
+
   // 飞行过渡动画状态
   private isTransitioning: boolean = false;
   private transitionStartSpherical: THREE.Spherical = new THREE.Spherical();
@@ -49,6 +57,7 @@ export class CameraController {
 
   constructor(options: CameraControllerOptions) {
     this.camera = options.camera;
+    this.syncLogDollyFromRadius();
     this.updateCameraTransform();
   }
 
@@ -113,14 +122,20 @@ export class CameraController {
         this.updateCameraTransform();
         break;
 
+      case 'zoomInput':
+        if (this.isTransitioning) {
+          this.cancelFlight();
+        }
+        this.applyLogDollyInput(command.logDelta);
+        this.updateCameraTransform();
+        break;
+
       case 'zoom':
         if (this.isTransitioning) {
           this.cancelFlight();
         }
-        this.spherical.radius = Math.max(
-          this.minDistance,
-          Math.min(this.maxDistance, this.spherical.radius + command.deltaDist)
-        );
+        // 兼容旧 zoom 命令：将绝对距离转为等效相对 logDelta，避免突跳触底
+        this.applyLogDollyInput(command.deltaDist / Math.max(1.0, this.spherical.radius));
         this.updateCameraTransform();
         break;
 
@@ -288,6 +303,7 @@ export class CameraController {
 
   /**
    * 立即取消飞行，保持当前视角与控制权归还用户
+   * 核心修复：自由锚点基于当前实际距离设立合法范围，彻底杜绝继承小天体微观限距导致内跳！
    */
   public cancelFlight(): void {
     if (this.isTransitioning) {
@@ -297,8 +313,48 @@ export class CameraController {
         kind: 'free',
         pivotScene: [this.targetPosition.x, this.targetPosition.y, this.targetPosition.z],
       };
+      // 自由观察状态下的宽阔安全限距范围
+      this.minDistance = 0.5;
+      this.maxDistance = Math.max(20000, this.spherical.radius * 3);
+      this.surfaceRadius = 0;
+      this.syncLogDollyFromRadius();
       this.updateCameraTransform();
     }
+  }
+
+  /**
+   * 同步对数间距状态机，使其与当前 spherical.radius 保持一致
+   */
+  private syncLogDollyFromRadius(): void {
+    const isBody = this.anchor.kind === 'body';
+    const effectiveSurface = isBody ? this.surfaceRadius : 0;
+    const h = Math.max(0.01, this.spherical.radius - effectiveSurface);
+    this.qActual = Math.log(h + this.shift);
+    this.qTarget = this.qActual;
+    this.lastInputSign = 0;
+  }
+
+  /**
+   * 应用无量纲对数缩放输入
+   * 反向输入立即清空旧方向 pending 目标，下一帧即刻反向
+   */
+  public applyLogDollyInput(logDelta: number): void {
+    if (!Number.isFinite(logDelta) || logDelta === 0) return;
+    const sign = Math.sign(logDelta);
+    if (this.lastInputSign !== 0 && sign !== this.lastInputSign) {
+      this.qTarget = this.qActual;
+    }
+    this.lastInputSign = sign;
+
+    const isBody = this.anchor.kind === 'body';
+    const effectiveSurface = isBody ? this.surfaceRadius : 0;
+    const minClearance = Math.max(0.01, this.minDistance - effectiveSurface);
+    const maxClearance = Math.max(minClearance + 1.0, this.maxDistance - effectiveSurface);
+
+    const minQ = Math.log(minClearance + this.shift);
+    const maxQ = Math.log(maxClearance + this.shift);
+
+    this.qTarget = Math.max(minQ, Math.min(maxQ, this.qTarget + logDelta));
   }
 
   /**
@@ -312,6 +368,11 @@ export class CameraController {
         this.isTransitioning = false;
         this.mode = 'ORBIT_TARGET';
         this.anchor = { kind: 'body', bodyId: this.targetBodyId };
+        const targetInfo = getBodyPos(this.targetBodyId);
+        this.surfaceRadius = targetInfo.radius;
+        this.minDistance = targetInfo.radius * 1.2;
+        this.maxDistance = targetInfo.radius * 100;
+        this.syncLogDollyFromRadius();
       }
 
       // Perlin Smootherstep 极佳丝滑缓动: 6t^5 - 15t^4 + 10t^3 (一阶二阶导数在起终点均为0)
@@ -338,17 +399,36 @@ export class CameraController {
       );
       this.spherical.makeSafe();
 
+      this.surfaceRadius = targetInfo.radius;
       this.minDistance = targetInfo.radius * 1.2;
       this.maxDistance = targetInfo.radius * 100;
+      this.syncLogDollyFromRadius();
     } else {
       // 处于目标观察模式：跟随天体物理平移或保持自由观察锚点
       if (this.anchor.kind === 'body') {
         const targetInfo = getBodyPos(this.anchor.bodyId);
         this.targetPosition.copy(targetInfo.pos);
+        this.surfaceRadius = targetInfo.radius;
         this.minDistance = targetInfo.radius * 1.2;
         this.maxDistance = targetInfo.radius * 100;
       } else {
         this.targetPosition.set(this.anchor.pivotScene[0], this.anchor.pivotScene[1], this.anchor.pivotScene[2]);
+        this.surfaceRadius = 0;
+        this.minDistance = 0.5;
+        this.maxDistance = Math.max(20000, this.spherical.radius * 3);
+      }
+
+      // 连续无级对数平滑跟随 (帧率无关指数衰减跟随)
+      if (deltaSec > 0 && Math.abs(this.qTarget - this.qActual) > 1e-6) {
+        const decayFactor = -Math.expm1(-deltaSec / this.tauSec);
+        this.qActual += (this.qTarget - this.qActual) * decayFactor;
+        const currentClearance = Math.exp(this.qActual) - this.shift;
+        const effectiveSurface = this.anchor.kind === 'body' ? this.surfaceRadius : 0;
+        this.spherical.radius = THREE.MathUtils.clamp(
+          currentClearance + effectiveSurface,
+          this.minDistance,
+          this.maxDistance
+        );
       }
     }
 
