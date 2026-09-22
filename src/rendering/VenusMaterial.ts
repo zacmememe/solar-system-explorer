@@ -51,6 +51,8 @@ export function createVenusAtmosphereMaterial(atmTex: THREE.Texture): THREE.Shad
       }
     `,
     fragmentShader: `
+      #include <common>
+
       uniform sampler2D atmosphereTexture;
       uniform vec3 sunDirection;
       uniform float teachingLight;
@@ -66,7 +68,7 @@ export function createVenusAtmosphereMaterial(atmTex: THREE.Texture): THREE.Shad
 
         vec4 texColor = texture2D(atmosphereTexture, vUv);
 
-        // 1. 几何夹角
+        // 1. 关键几何夹角
         float NdotL = dot(N, L);
         float NdotV = max(dot(N, V), 0.0);
         float sunLit = max(NdotL, 0.0);
@@ -87,7 +89,7 @@ export function createVenusAtmosphereMaterial(atmTex: THREE.Texture): THREE.Shad
         // 4. 厚重大气晨昏折射光弧 (Twilight Refraction Arc)
         // 92 个大气压极厚气体在晨昏交界侧产生前向深金色透射光
         float forwardAngle = max(dot(L, -V), 0.0);
-        float twilightBand = smoothstep(-0.20, 0.10, NdotL) * smoothstep(0.20, -0.10, NdotL);
+        float twilightBand = smoothstep(-0.20, 0.10, NdotL) * (1.0 - smoothstep(-0.10, 0.20, NdotL));
         float arcIntensity = pow(forwardAngle, 2.8) * twilightBand * 0.45;
         vec3 twilightArc = vec3(1.0, 0.82, 0.48) * arcIntensity;
 
@@ -107,6 +109,8 @@ export function createVenusAtmosphereMaterial(atmTex: THREE.Texture): THREE.Shad
         vec3 finalColor = litColor * dayFactor + ambientTerm * (1.0 - dayFactor * 0.85) + twilightArc + rimGlow;
 
         gl_FragColor = vec4(finalColor, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
       }
     `,
   });
@@ -138,6 +142,8 @@ export function createVenusRadarMaterial(radarTex: THREE.Texture): THREE.ShaderM
       }
     `,
     fragmentShader: `
+      #include <common>
+
       uniform sampler2D radarTexture;
       uniform vec3 sunDirection;
       uniform float teachingLight;
@@ -174,6 +180,8 @@ export function createVenusRadarMaterial(radarTex: THREE.Texture): THREE.ShaderM
         vec3 finalColor = litColor * dayFactor + ambientTerm * (1.0 - dayFactor * 0.85);
 
         gl_FragColor = vec4(finalColor, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
       }
     `,
   });

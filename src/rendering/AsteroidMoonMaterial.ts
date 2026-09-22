@@ -45,6 +45,8 @@ export function createAsteroidMoonMaterial(
       }
     `,
     fragmentShader: `
+      #include <common>
+
       uniform sampler2D moonTexture;
       uniform vec3 sunDirection;
       uniform float teachingLight;
@@ -103,6 +105,8 @@ export function createAsteroidMoonMaterial(
         vec3 finalColor = litColor * terminator + ambientTerm * (1.0 - terminator * 0.85);
 
         gl_FragColor = vec4(finalColor, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
       }
     `,
   });

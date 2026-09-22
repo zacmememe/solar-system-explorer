@@ -45,6 +45,8 @@ export function createIceGiantMaterial(
       }
     `,
     fragmentShader: `
+      #include <common>
+
       uniform sampler2D planetTexture;
       uniform vec3 sunDirection;
       uniform float teachingLight;
@@ -104,7 +106,7 @@ export function createIceGiantMaterial(
 
         // A. 局部大暗斑涡旋深渊核 (Deep Abyssal Indigo Core)
         // 提取原贴图中 luma < 0.46 的深色反气旋洼地，加深至深邃神秘的冷夜暗靛蓝
-        float darkSpotFactor = smoothstep(0.48, 0.38, texLuma);
+        float darkSpotFactor = 1.0 - smoothstep(0.38, 0.48, texLuma);
         vec3 darkSpotTone = vec3(0.08, 0.16, 0.44);
         vec3 neptuneBase = mix(rawTex.rgb, darkSpotTone, darkSpotFactor * 0.55);
 
@@ -135,8 +137,9 @@ export function createIceGiantMaterial(
         vec3 finalColor = litColor * terminator + ambientTerm * (1.0 - terminator * 0.82) + rimGlow;
 
         gl_FragColor = vec4(finalColor, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
       }
     `,
-
   });
 }

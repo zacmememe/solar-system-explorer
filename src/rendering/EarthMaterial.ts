@@ -48,6 +48,8 @@ export function createEarthSurfaceMaterial(
       }
     `,
     fragmentShader: `
+      #include <common>
+
       uniform sampler2D dayTexture;
       uniform sampler2D nightTexture;
       uniform vec3 sunDirection;
@@ -73,7 +75,7 @@ export function createEarthSurfaceMaterial(
         vec3 litDayColor = dayColor * (diffuse * 0.95 + 0.05);
 
         // 夜面城市灯光淡入 (仅在暗部发光)
-        float nightFactor = smoothstep(0.12, -0.18, dotNL);
+        float nightFactor = 1.0 - smoothstep(-0.18, 0.12, dotNL);
         vec3 litNightColor = nightLights * nightFactor;
 
         // 教学提亮：如果开启，在夜面混入适度白昼地形轮廓，供孩子辨识大陆
@@ -89,6 +91,8 @@ export function createEarthSurfaceMaterial(
         finalColor += atmosphereRim * dayFactor; // 大气散射主要在被光照侧显现
 
         gl_FragColor = vec4(finalColor, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
       }
     `,
   });
@@ -117,6 +121,8 @@ export function createEarthCloudMaterial(cloudTex: THREE.Texture): THREE.ShaderM
       }
     `,
     fragmentShader: `
+      #include <common>
+
       uniform sampler2D cloudTexture;
       uniform vec3 sunDirection;
       uniform float opacity;
@@ -141,6 +147,8 @@ export function createEarthCloudMaterial(cloudTex: THREE.Texture): THREE.ShaderM
         vec3 litCloud = vec3(0.95, 0.98, 1.0) * (diffuse * 0.92 + 0.08);
 
         gl_FragColor = vec4(litCloud, cloudDensity * opacity);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
       }
     `,
   });
@@ -175,6 +183,8 @@ export function createAtmosphereHaloMaterial(
       }
     `,
     fragmentShader: `
+      #include <common>
+
       uniform vec3 glowColor;
       uniform vec3 sunDirection;
       uniform float power;
@@ -192,6 +202,8 @@ export function createAtmosphereHaloMaterial(
         float sunFactor = max(dot(vWorldNormal, normalize(sunDirection)), 0.0) * 0.75 + 0.25;
 
         gl_FragColor = vec4(glowColor * sunFactor, intensity * maxOpacity);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
       }
     `,
     side: THREE.BackSide,

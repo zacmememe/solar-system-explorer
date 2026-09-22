@@ -40,6 +40,8 @@ export function createMarsMaterial(marsTex: THREE.Texture): THREE.ShaderMaterial
       }
     `,
     fragmentShader: `
+      #include <common>
+
       uniform sampler2D marsTexture;
       uniform vec3 sunDirection;
       uniform float teachingLight;
@@ -83,7 +85,7 @@ export function createMarsMaterial(marsTex: THREE.Texture): THREE.ShaderMaterial
         // 4. 火星晨昏“蓝夕阳”微米尘埃前向散射 (Martian Twilight Blue Haze)
         // 好奇号/毅力号实测证实：火星微细尘埃颗粒使晨昏地平线附近产生前向蓝散射光
         float forwardPhase = max(dot(L, -V), 0.0);
-        float twilightZone = smoothstep(-0.16, 0.08, NdotL) * smoothstep(0.16, -0.08, NdotL);
+        float twilightZone = smoothstep(-0.16, 0.08, NdotL) * (1.0 - smoothstep(-0.08, 0.16, NdotL));
         float blueTwilightFactor = pow(forwardPhase, 3.2) * twilightZone * 0.38;
         vec3 blueTwilightGlow = vec3(0.32, 0.52, 0.88) * blueTwilightFactor;
 
@@ -105,6 +107,8 @@ export function createMarsMaterial(marsTex: THREE.Texture): THREE.ShaderMaterial
         vec3 finalColor = litColor * dayFactor + ambientTerm * (1.0 - dayFactor * 0.85) + blueTwilightGlow + dustRimColor;
 
         gl_FragColor = vec4(finalColor, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
       }
     `,
   });

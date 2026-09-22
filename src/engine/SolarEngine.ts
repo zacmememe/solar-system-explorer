@@ -113,7 +113,8 @@ function safeDisposeMaterial(mat: THREE.Material | THREE.Material[]): void {
 interface BodyRenderNode {
   data: CelestialBodyData;
   systemGroup: THREE.Group; // 行星系系统根节点（平移位置，不随行星自转）
-  mesh: THREE.Mesh; // 星球表面网格
+  poleFrame: THREE.Group;   // 固定地轴/极轴定向节点（rotation.z = axialTiltDeg）
+  mesh: THREE.Mesh;         // 星球表面网格（在 poleFrame 下旋转 rotation.y）
   displayRadius: number;
   cloudMesh?: THREE.Mesh;
   haloMesh?: THREE.Mesh;
@@ -183,6 +184,7 @@ export class SolarEngine {
   private europaMaterial: THREE.ShaderMaterial | null = null;
   private ganymedeMaterial: THREE.ShaderMaterial | null = null;
   private callistoMaterial: THREE.ShaderMaterial | null = null;
+  private tempQuat: THREE.Quaternion = new THREE.Quaternion();
 
   // 航天器伴飞系统
   private currentVehicleId: VehicleId | null = null;
@@ -352,12 +354,16 @@ export class SolarEngine {
     // 太阳球体
     const sunData = BODIES.sun;
     const sunGroup = new THREE.Group();
+    const sunPoleFrame = new THREE.Group();
+    sunPoleFrame.rotation.z = THREE.MathUtils.degToRad(sunData.axialTiltDeg || 0);
+    sunGroup.add(sunPoleFrame);
+
     const sunRadius = getNavDisplayRadius(sunData.radiusKm, sunData.type);
     const sunGeo = new THREE.SphereGeometry(sunRadius, 48, 48);
     const sunMat = new THREE.MeshBasicMaterial({ color: 0xffaa22 });
     const sunMesh = new THREE.Mesh(sunGeo, sunMat);
     sunMesh.userData = { bodyId: 'sun' };
-    sunGroup.add(sunMesh);
+    sunPoleFrame.add(sunMesh);
     this.pickableMeshes.push(sunMesh);
 
     // 太阳高能日冕辐射流（面向相机自适应公告板，超大尺度柔和指数衰减，彻底杜绝硬环切面）
@@ -372,6 +378,7 @@ export class SolarEngine {
     this.bodyNodes.set('sun', {
       data: sunData,
       systemGroup: sunGroup,
+      poleFrame: sunPoleFrame,
       mesh: sunMesh,
       displayRadius: sunRadius,
       coronaMesh,
@@ -397,7 +404,12 @@ export class SolarEngine {
       const systemGroup = new THREE.Group();
       this.scene.add(systemGroup);
 
-      // 2. 行星表面网格
+      // 2. 地轴/极轴定向节点（纯倾角，固定地轴方向，不随自转绕世界Y进动）
+      const poleFrame = new THREE.Group();
+      poleFrame.rotation.z = THREE.MathUtils.degToRad(data.axialTiltDeg || 0);
+      systemGroup.add(poleFrame);
+
+      // 3. 行星表面网格（挂在 poleFrame 下，绕本地 Y 轴自转）
       const displayRadius = getNavDisplayRadius(data.radiusKm, data.type);
       const sphereGeo = new THREE.SphereGeometry(displayRadius, 48, 36);
       const defaultMat = new THREE.MeshStandardMaterial({
@@ -407,20 +419,20 @@ export class SolarEngine {
       });
       const mesh = new THREE.Mesh(sphereGeo, defaultMat);
       mesh.userData = { bodyId: id };
-      mesh.rotation.z = THREE.MathUtils.degToRad(data.axialTiltDeg);
       mesh.rotation.y = PLANET_SPIN_OFFSETS[id] || 0;
-      systemGroup.add(mesh);
+      poleFrame.add(mesh);
       this.pickableMeshes.push(mesh);
 
       const node: BodyRenderNode = {
         data,
         systemGroup,
+        poleFrame,
         mesh,
         displayRadius,
         material: defaultMat,
       };
 
-      // 3. 行星公转轨道线（优雅半透明椭圆）
+      // 4. 行星公转轨道线（优雅半透明椭圆）
       if (data.orbitSemiMajorAxisKm > 0) {
         const orbitRadius = getNavOrbitRadius(data.orbitSemiMajorAxisKm);
         const incRad = THREE.MathUtils.degToRad(data.orbitalInclinationDeg || 0);
@@ -444,7 +456,7 @@ export class SolarEngine {
         node.orbitLine = orbitLine;
       }
 
-      // 4. 地球专属多层：独立自旋云层与大气光晕
+      // 5. 地球专属多层：独立自旋云层与大气光晕（同心挂载在 poleFrame）
       if (id === 'earth') {
         const cloudGeo = new THREE.SphereGeometry(displayRadius * 1.012, 48, 36);
         const defaultCloudMat = new THREE.MeshBasicMaterial({
@@ -454,17 +466,17 @@ export class SolarEngine {
           wireframe: false,
         });
         const cloudMesh = new THREE.Mesh(cloudGeo, defaultCloudMat);
-        systemGroup.add(cloudMesh);
+        poleFrame.add(cloudMesh);
         node.cloudMesh = cloudMesh;
 
         const haloGeo = new THREE.SphereGeometry(displayRadius * 1.025, 48, 36);
         this.earthHaloMaterial = createAtmosphereHaloMaterial(0x38bdf8, 2.8, 0.75);
         const haloMesh = new THREE.Mesh(haloGeo, this.earthHaloMaterial);
-        systemGroup.add(haloMesh);
+        poleFrame.add(haloMesh);
         node.haloMesh = haloMesh;
       }
 
-      // 5. 金星专属：浓厚硫酸大气层外壳与金黄色散射高层大气晕
+      // 6. 金星专属：浓厚硫酸大气层外壳与金黄色散射高层大气晕（挂载在 poleFrame）
       if (id === 'venus') {
         const atmGeo = new THREE.SphereGeometry(displayRadius * 1.015, 48, 36);
         const atmMat = new THREE.MeshStandardMaterial({
@@ -475,37 +487,37 @@ export class SolarEngine {
         });
         const atmMesh = new THREE.Mesh(atmGeo, atmMat);
         atmMesh.userData = { bodyId: 'venus' };
-        systemGroup.add(atmMesh);
+        poleFrame.add(atmMesh);
         node.cloudMesh = atmMesh;
 
         const haloGeo = new THREE.SphereGeometry(displayRadius * 1.028, 48, 36);
         const haloMesh = new THREE.Mesh(haloGeo, createAtmosphereHaloMaterial(0xfde047, 2.6, 0.65));
-        systemGroup.add(haloMesh);
+        poleFrame.add(haloMesh);
         node.haloMesh = haloMesh;
       }
 
-      // 火星：火星微细红尘与稀薄二氧化碳高层大气光晕
+      // 火星：火星微细红尘与稀薄二氧化碳高层大气光晕（挂载在 poleFrame）
       if (id === 'mars') {
         const haloGeo = new THREE.SphereGeometry(displayRadius * 1.015, 48, 36);
         const haloMesh = new THREE.Mesh(haloGeo, createAtmosphereHaloMaterial(0xfca5a5, 3.8, 0.28));
-        systemGroup.add(haloMesh);
+        poleFrame.add(haloMesh);
         node.haloMesh = haloMesh;
       }
 
-      // 木星：巨行星微弱暖白/琥珀散射高层大气辉光
+      // 木星：巨行星微弱暖白/琥珀散射高层大气辉光（挂载在 poleFrame）
       if (id === 'jupiter') {
         const haloGeo = new THREE.SphereGeometry(displayRadius * 1.018, 48, 36);
         const haloMesh = new THREE.Mesh(haloGeo, createAtmosphereHaloMaterial(0xf5dca8, 2.8, 0.38));
-        systemGroup.add(haloMesh);
+        poleFrame.add(haloMesh);
         node.haloMesh = haloMesh;
       }
 
-      // 6. 土星专属：土星光环几何体与金色晕
+      // 7. 土星专属：土星光环几何体与金色晕（光环挂载在 poleFrame 赤道面，不随表面自转）
       if (id === 'saturn' && data.ringConfig) {
         const innerR = displayRadius * data.ringConfig.innerRadiusRatio;
         const outerR = displayRadius * data.ringConfig.outerRadiusRatio;
         const ringGeo = new THREE.RingGeometry(innerR, outerR, 96);
-        // 使环几何体位于 X-Z 平面
+        // 使环几何体位于 X-Z 平面（法线对准地轴极轴 Y 轴）
         ringGeo.rotateX(Math.PI / 2);
 
         const defaultRingMat = new THREE.MeshBasicMaterial({
@@ -515,21 +527,20 @@ export class SolarEngine {
           opacity: 0.75,
         });
         const ringMesh = new THREE.Mesh(ringGeo, defaultRingMat);
-        ringMesh.rotation.z = THREE.MathUtils.degToRad(data.axialTiltDeg);
-        systemGroup.add(ringMesh);
+        poleFrame.add(ringMesh);
         node.ringMesh = ringMesh;
 
         const haloGeo = new THREE.SphereGeometry(displayRadius * 1.018, 48, 36);
         const haloMesh = new THREE.Mesh(haloGeo, createAtmosphereHaloMaterial(0xfef08a, 2.5, 0.45));
-        systemGroup.add(haloMesh);
+        poleFrame.add(haloMesh);
         node.haloMesh = haloMesh;
       }
 
-      // 天王星与海王星：甲烷散射天青与深蓝光晕
+      // 天王星与海王星：甲烷散射天青与深蓝光晕及光环（挂载在 poleFrame）
       if (id === 'uranus') {
         const haloGeo = new THREE.SphereGeometry(displayRadius * 1.022, 48, 36);
         const haloMesh = new THREE.Mesh(haloGeo, createAtmosphereHaloMaterial(0x38bdf8, 2.6, 0.55));
-        systemGroup.add(haloMesh);
+        poleFrame.add(haloMesh);
         node.haloMesh = haloMesh;
 
         // 天王星倾斜立式光环系统
@@ -545,8 +556,7 @@ export class SolarEngine {
             planetRadius: displayRadius,
           });
           const ringMesh = new THREE.Mesh(ringGeo, this.uranusRingMaterial);
-          ringMesh.rotation.z = THREE.MathUtils.degToRad(data.axialTiltDeg);
-          systemGroup.add(ringMesh);
+          poleFrame.add(ringMesh);
           node.ringMesh = ringMesh;
         }
       }
@@ -554,7 +564,7 @@ export class SolarEngine {
       if (id === 'neptune') {
         const haloGeo = new THREE.SphereGeometry(displayRadius * 1.022, 48, 36);
         const haloMesh = new THREE.Mesh(haloGeo, createAtmosphereHaloMaterial(0x2563eb, 2.6, 0.65));
-        systemGroup.add(haloMesh);
+        poleFrame.add(haloMesh);
         node.haloMesh = haloMesh;
 
         // 海王星微弱暗色尘埃与弧段光环系统
@@ -570,8 +580,7 @@ export class SolarEngine {
             planetRadius: displayRadius,
           });
           const ringMesh = new THREE.Mesh(ringGeo, this.neptuneRingMaterial);
-          ringMesh.rotation.z = THREE.MathUtils.degToRad(data.axialTiltDeg);
-          systemGroup.add(ringMesh);
+          poleFrame.add(ringMesh);
           node.ringMesh = ringMesh;
         }
       }
@@ -617,6 +626,11 @@ export class SolarEngine {
       // 挂载在行星系统的平移根节点下（随行星平移，但不随行星自转！）
       parentNode.systemGroup.add(satGroup);
 
+      // 卫星地轴/极轴定向节点（固定地轴自转轴倾角，杜绝进动漂移）
+      const satPoleFrame = new THREE.Group();
+      satPoleFrame.rotation.z = THREE.MathUtils.degToRad(satData.axialTiltDeg || 0);
+      satGroup.add(satPoleFrame);
+
       const satRadius = Math.max(0.35, getNavDisplayRadius(satData.radiusKm, satData.type));
       // 物理真实建模：非流体静力平衡小天体采用三轴椭球与特征陨石坑网格，告别千篇一律的圆球
       const satGeo = satData.shapeType === 'irregular'
@@ -628,9 +642,8 @@ export class SolarEngine {
       });
       const satMesh = new THREE.Mesh(satGeo, satMat);
       satMesh.userData = { bodyId: satId };
-      satMesh.rotation.z = THREE.MathUtils.degToRad(satData.axialTiltDeg || 0);
       satMesh.rotation.y = PLANET_SPIN_OFFSETS[satId] || 0;
-      satGroup.add(satMesh);
+      satPoleFrame.add(satMesh);
       this.pickableMeshes.push(satMesh);
 
       // 卫星局部公转轨道线（优雅微弱半透明环，直观呈现多星系同心轨道分布）
@@ -678,16 +691,17 @@ export class SolarEngine {
         });
         satCloudMesh = new THREE.Mesh(atmGeo, atmMat);
         satCloudMesh.userData = { bodyId: 'titan' };
-        satGroup.add(satCloudMesh);
+        satPoleFrame.add(satCloudMesh);
 
         const haloGeo = new THREE.SphereGeometry(satRadius * 1.035, 32, 24);
         satHalo = new THREE.Mesh(haloGeo, createAtmosphereHaloMaterial(0xf97316, 2.0, 0.88));
-        satGroup.add(satHalo);
+        satPoleFrame.add(satHalo);
       }
 
       this.bodyNodes.set(satId, {
         data: satData,
         systemGroup: satGroup,
+        poleFrame: satPoleFrame,
         mesh: satMesh,
         displayRadius: satRadius,
         material: satMat,
@@ -1562,23 +1576,27 @@ export class SolarEngine {
         // 土星、天王星、海王星专属：更新投射到光环与行星本体的太阳方向与遮挡投影
         if (id === 'saturn' && node.ringMesh) {
           const sunDir = node.systemGroup.position.clone().negate().normalize();
-          const localRingSunDir = sunDir.clone().applyQuaternion(node.ringMesh.quaternion.clone().invert());
+          node.ringMesh.getWorldQuaternion(this.tempQuat).invert();
+          const localRingSunDir = sunDir.clone().applyQuaternion(this.tempQuat);
           if (this.saturnRingMaterial) {
             this.saturnRingMaterial.uniforms.sunDirection.value.copy(localRingSunDir);
           }
           if (this.saturnPlanetMaterial) {
-            const localPlanetSunDir = sunDir.clone().applyQuaternion(node.mesh.quaternion.clone().invert());
+            node.mesh.getWorldQuaternion(this.tempQuat).invert();
+            const localPlanetSunDir = sunDir.clone().applyQuaternion(this.tempQuat);
             this.saturnPlanetMaterial.uniforms.sunDirection.value.copy(localPlanetSunDir);
           }
         }
         if (id === 'uranus' && this.uranusRingMaterial && node.ringMesh) {
           const sunDir = node.systemGroup.position.clone().negate().normalize();
-          const localSunDir = sunDir.clone().applyQuaternion(node.ringMesh.quaternion.clone().invert());
+          node.ringMesh.getWorldQuaternion(this.tempQuat).invert();
+          const localSunDir = sunDir.clone().applyQuaternion(this.tempQuat);
           this.uranusRingMaterial.uniforms.sunDirection.value.copy(localSunDir);
         }
         if (id === 'neptune' && this.neptuneRingMaterial && node.ringMesh) {
           const sunDir = node.systemGroup.position.clone().negate().normalize();
-          const localSunDir = sunDir.clone().applyQuaternion(node.ringMesh.quaternion.clone().invert());
+          node.ringMesh.getWorldQuaternion(this.tempQuat).invert();
+          const localSunDir = sunDir.clone().applyQuaternion(this.tempQuat);
           this.neptuneRingMaterial.uniforms.sunDirection.value.copy(localSunDir);
         }
       }

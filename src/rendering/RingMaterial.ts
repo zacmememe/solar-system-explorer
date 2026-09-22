@@ -41,6 +41,8 @@ export function createSaturnRingMaterial(options: RingMaterialOptions): THREE.Sh
       }
     `,
     fragmentShader: `
+      #include <common>
+
       uniform sampler2D ringTexture;
       uniform float innerRadius;
       uniform float outerRadius;
@@ -88,6 +90,8 @@ export function createSaturnRingMaterial(options: RingMaterialOptions): THREE.Sh
         vec3 diffuse = texColor.rgb * lightIntensity * 1.15;
 
         gl_FragColor = vec4(diffuse, texColor.a * 0.92);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
       }
     `,
     side: THREE.DoubleSide,

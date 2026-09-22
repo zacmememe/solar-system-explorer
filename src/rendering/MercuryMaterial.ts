@@ -39,6 +39,8 @@ export function createMercuryMaterial(mercuryTex: THREE.Texture): THREE.ShaderMa
       }
     `,
     fragmentShader: `
+      #include <common>
+
       uniform sampler2D mercuryTexture;
       uniform vec3 sunDirection;
       uniform float teachingLight;
@@ -88,6 +90,8 @@ export function createMercuryMaterial(mercuryTex: THREE.Texture): THREE.ShaderMa
         vec3 finalColor = litColor * terminator + ambientTerm * (1.0 - terminator * 0.90);
 
         gl_FragColor = vec4(finalColor, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
       }
     `,
   });

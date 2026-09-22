@@ -47,6 +47,8 @@ export function createIoMaterial(ioTex: THREE.Texture): THREE.ShaderMaterial {
       }
     `,
     fragmentShader: `
+      #include <common>
+
       uniform sampler2D moonTexture;
       uniform vec3 sunDirection;
       uniform float teachingLight;
@@ -100,6 +102,8 @@ export function createIoMaterial(ioTex: THREE.Texture): THREE.ShaderMaterial {
         vec3 finalColor = litColor * terminator + volcanicEmission + ambientTerm * (1.0 - terminator * 0.85);
 
         gl_FragColor = vec4(finalColor, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
       }
     `,
   });
@@ -131,6 +135,8 @@ export function createEuropaMaterial(europaTex: THREE.Texture): THREE.ShaderMate
       }
     `,
     fragmentShader: `
+      #include <common>
+
       uniform sampler2D moonTexture;
       uniform vec3 sunDirection;
       uniform float teachingLight;
@@ -183,6 +189,8 @@ export function createEuropaMaterial(europaTex: THREE.Texture): THREE.ShaderMate
         vec3 finalColor = litColor * terminator + ambientTerm * (1.0 - terminator * 0.85);
 
         gl_FragColor = vec4(finalColor, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
       }
     `,
   });
@@ -214,6 +222,8 @@ export function createGanymedeMaterial(ganymedeTex: THREE.Texture): THREE.Shader
       }
     `,
     fragmentShader: `
+      #include <common>
+
       uniform sampler2D moonTexture;
       uniform vec3 sunDirection;
       uniform float teachingLight;
@@ -269,6 +279,8 @@ export function createGanymedeMaterial(ganymedeTex: THREE.Texture): THREE.Shader
         vec3 finalColor = litColor * terminator + ambientTerm * (1.0 - terminator * 0.85);
 
         gl_FragColor = vec4(finalColor, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
       }
     `,
   });
@@ -300,6 +312,8 @@ export function createCallistoMaterial(callistoTex: THREE.Texture): THREE.Shader
       }
     `,
     fragmentShader: `
+      #include <common>
+
       uniform sampler2D moonTexture;
       uniform vec3 sunDirection;
       uniform float teachingLight;
@@ -349,6 +363,8 @@ export function createCallistoMaterial(callistoTex: THREE.Texture): THREE.Shader
         vec3 finalColor = litColor * terminator + ambientTerm * (1.0 - terminator * 0.85);
 
         gl_FragColor = vec4(finalColor, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
       }
     `,
   });

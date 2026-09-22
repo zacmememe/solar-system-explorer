@@ -39,6 +39,8 @@ export function createMoonMaterial(moonTex: THREE.Texture): THREE.ShaderMaterial
       }
     `,
     fragmentShader: `
+      #include <common>
+
       uniform sampler2D moonTexture;
       uniform vec3 sunDirection;
       uniform float teachingLight;
@@ -76,7 +78,7 @@ export function createMoonMaterial(moonTex: THREE.Texture): THREE.ShaderMaterial
         vec3 surfaceColor = rawTex.rgb;
 
         // 4.1 月海深色平原（低钛/高钛玄武岩熔岩平原，保持沉稳冷灰黑，反照率 ~0.08）
-        float mariaFactor = smoothstep(0.40, 0.22, luma);
+        float mariaFactor = 1.0 - smoothstep(0.22, 0.40, luma);
         surfaceColor = mix(surfaceColor, surfaceColor * vec3(0.88, 0.90, 0.94), mariaFactor * 0.45);
 
         // 4.2 第谷/哥白尼高反照率年轻撞击坑放射纹 (Ray Systems) 与新鲜斜长岩高地提亮
@@ -97,6 +99,8 @@ export function createMoonMaterial(moonTex: THREE.Texture): THREE.ShaderMaterial
         vec3 finalColor = litColor * terminator + ambientTerm * (1.0 - terminator * 0.85);
 
         gl_FragColor = vec4(finalColor, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
       }
     `,
   });

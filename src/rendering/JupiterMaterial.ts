@@ -42,6 +42,8 @@ export function createJupiterMaterial(jupiterTex: THREE.Texture): THREE.ShaderMa
       }
     `,
     fragmentShader: `
+      #include <common>
+
       uniform sampler2D jupiterTexture;
       uniform vec3 sunDirection;
       uniform float teachingLight;
@@ -93,6 +95,8 @@ export function createJupiterMaterial(jupiterTex: THREE.Texture): THREE.ShaderMa
         finalColor += rimColor;
 
         gl_FragColor = vec4(finalColor, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
       }
     `,
   });

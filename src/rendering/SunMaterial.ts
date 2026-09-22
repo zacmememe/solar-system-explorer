@@ -33,10 +33,12 @@ export function createSunMaterial(sunTexture: THREE.Texture): THREE.ShaderMateri
       }
     `,
     fragmentShader: `
+      #include <common>
+
       uniform sampler2D sunTexture;
-      uniform float time;
       uniform vec3 glowColor;
       uniform vec3 coreColor;
+      uniform float time;
 
       varying vec2 vUv;
       varying vec3 vNormal;
@@ -56,6 +58,8 @@ export function createSunMaterial(sunTexture: THREE.Texture): THREE.ShaderMateri
         vec3 finalColor = mix(glowColor * texColor.rgb * 1.5, coreColor * texColor.rgb * 1.8, limbFactor);
 
         gl_FragColor = vec4(finalColor, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
       }
     `,
   });
@@ -86,6 +90,8 @@ export function createSunCoronaMaterial(coreRadiusRatio: number = 0.45): THREE.S
       }
     `,
     fragmentShader: `
+      #include <common>
+
       uniform vec3 coronaColor;
       uniform vec3 coreGlowColor;
       uniform float coreRadiusRatio;
@@ -108,7 +114,7 @@ export function createSunCoronaMaterial(coreRadiusRatio: number = 0.45): THREE.S
         streamer += 0.08 * sin(angle * 19.0 - time * 0.6);
 
         // 在到达边界之前平稳归零，彻底根除任何可见的硬切边界
-        float edgeFade = smoothstep(1.0, 0.52, dist);
+        float edgeFade = 1.0 - smoothstep(0.52, 1.0, dist);
 
         float alpha = corona * streamer * edgeFade;
         if (alpha < 0.002) discard;
@@ -116,6 +122,8 @@ export function createSunCoronaMaterial(coreRadiusRatio: number = 0.45): THREE.S
         // 内层明亮炽金白，外层漫射金橙色
         vec3 col = mix(coronaColor * 1.5, coreGlowColor * 2.4, exp(-d * 14.0));
         gl_FragColor = vec4(col, alpha * 0.9);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
       }
     `,
     side: THREE.DoubleSide,
