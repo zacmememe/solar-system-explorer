@@ -1,5 +1,7 @@
 # 太阳系漫游 · Solar System Explorer
 
+私有仓库：[zacmememe/solar-system-explorer](https://github.com/zacmememe/solar-system-explorer)。
+
 使用 React、TypeScript、Three.js 和 Vite 构建的浏览器太阳系探索项目。包含行星与卫星观察、镜头转场、时间控制、航天器展示、书签和探索明信片。
 
 本项目采用适合探索的展示比例和简化轨道模型；画面不代表精确星历或统一真实比例。观测来源贴图与程序生成示意应分别标明，资产出处见 `sources/production-assets.json`。

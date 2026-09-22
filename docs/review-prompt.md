@@ -1,6 +1,6 @@
 # 复制到 ChatGPT Pro 的审查提示词
 
-仓库：填写 owner/repository
+仓库：zacmememe/solar-system-explorer
 目标 commit：填写完整 SHA
 上一轮 commit：可选
 本轮目标/遇到的问题：填写

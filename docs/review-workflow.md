@@ -1,5 +1,7 @@
 # Pro 审查与 Antigravity 执行
 
+私有仓库：https://github.com/zacmememe/solar-system-explorer 。本地 `main` 跟踪 `origin/main`。
+
 ## 日常一轮
 
 1. Antigravity 完成一个边界明确的改动后，检查 `git status` 和 diff，运行相关测试。只提交这一轮需要的文件。
@@ -62,3 +64,5 @@ $env:GH_CONFIG_DIR = 'D:\Apps\GitHubCLI\config'
 ```
 
 不要将 CLI 登录令牌复制到项目、提示词或审查材料中。
+
+本机已在这个仓库的本地 Git 配置中指定上述 CLI 和 D 盘配置目录，因此 Antigravity 的普通 `git push` / `git pull` 不需要手动设置 `GH_CONFIG_DIR`。该配置不含令牌，也不影响其他项目；若将来移动或移除该版本的 GitHub CLI，应相应更新本仓库的 credential helper。
