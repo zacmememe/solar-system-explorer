@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "solar-high-contract-v1",
+  "requiredChecks": ["typecheck", "unit", "build", "browser-ui", "independent-invariants"],
+  "requiredReviews": ["technical", "visual", "architecture"],
+  "requireCrossHarness": true,
+  "architectureAuthorities": ["codex", "pro"]
+}

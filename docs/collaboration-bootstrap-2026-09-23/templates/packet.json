@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "taskId": "",
+  "policyId": "solar-normal-visible-v1",
+  "baseCommit": "",
+  "candidateCommit": "",
+  "treeClean": false,
+  "authorSessions": [],
+  "authorHarnesses": [],
+  "evidence": [],
+  "checks": [
+    { "id": "typecheck", "status": "NOT_RUN", "exitCode": null, "candidateCommit": "", "evidence": [] },
+    { "id": "unit", "status": "NOT_RUN", "exitCode": null, "candidateCommit": "", "evidence": [] },
+    { "id": "build", "status": "NOT_RUN", "exitCode": null, "candidateCommit": "", "evidence": [] },
+    { "id": "browser-ui", "status": "NOT_RUN", "exitCode": null, "candidateCommit": "", "evidence": [] }
+  ],
+  "reviews": []
+}

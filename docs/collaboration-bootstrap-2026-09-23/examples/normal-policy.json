@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "id": "solar-normal-visible-v1",
+  "requiredChecks": ["typecheck", "unit", "build", "browser-ui"],
+  "requiredReviews": ["technical", "visual"],
+  "requireCrossHarness": true
+}

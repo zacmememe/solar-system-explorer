@@ -1,0 +1,72 @@
+{
+  "preparedAt": "2026-09-23T11:08:42.928Z",
+  "status": "PREPARED_NOT_ACTIVE",
+  "sourcePackage": "前置方案打磨/260923Pro model关于未来分工方向的思考/solar-multi-agent-operating-kit",
+  "observedHead": "7de3a68313f219afb1e45eb983510341c88326c9",
+  "existingRulesAtPreparation": [
+    {
+      "path": "AGENTS.md",
+      "sha256": "8c98c4891eacc7408ec959ae1bf0ec9a49d2135909ea9d6d2a027b21f7720b2f"
+    },
+    {
+      "path": "README.md",
+      "sha256": "9ae65827fb43ae4d84d5795786daab4cc087156104660d0665073f3a164a1017"
+    },
+    {
+      "path": "docs/review-workflow.md",
+      "sha256": "6c71517afb5f5d8c19c34a78e144495857c656b27659a3a2654175247b3385fb"
+    }
+  ],
+  "originalCopyHashes": [
+    {
+      "path": "tools/check-packet.mjs",
+      "sha256": "1a90228f63a6a503c685a6bb85ee81777a3d17a2f38a2c932e93b2b262c8a10d"
+    },
+    {
+      "path": "tests/packet.test.mjs",
+      "sha256": "b85abdece38f4e1d895e8ef484fd7fe5a3d804acf56af70568f2c8edab9db598"
+    },
+    {
+      "path": "tests/worktree.test.mjs",
+      "sha256": "d7f0a97c6b4c28ef63c8dda4e4a6bfd9ccb613f7f60bcfe0e0295f5e2fb19ab7"
+    },
+    {
+      "path": "templates/task.md",
+      "sha256": "316e9d1734cc8a35c877f4f31d4ad52c1dc5164c39f6427ab4ea9d3d990e445e"
+    },
+    {
+      "path": "templates/review.md",
+      "sha256": "1e8ff1a79a3119a99c8c6fbbdb17f594f21d028edc13f0933290695bd86984ca"
+    },
+    {
+      "path": "templates/checkpoint.md",
+      "sha256": "a41dd591992dd287ba5a94bae2c0dadd0c57a729ad23874d7d29cec9219554e2"
+    },
+    {
+      "path": "templates/milestone.md",
+      "sha256": "a2069e8e152918a3760c9111e131be883bb784c6216bf9214a46f662d485ab0a"
+    },
+    {
+      "path": "examples/normal-policy.json",
+      "sha256": "5ff574f9c02bc0ed2c305ffc4c00efef86b6fc9d5ff1463457554cb719240be6"
+    },
+    {
+      "path": "examples/high-policy.json",
+      "sha256": "882965cc6daaf4d423e39badb450c45d0ab554e97e0c94d5df79ac2dd5032478"
+    }
+  ],
+  "localAdaptations": [
+    {
+      "path": "tests/worktree.test.mjs",
+      "reason": "Git for Windows rejects os.devNull as global config path; isolated real empty temp config instead",
+      "sha256": "fdbe93d65c9ceefe679673f742e910cbddd31160502a67b0eb68a5df9393027c"
+    }
+  ],
+  "validation": {
+    "packetPassed": 21,
+    "worktreeInitiallyFailed": 9,
+    "worktreeAfterFixPassed": 9,
+    "productTests": "NOT_RUN",
+    "realIntegrationCycle": "NOT_RUN"
+  }
+}
