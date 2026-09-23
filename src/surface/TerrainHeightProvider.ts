@@ -271,9 +271,12 @@ export class TerrainHeightProvider {
         const c = (i + 1) * rowStride + (j + 1);
         const d = i * rowStride + (j + 1);
 
-        // 严格逆时针三角形外向绕序
-        indices.push(a, b, d);
-        indices.push(b, c, d);
+        // 外向绕序 (P1 修正)：网格面法线必须背离天体中心 (径向向外)，
+        // 否则 FrontSide 渲染会在地表视角剔除全部可见面。
+        // 推导：lat 增加方向 × lon 增加方向 的叉积指向球面外侧，
+        // 故三角形顶点顺序取 (a, d, b) / (b, d, c)。
+        indices.push(a, d, b);
+        indices.push(b, d, c);
       }
     }
 

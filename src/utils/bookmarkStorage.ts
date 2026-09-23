@@ -1,23 +1,24 @@
 /**
- * 书签与观察点离线安全存储管理工具 (V2 规范)
- * 遵循主方案规范：
+ * 书签与观察点离线安全存储管理工具 (V3 规范)
+ * 遵循主方案规范与 260923 Pro Model 优化审计：
  * 1. 本地 localStorage 持久化，零服务器上传，保护儿童隐私；
- * 2. 提供预置经典探索观测点（包含导航比例与物理观察模式）；
- * 3. 严格校验 schemaVersion（兼容 V1 与 V2）与字段边界；
+ * 2. 提供预置经典探索观测点（包含导航比例、物理观察与多模式地貌夜景）；
+ * 3. 严格校验 schemaVersion（全兼容 V1、V2 与 V3）与字段边界；
  * 4. 支持 JSON 格式导出与导入备份。
  */
 
-import type { BookmarkItem, BookmarkItemV2, BookmarkExportPackage } from '../contracts/bookmark';
-import { upgradeBookmarkToV2 } from '../contracts/bookmark';
+import type { BookmarkItem, BookmarkItemV3, BookmarkExportPackage } from '../contracts/bookmark';
+import { upgradeBookmarkToV3 } from '../contracts/bookmark';
 import { BODIES } from '../astronomy/bodies';
 
-const STORAGE_KEY = 'solar_explorer_bookmarks_v2';
+const STORAGE_KEY = 'solar_explorer_bookmarks_v3';
+const V2_STORAGE_KEY = 'solar_explorer_bookmarks_v2';
 const LEGACY_STORAGE_KEY = 'solar_explorer_bookmarks_v1';
 
-export const PRESET_BOOKMARKS: BookmarkItemV2[] = [
+export const PRESET_BOOKMARKS: BookmarkItemV3[] = [
   {
     id: 'preset-earth-terminator',
-    schemaVersion: 2,
+    schemaVersion: 3,
     title: '🌍 地球 · 晨昏线与万家灯火',
     targetBodyId: 'earth',
     presentationPolicy: 'NAV_SCHEMATIC',
@@ -25,6 +26,9 @@ export const PRESET_BOOKMARKS: BookmarkItemV2[] = [
     spherical: { radius: 4.8, phi: 1.45, theta: 0.8 },
     viewCameraMode: 'VEHICLE_FORMATION',
     vehicleId: 'iss',
+    observationMode: 'physical',
+    quality: 'analytic-approximation',
+    sourceVersion: '2026.09-P1-V3',
     layers: {
       showClouds: true,
       showAtmosphere: true,
@@ -38,8 +42,9 @@ export const PRESET_BOOKMARKS: BookmarkItemV2[] = [
     isPreset: true,
   },
   {
+    // 轨道观察意图：物理比例下从月球轨道眺望地球（保留 V2 语义，不虚构地面站点）
     id: 'preset-moon-physical-earth',
-    schemaVersion: 2,
+    schemaVersion: 3,
     title: '🌕 月球 · 物理尺度眺望地球 (1.90°)',
     targetBodyId: 'moon',
     presentationPolicy: 'PHYSICAL_OBSERVATION',
@@ -48,6 +53,9 @@ export const PRESET_BOOKMARKS: BookmarkItemV2[] = [
     lookTarget: { kind: 'body', bodyId: 'earth' },
     viewCameraMode: 'PLANET_OBSERVE',
     vehicleId: null,
+    observationMode: 'physical',
+    quality: 'analytic-approximation',
+    sourceVersion: '2026.09-P1-V3',
     layers: {
       showClouds: true,
       showAtmosphere: true,
@@ -57,12 +65,12 @@ export const PRESET_BOOKMARKS: BookmarkItemV2[] = [
     },
     simTimeHours: 280.0,
     createdAtIso: '2026-09-20T00:00:00.000Z',
-    notes: '地月真实物理间距 384,400km，站在月球近地侧朝向地球眺望，蔚蓝母星在深邃星空中呈现严密符合物理光学法则的 1.90° 壮丽居中视圆盘。',
+    notes: '地月真实物理间距 384,400km，从月球近地侧轨道眺望地球，蔚蓝母星在深邃星空中呈现严密符合物理光学法则的 1.90° 壮丽居中视圆盘。',
     isPreset: true,
   },
   {
     id: 'preset-saturn-rings',
-    schemaVersion: 2,
+    schemaVersion: 3,
     title: '🪐 土星 · 宏伟双面环与背阳投影',
     targetBodyId: 'saturn',
     presentationPolicy: 'NAV_SCHEMATIC',
@@ -70,6 +78,9 @@ export const PRESET_BOOKMARKS: BookmarkItemV2[] = [
     spherical: { radius: 21.0, phi: 1.3, theta: 0.95 },
     viewCameraMode: 'VEHICLE_FORMATION',
     vehicleId: 'cassini',
+    observationMode: 'physical',
+    quality: 'analytic-approximation',
+    sourceVersion: '2026.09-P1-V3',
     layers: {
       showClouds: true,
       showAtmosphere: true,
@@ -84,7 +95,7 @@ export const PRESET_BOOKMARKS: BookmarkItemV2[] = [
   },
   {
     id: 'preset-moon-landing',
-    schemaVersion: 2,
+    schemaVersion: 3,
     title: '🌕 月球 · 阿波罗 11 号静海基地',
     targetBodyId: 'moon',
     presentationPolicy: 'NAV_SCHEMATIC',
@@ -92,6 +103,9 @@ export const PRESET_BOOKMARKS: BookmarkItemV2[] = [
     spherical: { radius: 2.8, phi: 1.35, theta: 0.5 },
     viewCameraMode: 'VEHICLE_FORMATION',
     vehicleId: 'apollo-lm',
+    observationMode: 'physical',
+    quality: 'analytic-approximation',
+    sourceVersion: '2026.09-P1-V3',
     layers: {
       showClouds: false,
       showAtmosphere: false,
@@ -106,7 +120,7 @@ export const PRESET_BOOKMARKS: BookmarkItemV2[] = [
   },
   {
     id: 'preset-jwst-deepspace',
-    schemaVersion: 2,
+    schemaVersion: 3,
     title: '🔭 韦伯望远镜 · 深空红外巡天',
     targetBodyId: 'jupiter',
     presentationPolicy: 'NAV_SCHEMATIC',
@@ -114,6 +128,9 @@ export const PRESET_BOOKMARKS: BookmarkItemV2[] = [
     spherical: { radius: 10.5, phi: 1.4, theta: 1.1 },
     viewCameraMode: 'VEHICLE_FORMATION',
     vehicleId: 'james-webb',
+    observationMode: 'physical',
+    quality: 'analytic-approximation',
+    sourceVersion: '2026.09-P1-V3',
     layers: {
       showClouds: true,
       showAtmosphere: true,
@@ -128,25 +145,31 @@ export const PRESET_BOOKMARKS: BookmarkItemV2[] = [
   },
 ];
 
+// 兼容别名：历史导入名 (R3 等测试与旧代码引用)；实际数据已是 V3 结构
+export const PRESET_BOOKMARKS_V3 = PRESET_BOOKMARKS;
 export const PRESET_BOOKMARKS_V2 = PRESET_BOOKMARKS;
 
 /**
- * 读取当前所有书签（预置 + 用户自定义，自动无缝升级迁移旧版）
+ * 读取当前所有书签（预置 + 用户自定义，自动无缝升级迁移旧版 V1/V2）
  */
-export function getStoredBookmarks(): BookmarkItemV2[] {
+export function getStoredBookmarks(): BookmarkItemV3[] {
   if (typeof window === 'undefined' || !window.localStorage) {
     return [...PRESET_BOOKMARKS];
   }
 
   try {
     let raw = localStorage.getItem(STORAGE_KEY);
-    // 若 V2 不存在，尝试读取旧版 V1 并自动迁移
+    // 若 V3 不存在，尝试读取 V2 或 V1 并自动级联升级
     if (!raw) {
-      const legacyRaw = localStorage.getItem(LEGACY_STORAGE_KEY);
+      let legacyRaw = localStorage.getItem(V2_STORAGE_KEY);
+      if (!legacyRaw) {
+        legacyRaw = localStorage.getItem(LEGACY_STORAGE_KEY);
+      }
+
       if (legacyRaw) {
         const legacyParsed = JSON.parse(legacyRaw);
         if (Array.isArray(legacyParsed)) {
-          const upgraded = legacyParsed.filter(isValidBookmarkAnyVersion).map(upgradeBookmarkToV2);
+          const upgraded = legacyParsed.filter(isValidBookmarkAnyVersion).map(upgradeBookmarkToV3);
           localStorage.setItem(STORAGE_KEY, JSON.stringify(upgraded));
           return [...PRESET_BOOKMARKS, ...upgraded];
         }
@@ -157,7 +180,7 @@ export function getStoredBookmarks(): BookmarkItemV2[] {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [...PRESET_BOOKMARKS];
 
-    const validCustom = parsed.filter(isValidBookmarkAnyVersion).map(upgradeBookmarkToV2);
+    const validCustom = parsed.filter(isValidBookmarkAnyVersion).map(upgradeBookmarkToV3);
     return [...PRESET_BOOKMARKS, ...validCustom];
   } catch (err) {
     console.warn('[Bookmark] Failed to load bookmarks from storage:', err);
@@ -166,12 +189,12 @@ export function getStoredBookmarks(): BookmarkItemV2[] {
 }
 
 /**
- * 保存单个新书签
+ * 保存单个新书签 (V3 规范)
  */
 export function saveBookmark(bookmark: BookmarkItem): void {
   if (typeof window === 'undefined' || !window.localStorage) return;
 
-  const upgraded = upgradeBookmarkToV2(bookmark);
+  const upgraded = upgradeBookmarkToV3(bookmark);
   const current = getStoredBookmarks().filter((b) => !b.isPreset);
   const existingIdx = current.findIndex((b) => b.id === upgraded.id);
   if (existingIdx >= 0) {
@@ -202,13 +225,13 @@ export function deleteBookmark(id: string): void {
 }
 
 /**
- * 导出全部书签为 JSON 字符串
+ * 导出全部书签为 JSON 字符串 (V3 规范)
  */
 export function exportBookmarksJson(): string {
   const bookmarks = getStoredBookmarks();
   const pkg: BookmarkExportPackage = {
     app: 'solar-system-explorer',
-    schemaVersion: 2,
+    schemaVersion: 3,
     exportedAtIso: new Date().toISOString(),
     bookmarks,
   };
@@ -216,7 +239,7 @@ export function exportBookmarksJson(): string {
 }
 
 /**
- * 触发本地 JSON 存档文件下载
+ * 触发本地 JSON 存档文件下载 (V3 规范)
  */
 export function downloadBookmarksFile(): void {
   const jsonStr = exportBookmarksJson();
@@ -224,13 +247,13 @@ export function downloadBookmarksFile(): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `solar-system-bookmarks-v2-${new Date().toISOString().slice(0, 10)}.json`;
+  a.download = `solar-system-bookmarks-v3-${new Date().toISOString().slice(0, 10)}.json`;
   a.click();
   URL.revokeObjectURL(url);
 }
 
 /**
- * 导入 JSON 存档，严格执行模式与数据校验（支持 V1 和 V2 文件无缝导入）
+ * 导入 JSON 存档，严格执行模式与数据校验（支持 V1、V2 和 V3 文件无缝导入）
  */
 export function importBookmarksJson(jsonStr: string): {
   success: boolean;
@@ -243,7 +266,10 @@ export function importBookmarksJson(jsonStr: string): {
       return { success: false, importedCount: 0, message: '无效的 JSON 文件格式' };
     }
 
-    if (data.app !== 'solar-system-explorer' || (data.schemaVersion !== 1 && data.schemaVersion !== 2)) {
+    if (
+      data.app !== 'solar-system-explorer' ||
+      (data.schemaVersion !== 1 && data.schemaVersion !== 2 && data.schemaVersion !== 3)
+    ) {
       return { success: false, importedCount: 0, message: '不支持的存档版本或非本应用导出的书签' };
     }
 
@@ -251,10 +277,10 @@ export function importBookmarksJson(jsonStr: string): {
       return { success: false, importedCount: 0, message: '存档中未找到有效的书签列表' };
     }
 
-    const validItems: BookmarkItemV2[] = [];
+    const validItems: BookmarkItemV3[] = [];
     for (const item of data.bookmarks) {
       if (isValidBookmarkAnyVersion(item)) {
-        const upgraded = upgradeBookmarkToV2(item);
+        const upgraded = upgradeBookmarkToV3(item);
         validItems.push({
           ...upgraded,
           id: upgraded.id.startsWith('preset-')
@@ -284,12 +310,12 @@ export function importBookmarksJson(jsonStr: string): {
 }
 
 /**
- * 严格校验书签合法性（支持 V1 和 V2，使用 Number.isFinite 防御 Infinity 与非法数值）
+ * 严格校验书签合法性（支持 V1、V2 和 V3，使用 Number.isFinite 防御 Infinity 与非法数值）
  */
 export function isValidBookmarkAnyVersion(obj: any): boolean {
   if (!obj || typeof obj !== 'object') return false;
   if (typeof obj.id !== 'string' || !obj.id) return false;
-  if (obj.schemaVersion !== 1 && obj.schemaVersion !== 2) return false;
+  if (obj.schemaVersion !== 1 && obj.schemaVersion !== 2 && obj.schemaVersion !== 3) return false;
   if (typeof obj.title !== 'string') return false;
   if (typeof obj.targetBodyId !== 'string' || !BODIES[obj.targetBodyId]) return false;
 
@@ -350,6 +376,69 @@ export function isValidBookmarkAnyVersion(obj: any): boolean {
     ) {
       return false;
     }
+  }
+
+  // 地表米制站点若存在必须进行完整字段防御 (V3)：
+  // 向量维度与有限值、datum/coordinateType 语义、地面高程/眼高/朝向范围
+  if (obj.surfaceStation) {
+    const st = obj.surfaceStation;
+    if (
+      typeof st.bodyId !== 'string' ||
+      !BODIES[st.bodyId] ||
+      !Number.isFinite(st.latDeg) ||
+      Math.abs(st.latDeg) > 90 ||
+      !Number.isFinite(st.lonDeg) ||
+      Math.abs(st.lonDeg) > 180 ||
+      !Number.isFinite(st.heightM) ||
+      Math.abs(st.heightM) > 20000
+    ) {
+      return false;
+    }
+    if (st.coordinateType !== 'geodetic' && st.coordinateType !== 'planetocentric') {
+      return false;
+    }
+    if (typeof st.datum !== 'string' || st.datum.length === 0) {
+      return false;
+    }
+    if (
+      !Array.isArray(st.bodyFixedPosM) ||
+      st.bodyFixedPosM.length !== 3 ||
+      !st.bodyFixedPosM.every(Number.isFinite)
+    ) {
+      return false;
+    }
+    if (
+      !Array.isArray(st.surfaceNormal) ||
+      st.surfaceNormal.length !== 3 ||
+      !st.surfaceNormal.every(Number.isFinite) ||
+      Math.hypot(st.surfaceNormal[0], st.surfaceNormal[1], st.surfaceNormal[2]) <= 0
+    ) {
+      return false;
+    }
+    // 眼高与朝向 (眼高 >0 且 <100m；pitch ±85°)
+    if (
+      st.eyeHeightM === undefined ||
+      !Number.isFinite(st.eyeHeightM) ||
+      st.eyeHeightM <= 0 ||
+      st.eyeHeightM > 100
+    ) {
+      return false;
+    }
+    if (st.orientationDeg) {
+      const { yawDeg, pitchDeg } = st.orientationDeg;
+      if (!Number.isFinite(yawDeg) || !Number.isFinite(pitchDeg) || Math.abs(pitchDeg) > 85) {
+        return false;
+      }
+    }
+  }
+
+  // 观察意图若存在必须为统一语义
+  if (
+    obj.observationMode !== undefined &&
+    obj.observationMode !== 'physical' &&
+    obj.observationMode !== 'terrain-study'
+  ) {
+    return false;
   }
 
   if (

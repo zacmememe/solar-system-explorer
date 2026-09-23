@@ -867,3 +867,19 @@ export function getSatelliteRelativePositionKm(
 
   return [x, y, z];
 }
+
+/**
+ * 行星与卫星地质/风暴标志性景观初始观赏相位偏置表 (弧度)
+ * 确保相机飞抵天体时，标志性特征（如海王星大暗斑、月球正面月海、火卫一斯蒂克尼巨坑、木卫一熔岩湖）处于向阳正面黄金视线
+ */
+export const PLANET_SPIN_OFFSETS: Record<string, number> = {
+  neptune: 2.65, // 将海王星标志性大暗斑 (Great Dark Spot) 与伴生滑行者白卷云正对向阳正面黄金视线
+  uranus: 0.85,  // 优化极地烟雾帽与同心喷流带的立体晨昏侧光
+  moon: 0.0,     // 确保月球正面（风暴洋、雨海、澄海与第谷辐射纹）正对进场黄金视角
+  phobos: -0.46, // 确保火卫一斯蒂克尼巨型陨石坑处于向阳受光立体构图面
+  deimos: -0.46, // 火卫二伏尔泰/斯威夫特撞击坑与浅色碎屑流受光面
+  io: 0.65,       // 木卫一 Loki 熔岩湖与 Pele 巨型同心红环正对向阳黄金视角
+  europa: -0.85,  // 木卫二 Conamara 混沌碎冰区与 Pwyll 冰裂纹放射核心受光面
+  ganymede: 0.85, // 木卫三古老暗区 Galileo Regio 与年轻冰槽 Uruk Sulci 交界受光面
+  callisto: 3.14, // 木卫四瓦尔哈拉 (Valhalla) 巨型同心环多重断崖盆地受光面
+};

@@ -17,6 +17,7 @@ import {
   getNavOrbitRadius,
   getNavDisplayRadius,
   getPlanetNavPosition,
+  PLANET_SPIN_OFFSETS,
 } from '../astronomy/bodies';
 import {
   BodyPoseProvider,
@@ -56,7 +57,8 @@ import type { BodyId, CelestialBodyData } from '../contracts/body';
 import type { CameraCommand, CameraStateSnapshot } from '../contracts/camera';
 import type { HudFrame } from '../contracts/hud';
 import type { VehicleId, ViewCameraMode } from '../contracts/vehicle';
-import type { BookmarkItemV2 } from '../contracts/bookmark';
+import type { BookmarkItemV3 } from '../contracts/bookmark';
+import type { PhysicalSystemSnapshot } from '../contracts/physics';
 import type { ObservationMode } from '../world-support/visibility';
 import {
   getMoonTextureByBodyId,
@@ -68,22 +70,6 @@ import { LandingController } from '../surface/LandingController';
 import type { LandingTelemetry } from '../contracts/landing';
 import { TerrainHeightProvider } from '../surface/TerrainHeightProvider';
 import productionAssetsData from '../../sources/production-assets.json';
-
-/**
- * 行星与卫星地质/风暴标志性景观初始观赏相位偏置表 (弧度)
- * 确保相机飞抵天体时，标志性特征（如海王星大暗斑、月球正面月海、火卫一斯蒂克尼巨坑、木卫一熔岩湖）处于向阳正面黄金视线
- */
-const PLANET_SPIN_OFFSETS: Record<string, number> = {
-  neptune: 2.65, // 将海王星标志性大暗斑 (Great Dark Spot) 与伴生滑行者白卷云正对向阳正面黄金视线
-  uranus: 0.85,  // 优化极地烟雾帽与同心喷流带的立体晨昏侧光
-  moon: 0.0,     // 确保月球正面（风暴洋、雨海、澄海与第谷辐射纹）正对进场黄金视角
-  phobos: -0.46, // 确保火卫一斯蒂克尼巨型陨石坑处于向阳受光立体构图面
-  deimos: -0.46, // 火卫二伏尔泰/斯威夫特撞击坑与浅色碎屑流受光面
-  io: 0.65,       // 木卫一 Loki 熔岩湖与 Pele 巨型同心红环正对向阳黄金视角
-  europa: -0.85,  // 木卫二 Conamara 混沌碎冰区与 Pwyll 冰裂纹放射核心受光面
-  ganymede: 0.85, // 木卫三古老暗区 Galileo Regio 与年轻冰槽 Uruk Sulci 交界受光面
-  callisto: 3.14, // 木卫四瓦尔哈拉 (Valhalla) 巨型同心环多重断崖盆地受光面
-};
 
 export interface WebGLDiagnosticInfo {
   isWebGL2: boolean;
@@ -209,6 +195,8 @@ export class SolarEngine {
   private vehicleLoadGeneration: number = 0;
   private viewCameraMode: ViewCameraMode = 'PLANET_OBSERVE';
   private prevIsTransitioning: boolean = false;
+  /** 着陆状态机上一帧状态 (识别 ASCENDING->ORBIT 返轨边沿，避免抢占外部地表观察) */
+  private prevLandingState: string = 'ORBIT';
 
   // 批次 R5：着陆控制器与月表 3D 浮雕网格
   private landingController: LandingController = new LandingController('taurus-littrow');
@@ -223,6 +211,8 @@ export class SolarEngine {
   private timeScale: number = 1.0;
   private isPaused: boolean = false;
   private isBackgroundPaused: boolean = false;
+  /** 主引擎渲染帧计数 (animate 实际执行次数；供性能验收区分引擎帧与独立 rAF) */
+  private renderFrameCount: number = 0;
 
   // 交互控制
   private isPointerDown: boolean = false;
@@ -713,13 +703,17 @@ export class SolarEngine {
         });
 
         // 挂载 Taurus–Littrow 高精 3D 浮雕地形网格 (Apollo 17 区域)
+        // P1: FrontSide 单侧渲染——高度场外壳按外向绕序仅绘制向外交面。
+        // DoubleSide 在 0.1m 米制近裁剪面 (near≈2.1e-8 场景单位) 下会让地形
+        // 背面 (月体内侧) 参与光栅化，实测在 D3D11/ANGLE 上整屏输出纯黑
+        // (MeshStandard 背面法线翻转后着色为 0)，见 docs/pro-review-batch-p1-handoff.md。
         const heightProvider = TerrainHeightProvider.getInstance();
         const valleyGeo = heightProvider.buildTaurusLittrowGeometry(satRadius);
         const valleyMat = new THREE.MeshStandardMaterial({
           color: 0x94a3b8,
           roughness: 0.95,
           metalness: 0.05,
-          side: THREE.DoubleSide,
+          side: THREE.FrontSide,
         });
         const valleyMesh = new THREE.Mesh(valleyGeo, valleyMat);
         valleyMesh.name = 'taurus-littrow-terrain';
@@ -848,7 +842,7 @@ export class SolarEngine {
         this.earthCloudMaterial.uniforms.sunDirection.value.copy(sunDir);
         safeDisposeMaterial(earthNode.cloudMesh.material);
         earthNode.cloudMesh.material = this.earthCloudMaterial;
-        earthNode.cloudMesh.visible = this.observationMode === 'physical';
+        this.syncEarthCloudVisibility();
       }
     }).catch((e) => console.error('[Texture] Earth load failed:', e));
 
@@ -1381,9 +1375,17 @@ export class SolarEngine {
 
   public setShowClouds(show: boolean): void {
     this.showClouds = show;
+    this.syncEarthCloudVisibility();
+  }
+
+  /**
+   * 云层可见性唯一仲裁：用户云层开关与观察模式共同决定
+   * 物理观测尊重用户图层选择；地貌观察强制隐藏；切回物理时恢复用户选择（P0-b 规范）
+   */
+  private syncEarthCloudVisibility(): void {
     const earthNode = this.bodyNodes.get('earth');
     if (earthNode && earthNode.cloudMesh) {
-      earthNode.cloudMesh.visible = show;
+      earthNode.cloudMesh.visible = this.showClouds && this.observationMode === 'physical';
     }
   }
 
@@ -1664,6 +1666,7 @@ export class SolarEngine {
     const now = performance.now();
     const deltaSec = Math.min((now - this.lastTime) / 1000, 0.1);
     this.lastTime = now;
+    this.renderFrameCount++;
 
     // 0. 更新展示策略平滑过渡（物理局部空间 vs 导航示意模式）
     this.bodyPoseProvider.updateTransition(deltaSec);
@@ -1727,6 +1730,8 @@ export class SolarEngine {
     }
 
     // 批次 R5：着陆控制器生命周期驱动 (50km 轨道 -> 1.7m 月表人眼视高)
+    // P1 修复：仅在本控制器刚刚完成"升空返轨"(ASCENDING -> ORBIT 边沿)时才收回 SURFACE_LOOK；
+    // 书签恢复等外部进入的地表观察不被空闲的着陆状态机逐帧抢占 (用户保有控制权)
     const landingState = this.landingController.getState();
     if (landingState === 'DESCENDING' || landingState === 'ASCENDING') {
       this.landingController.update(deltaSec, (s) => this.setTimeScale(s));
@@ -1740,13 +1745,18 @@ export class SolarEngine {
         initialYawDeg: traj.cameraYawDeg,
         initialPitchDeg: traj.cameraPitchDeg,
       });
-    } else if (landingState === 'ORBIT' && this.cameraController.getSnapshot().mode === 'SURFACE_LOOK') {
+    } else if (
+      landingState === 'ORBIT' &&
+      this.prevLandingState === 'ASCENDING' &&
+      this.cameraController.getSnapshot().mode === 'SURFACE_LOOK'
+    ) {
       this.cameraController.executeCommand({
         type: 'flyTo',
         bodyId: 'moon',
         durationSec: 1.5,
       });
     }
+    this.prevLandingState = landingState;
 
     // 5. 更新单一相机控制器
     this.cameraController.update(deltaSec, (id: BodyId) => this.getBodyWorldPose(id));
@@ -1874,17 +1884,14 @@ export class SolarEngine {
   /**
    * 切换观测模式 (物理观测 vs 地貌观察)
    * physical: 真实时间/昼夜/云层，保持物理天体真实感
-   * terrain-study: 隐藏云层，提供全向参考照明，模拟时间保持不变
+   * terrain-study: 隐藏云层，提供全向参考照明（瓦片 shader 内实现），模拟时间保持不变
    */
   public setObservationMode(mode: ObservationMode): void {
     this.observationMode = mode;
     if (this.earthTileManager) {
       this.earthTileManager.setObservationMode(mode);
     }
-    const earthNode = this.bodyNodes.get('earth');
-    if (earthNode && earthNode.cloudMesh) {
-      earthNode.cloudMesh.visible = mode === 'physical';
-    }
+    this.syncEarthCloudVisibility();
     if (this.callbacks.onObservationModeChange) {
       this.callbacks.onObservationModeChange(mode);
     }
@@ -1976,6 +1983,18 @@ export class SolarEngine {
    */
   public updateEphemerisPoses(deltaSec: number = 0): void {
     const isPhysicalObservation = this.bodyPoseProvider.getPolicy() === 'PHYSICAL_OBSERVATION';
+    // P1：物理观察模式下，以当前相机目标所在的行星系统为线性化参考系（地月/木星系/土星系同一规则）
+    if (isPhysicalObservation) {
+      const camSnap = this.cameraController.getSnapshot();
+      const focusId = camSnap.targetBodyId || camSnap.selectedBodyId || 'earth';
+      const focusData = BODIES[focusId];
+      if (focusData?.type === 'moon' && focusData.parentId) {
+        this.bodyPoseProvider.setPhysicalReferenceBody(focusData.parentId);
+      } else if (focusData?.type === 'planet') {
+        this.bodyPoseProvider.setPhysicalReferenceBody(focusId);
+      }
+    }
+    const referenceBodyId = this.bodyPoseProvider.getPhysicalReferenceBody();
     const sunNode = this.bodyNodes.get('sun');
     if (sunNode) {
       sunNode.systemGroup.visible = !isPhysicalObservation;
@@ -1990,7 +2009,7 @@ export class SolarEngine {
       }
 
       if (node.data.type === 'planet') {
-        if (isPhysicalObservation && id !== 'earth') {
+        if (isPhysicalObservation && id !== referenceBodyId) {
           node.systemGroup.visible = false;
           continue;
         } else {
@@ -2102,7 +2121,7 @@ export class SolarEngine {
       }
 
       if (node.data.type === 'moon') {
-        if (isPhysicalObservation && node.data.parentId !== 'earth') {
+        if (isPhysicalObservation && node.data.parentId !== referenceBodyId) {
           node.systemGroup.visible = false;
           continue;
         } else {
@@ -2124,7 +2143,14 @@ export class SolarEngine {
         // 潮汐锁定与特征景观自转相位
         const moonOrbitAngle = Math.atan2(pose.position.z, pose.position.x);
         const spinOffset = PLANET_SPIN_OFFSETS[id] || 0;
-        node.mesh.rotation.y = -moonOrbitAngle + spinOffset;
+        // P1 勘误（仅月球）：body-fixed 约定 BODY-FIXED-RENDER-X0-YN-Z90E 中 +X 即本初子午线，
+        // 潮汐锁定下应指向母星。原式 -moonOrbitAngle+spinOffset 实测将子地球点置于
+        // lon≈183°（2026-09-23 物理模式实测：Taurus-Littrow 站点地球仰角 -54.8°，
+        // 解析真值 +53.7°，恰 180° 镜像，与 HUD 自身标注矛盾）。加 π 使本初子午线
+        // 朝向地球，与约定声明、真实月面地理（近侧朝地球）及 PLANET_SPIN_OFFSETS
+        // 的注释意图一致。其余卫星的观赏偏置按旧相位整体调定，暂不同步翻转（见交接）。
+        const lockPhase = id === 'moon' ? Math.PI : 0;
+        node.mesh.rotation.y = -moonOrbitAngle + lockPhase + spinOffset;
 
         // 精确解算卫星在世界空间中的绝对坐标（母星世界坐标 + 卫星局部轨道偏移）
         const satWorldPos = new THREE.Vector3();
@@ -2190,17 +2216,21 @@ export class SolarEngine {
 
   /**
    * 捕获当前同一次观察快照 (captureObservationSnapshot)
-   * 严格遵循 R3 规范：捕获真实模拟时钟、展示策略、相机机位与 lookTarget、图层开关与载具 (不再硬编码 NAV/0.0)
+   * 严格遵循 V3 与 R3 规范：捕获真实模拟时钟、展示策略、相机机位与 lookTarget、图层开关、载具、多重观察模式与地表站点
    */
-  public captureObservationSnapshot(title = '当前观察点'): BookmarkItemV2 {
+  public captureObservationSnapshot(title = '当前观察点'): BookmarkItemV3 {
     const camSnap = this.cameraController.getSnapshot();
     const currentTargetId = camSnap.targetBodyId || camSnap.selectedBodyId || 'earth';
     const policy = this.bodyPoseProvider.getPolicy();
     const epochDate = new Date(Date.parse(BodyPoseProvider.BASE_EPOCH_ISO) + this.simTimeHours * 3600 * 1000);
 
+    // V3 地表站点：来自 CameraController 权威米制站点状态 (真实 body-fixed 坐标/法线/地面高程/眼高/朝向)，
+    // 不再使用零坐标与固定法线占位
+    const surfaceStation = this.cameraController.getSurfaceStationPose()?.station;
+
     return {
       id: `bm-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      schemaVersion: 2,
+      schemaVersion: 3,
       title,
       targetBodyId: currentTargetId,
       presentationPolicy: policy,
@@ -2211,6 +2241,10 @@ export class SolarEngine {
         theta: camSnap.spherical.theta,
       },
       lookTarget: camSnap.lookTarget,
+      surfaceStation,
+      observationMode: this.observationMode,
+      quality: 'analytic-approximation',
+      sourceVersion: '2026.09-P1-V3',
       viewCameraMode: this.viewCameraMode,
       vehicleId: this.currentVehicleId,
       layers: {
@@ -2223,6 +2257,23 @@ export class SolarEngine {
       simTimeHours: this.simTimeHours,
       createdAtIso: new Date().toISOString(),
     };
+  }
+
+  /**
+   * 获取全系统瞬时物理快照 (PhysicalSystemSnapshot)
+   */
+  public getPhysicalSystemSnapshot(): PhysicalSystemSnapshot {
+    return this.bodyPoseProvider.getPhysicalSystemSnapshot(this.simTimeHours);
+  }
+
+  /** 主引擎渲染帧计数 (验收性能采样用) */
+  public getRenderFrameCount(): number {
+    return this.renderFrameCount;
+  }
+
+  /** 相机控制器访问 (验收只读诊断用；相机仍由唯一控制器写入) */
+  public getSurfaceStationPose() {
+    return this.cameraController.getSurfaceStationPose();
   }
 
   public setSimTimeHours(hours: number): void {

@@ -155,8 +155,12 @@ describe('批次 R5 月球落地闭环测试 (Lunar Landing & Terrain DTM Tests)
     expect(rotSnapshot.surfaceOrientation?.yawDeg).not.toBe(225.0);
     expect(rotSnapshot.surfaceOrientation?.pitchDeg).toBeGreaterThan(12.0);
 
-    // 3. 验证相机近剪裁面自动收紧至 1e-4 (0.1毫米级，杜绝地面穿模)
-    expect(camera.near).toBeCloseTo(1e-4, 5);
+    // 3. 验证相机近裁剪面为 0.1m 米制净空的场景等效 (P1 规范；不再把 1e-4 场景单位误当 0.1mm)
+    // 测试内控制器无 getBodyPos 回调，surfaceRadius 保持默认 2.0 场景单位
+    const expectedNearScene = CameraController.SURFACE_NEAR_METERS *
+      (2.0 / TerrainHeightProvider.MOON_DATUM_RADIUS_M);
+    expect(camera.near).toBeCloseTo(expectedNearScene, 12);
+    expect(camera.near).toBeLessThan(1e-4);
 
     // 4. 地面直接定向仰望母星地球
     controller.executeCommand({

@@ -11,8 +11,25 @@
 import * as THREE from 'three';
 import type { BodyId } from '../contracts/body';
 import type { CameraCommand, CameraMode, CameraStateSnapshot, CameraAnchor, CameraLookTarget } from '../contracts/camera';
+import type { MetricStation } from '../contracts/physics';
 import { BODIES, getNavDisplayRadius } from '../astronomy/bodies';
 import { TerrainHeightProvider } from '../surface/TerrainHeightProvider';
+import {
+  geodeticToBodyFixedM,
+  datumForBody,
+} from '../world-support/local-frame';
+
+export interface SurfaceStationPose {
+  station: MetricStation;
+  yawDeg: number;
+  pitchDeg: number;
+  /** 米制↔场景单位换算系数 (场景单位/米) */
+  metricScale: number;
+  /** 基准面半径 (米) */
+  datumM: number;
+  /** 近裁剪面采用的米制净空 (米) */
+  nearM: number;
+}
 
 export interface CameraControllerOptions {
   camera: THREE.PerspectiveCamera;
@@ -32,6 +49,9 @@ export class CameraController {
   // 地面原地环顾姿态 (SURFACE_LOOK 模式)
   private surfaceYawDeg: number = 225.0; // 默认朝向西南偏南 (正对月面看地球方向)
   private surfacePitchDeg: number = 12.0; // 默认轻微平视山谷地平线
+  /** 地面停驻近裁剪面采用的米制净空 (米)：1.7m 眼高下 0.1m，见 P1 规范 */
+  public static readonly SURFACE_NEAR_METERS = 0.1;
+  private latestSurfaceStationPose: SurfaceStationPose | null = null;
   private latestGetBodyPos?: (id: BodyId) => {
     pos: THREE.Vector3;
     radius: number;
@@ -118,6 +138,13 @@ export class CameraController {
 
   public getLookTarget(): CameraLookTarget {
     return this.lookTarget;
+  }
+
+  /**
+   * 获取当前 SURFACE_LOOK 权威米制站点状态 (书签捕获与验收读取；非地面模式返回 null)
+   */
+  public getSurfaceStationPose(): SurfaceStationPose | null {
+    return this.latestSurfaceStationPose;
   }
 
   public getMinDistance(): number {
@@ -710,17 +737,26 @@ export class CameraController {
   private updateCameraTransform(): void {
     if (this.mode === 'SURFACE_LOOK' && this.anchor.kind === 'surface') {
       const heightProvider = TerrainHeightProvider.getInstance();
-      const localSurfacePt = heightProvider.latLonToVector3(
-        this.anchor.bodyId,
+      const bodyData = BODIES[this.anchor.bodyId];
+
+      // 站点地面高程 (米，可为负) 与米制基准面
+      const groundElevM = heightProvider.getHeightMeters(this.anchor.bodyId, this.anchor.lat, this.anchor.lon);
+      const eyeHeightM = this.anchor.eyeHeightM || 1.7;
+      const datum = datumForBody(this.anchor.bodyId, bodyData?.radiusKm ?? 1000);
+      const datumM = datum.semiMajorM;
+
+      // 站点 body-fixed 米制坐标与法线 (P1: local-frame 真实接线，替代场景单位经验换算)
+      const isGeodetic = this.anchor.bodyId === 'earth';
+      const bodyFixedPosM = geodeticToBodyFixedM(
         this.anchor.lat,
         this.anchor.lon,
-        this.surfaceRadius
+        groundElevM,
+        datum
       );
-
-      // 计算地表局部正交天顶/切线基向量 (u: 天顶 Up, e: 正东 East, n: 正北 North)
       const latRad = THREE.MathUtils.degToRad(this.anchor.lat);
       const lonRad = THREE.MathUtils.degToRad(this.anchor.lon);
       const cosLat = Math.cos(latRad);
+      // body-fixed 系局部正交基 (u: 天顶 Up, e: 正东 East, n: 正北 North)，轴约定 +X=0°经 +Y=北极 -Z=90°E
       const u = new THREE.Vector3(
         cosLat * Math.cos(lonRad),
         Math.sin(latRad),
@@ -729,45 +765,86 @@ export class CameraController {
       const e = new THREE.Vector3(-Math.sin(lonRad), 0, -Math.cos(lonRad)).normalize();
       const n = new THREE.Vector3().crossVectors(u, e).normalize();
 
-      // 人眼视高转换为场景距离单位
-      const datumM = this.anchor.bodyId === 'moon' ? TerrainHeightProvider.MOON_DATUM_RADIUS_M : 6371000.0;
-      const eyeHeightScene = (this.anchor.eyeHeightM || 1.7) * (this.surfaceRadius / datumM);
+      // 同帧天体姿态：站点、基向量必须随天体自转变换到世界系 (P1 核心修复——
+      // 此前 localSurfacePt 直接加 bodyWorldPos，天体自转时站点在惯性系中漂移)
+      const targetInfo = this.latestGetBodyPos
+        ? this.latestGetBodyPos(this.anchor.bodyId)
+        : null;
+      const bodyQuat = targetInfo?.quaternion ?? new THREE.Quaternion();
+      const surfaceWorld = heightProvider
+        .latLonToVector3(this.anchor.bodyId, this.anchor.lat, this.anchor.lon, this.surfaceRadius)
+        .applyQuaternion(bodyQuat);
+      const uW = u.clone().applyQuaternion(bodyQuat).normalize();
+      const eW = e.clone().applyQuaternion(bodyQuat).normalize();
+      const nW = n.clone().applyQuaternion(bodyQuat).normalize();
 
-      const eyeWorldPos = this.targetPosition.clone().add(localSurfacePt).addScaledVector(u, eyeHeightScene);
+      // 人眼视高换算为场景单位 (米制 -> 场景，同一比例用于近裁剪面)
+      const metricScale = this.surfaceRadius / datumM;
+      const eyeHeightScene = eyeHeightM * metricScale;
+
+      const eyeWorldPos = this.targetPosition.clone().add(surfaceWorld).addScaledVector(uW, eyeHeightScene);
       this.camera.position.copy(eyeWorldPos);
 
       // 观察朝向判断
       if (this.lookTarget.kind === 'body' && this.latestGetBodyPos) {
         const skyTargetPos = this.latestGetBodyPos(this.lookTarget.bodyId).pos;
-        this.camera.up.copy(u);
+        this.camera.up.copy(uW);
         this.camera.lookAt(skyTargetPos);
       } else {
         const yawRad = THREE.MathUtils.degToRad(this.surfaceYawDeg);
         const pitchRad = THREE.MathUtils.degToRad(this.surfacePitchDeg);
 
-        // 视线水平投影向量
+        // 视线水平投影向量（在世界系基上）
         const forward = new THREE.Vector3()
-          .addScaledVector(n, Math.cos(yawRad))
-          .addScaledVector(e, Math.sin(yawRad))
+          .addScaledVector(nW, Math.cos(yawRad))
+          .addScaledVector(eW, Math.sin(yawRad))
           .normalize();
 
         // 视线全空间向量
         const lookDir = new THREE.Vector3()
           .addScaledVector(forward, Math.cos(pitchRad))
-          .addScaledVector(u, Math.sin(pitchRad))
+          .addScaledVector(uW, Math.sin(pitchRad))
           .normalize();
 
-        this.camera.up.copy(u);
+        this.camera.up.copy(uW);
         this.camera.lookAt(eyeWorldPos.clone().add(lookDir));
       }
 
-      // 地面观察时近裁剪面极致贴近 (0.1毫米级)，防月面土壤裁剪穿透
-      if (Math.abs(this.camera.near - 1e-4) > 1e-6) {
-        this.camera.near = 1e-4;
+      // 地面停驻近裁剪面：0.1m 米制净空的场景等效 (P1 规范；1.7m 眼高 -> 0.1m，
+      // 不再把 1e-4 场景单位误注释为 0.1 毫米)
+      const nearScene = CameraController.SURFACE_NEAR_METERS * metricScale;
+      if (Math.abs(this.camera.near - nearScene) > nearScene * 1e-6) {
+        this.camera.near = nearScene;
         this.camera.updateProjectionMatrix();
       }
+
+      // 记录权威米制站点状态，供书签捕获与验收脚本读取
+      this.latestSurfaceStationPose = {
+        station: {
+          bodyId: this.anchor.bodyId,
+          coordinateType: isGeodetic ? 'geodetic' : 'planetocentric',
+          datum: datum.name,
+          latDeg: this.anchor.lat,
+          lonDeg: this.anchor.lon,
+          heightM: groundElevM,
+          eyeHeightM,
+          bodyFixedPosM: [bodyFixedPosM[0], bodyFixedPosM[1], bodyFixedPosM[2]],
+          surfaceNormal: [u.x, u.y, u.z],
+          orientationDeg: {
+            yawDeg: this.surfaceYawDeg,
+            pitchDeg: this.surfacePitchDeg,
+          },
+        },
+        yawDeg: this.surfaceYawDeg,
+        pitchDeg: this.surfacePitchDeg,
+        metricScale,
+        datumM,
+        nearM: CameraController.SURFACE_NEAR_METERS,
+      };
       return;
     }
+
+    this.latestSurfaceStationPose = null;
 
     const offset = new THREE.Vector3().setFromSpherical(this.spherical);
     this.camera.position.copy(this.targetPosition).add(offset);

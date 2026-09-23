@@ -119,7 +119,7 @@ export const BookmarkModal: React.FC<BookmarkModalProps> = ({
 
       newBm = {
         id: 'bm-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
-        schemaVersion: 2,
+        schemaVersion: 3,
         title: newTitle.trim(),
         targetBodyId: currentBodyId,
         presentationPolicy: currentPresentationPolicy || 'NAV_SCHEMATIC',
@@ -130,6 +130,8 @@ export const BookmarkModal: React.FC<BookmarkModalProps> = ({
           theta: Number(spherical.theta.toFixed(3)),
         },
         lookTarget: currentSnapshot?.lookTarget || { kind: 'center' },
+        quality: 'analytic-approximation',
+        sourceVersion: '2026.09-P1-V3',
         viewCameraMode: currentViewCameraMode,
         vehicleId: currentVehicleId,
         layers: { ...currentLayers },

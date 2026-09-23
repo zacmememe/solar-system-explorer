@@ -13,6 +13,7 @@ import { LunarLandingHUD } from './LunarLandingHUD';
 import { createHudStore } from './hud/store';
 import './app.css';
 import type { BookmarkItem } from '../contracts/bookmark';
+import { normalizeObservationIntent } from '../contracts/bookmark';
 import type { ObservationMode } from '../world-support/visibility';
 import { generateDiscoveryPostcard } from '../utils/postcard';
 import {
@@ -312,13 +313,59 @@ export const App: React.FC = () => {
     setVenusRadarMode(bm.layers.venusRadarMode);
     engineRef.current?.setShowVenusSurface(bm.layers.venusRadarMode);
 
-    const lookTarget = (bm as any).lookTarget;
-    engineRef.current?.executeCameraCommand({
-      type: 'restoreBookmark',
-      targetBodyId: bm.targetBodyId,
-      spherical: bm.spherical,
-      lookTarget,
-    });
+    // 同步多重观察模式 (V3 规范：physical / terrain-study 统一语义，遗留标签在加载时已归一)
+    if (bm.observationMode) {
+      engineRef.current?.setObservationMode(normalizeObservationIntent(bm.observationMode));
+    }
+
+    // 若包含地表米制站点，优先切入站心观察 (V3 规范)：
+    // 使用保存的眼高与朝向；非法站点安全回退球坐标恢复，不 clamp 掩盖
+    const station = bm.surfaceStation;
+    const stationValid =
+      station &&
+      BODIES[station.bodyId] &&
+      Number.isFinite(station.latDeg) &&
+      Math.abs(station.latDeg) <= 90 &&
+      Number.isFinite(station.lonDeg) &&
+      Math.abs(station.lonDeg) <= 180 &&
+      Array.isArray(station.bodyFixedPosM) &&
+      station.bodyFixedPosM.length === 3 &&
+      station.bodyFixedPosM.every(Number.isFinite) &&
+      Number.isFinite(station.eyeHeightM) &&
+      station.eyeHeightM > 0;
+
+    if (stationValid) {
+      // 数据版本变化时明确提示，不静默按旧地形恢复
+      if (station.bodyId === 'moon' && bm.sourceVersion && bm.sourceVersion !== '2026.09-P1-V3') {
+        showToast('⚠️ 书签数据版本已变化，按当前地形数据恢复站点');
+      }
+      engineRef.current?.executeCameraCommand({
+        type: 'enterSurfaceLook',
+        bodyId: station.bodyId,
+        lat: station.latDeg,
+        lon: station.lonDeg,
+        eyeHeightM: station.eyeHeightM,
+        initialYawDeg: station.orientationDeg?.yawDeg,
+        initialPitchDeg: station.orientationDeg?.pitchDeg,
+      });
+      if (bm.lookTarget?.kind === 'body') {
+        engineRef.current?.executeCameraCommand({
+          type: 'lookAtSkyTarget',
+          targetBodyId: bm.lookTarget.bodyId,
+        });
+      }
+    } else {
+      if (station) {
+        showToast('⚠️ 书签地表站点数据不合法，已回退到轨道观察恢复');
+      }
+      const lookTarget = (bm as any).lookTarget;
+      engineRef.current?.executeCameraCommand({
+        type: 'restoreBookmark',
+        targetBodyId: bm.targetBodyId,
+        spherical: bm.spherical,
+        lookTarget,
+      });
+    }
   };
 
   const showToast = (msg: string) => {

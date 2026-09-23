@@ -10,6 +10,10 @@
 import * as THREE from 'three';
 import type { BodyId } from '../contracts/body';
 import type { CameraAnchor, CameraLookTarget } from '../contracts/camera';
+import type {
+  PhysicalBodyState,
+  PhysicalSystemSnapshot,
+} from '../contracts/physics';
 import {
   BODIES,
   getPlanetNavPosition,
@@ -17,6 +21,7 @@ import {
   getNavDisplayRadius,
   PLANET_INITIAL_PHASES,
   SATELLITE_INITIAL_PHASES,
+  PLANET_SPIN_OFFSETS,
 } from './bodies';
 
 export type PresentationPolicy = 'NAV_SCHEMATIC' | 'PHYSICAL_OBSERVATION';
@@ -70,6 +75,27 @@ export interface ObservationFrame {
 export class BodyPoseProvider {
   public static readonly BASE_EPOCH_ISO = '2026-09-22T00:00:00Z';
   public static readonly J2000_EPOCH_MS = 946728000000; // 2000-01-01T12:00:00Z
+  /**
+   * 2026-09-22T00:00:00Z 相对 J2000 (2000-01-01T12:00:00Z) 的 UTC 秒差（两个 JS Date 实测，非 TDB）
+   */
+  public static readonly BASE_J2000_OFFSET_UTC_SEC = 843307200;
+  /**
+   * UTC → TT(TDB) 固定近似偏移（秒）= 37 闰秒 + 32.184s（截至 2026 年，IERS 未新增闰秒的假设）。
+   * 诚实声明：这是解析近似换算，未实现星历级 TDB（TDB−TT < 2ms 周期项），quality 仍为 analytic-approximation。
+   */
+  public static readonly UTC_TO_TT_APPROX_SEC = 69.184;
+
+  /**
+   * 将场景 UTC 秒差换算为近似 TDB 秒（J2000 基准）
+   */
+  public static utcSecondsToApproxTdb(utcSecondsFromJ2000: number): number {
+    return utcSecondsFromJ2000 + BodyPoseProvider.UTC_TO_TT_APPROX_SEC;
+  }
+
+  /** 惯性坐标系诚实标识：XZ 平面解析圆轨道近似黄道系，非 ICRF/J2000 星历 */
+  public static readonly POSITION_FRAME_ID = 'ECLIPTIC-ANALYTIC-APPROX';
+  /** 制图坐标系诚实标识：渲染边界轴约定 +X=0°经、+Y=北极、-Z=90°E，非 IAU 制图模型声明 */
+  public static readonly CARTOGRAPHIC_FRAME_ID = 'BODY-FIXED-RENDER-X0-YN-Z90E';
 
   // 权威物理常数 (千米)
   public static readonly PHYSICAL_RADII_KM: Record<string, number> = {
@@ -87,6 +113,32 @@ export class BodyPoseProvider {
     deimos: 6.2,
   };
 
+  /**
+   * 真实三轴物理半径 [a, b, c] (千米)
+   * 保留天体自转动力学扁率（如地球、木星、土星）与不规则形状（如火卫一、土卫七）
+   */
+  public static readonly TRIAXIAL_RADII_KM: Record<string, [number, number, number]> = {
+    sun: [696340.0, 696340.0, 696340.0],
+    mercury: [2439.7, 2439.7, 2439.7],
+    venus: [6051.8, 6051.8, 6051.8],
+    earth: [6378.137, 6378.137, 6356.752], // WGS84 赤道与极半径
+    moon: [1738.1, 1738.1, 1736.0],
+    mars: [3396.2, 3396.2, 3376.2],
+    phobos: [13.0, 11.4, 9.1], // 三轴半轴
+    deimos: [7.8, 6.0, 5.1],
+    jupiter: [71492.0, 71492.0, 66854.0], // 气态巨行星扁率
+    io: [1829.4, 1819.4, 1815.7],
+    europa: [1560.8, 1560.8, 1560.8],
+    ganymede: [2634.1, 2634.1, 2634.1],
+    callisto: [2410.3, 2410.3, 2410.3],
+    saturn: [60268.0, 60268.0, 54364.0], // 强自转扁率
+    titan: [2574.7, 2574.7, 2574.7],
+    hyperion: [180.0, 133.0, 103.0],
+    uranus: [25559.0, 25559.0, 24973.0],
+    neptune: [24764.0, 24764.0, 24341.0],
+    triton: [1353.4, 1353.4, 1353.4],
+  };
+
   // 权威地月轨道平均距离 (千米)
   public static readonly MOON_ORBIT_SEMI_MAJOR_AXIS_KM = 384400.0;
 
@@ -95,6 +147,12 @@ export class BodyPoseProvider {
   private transitionProgress: number = 0; // 0.0 ~ 1.0
   private transitionDurationSec: number = 2.0;
   private frameSequence: number = 0;
+
+  /**
+   * PHYSICAL_OBSERVATION 下被线性化的父子系统基准行星（默认地月系）。
+   * 引擎聚焦其他系统（如木星/土星）时切换，保证各父子系统内部半径/距离比例物理一致。
+   */
+  private physicalReferenceBodyId: BodyId = 'earth';
 
   constructor(initialPolicy: PresentationPolicy = 'NAV_SCHEMATIC') {
     this.currentPolicy = initialPolicy;
@@ -140,6 +198,20 @@ export class BodyPoseProvider {
 
   public getTransitionProgress(): number {
     return this.transitionProgress;
+  }
+
+  /**
+   * 设置 PHYSICAL_OBSERVATION 模式下的参考父子系统（基准行星）
+   */
+  public setPhysicalReferenceBody(id: BodyId): void {
+    const data = BODIES[id];
+    if (data && (data.type === 'planet' || data.type === 'star')) {
+      this.physicalReferenceBodyId = id;
+    }
+  }
+
+  public getPhysicalReferenceBody(): BodyId {
+    return this.physicalReferenceBodyId;
   }
 
   /**
@@ -250,6 +322,150 @@ export class BodyPoseProvider {
   }
 
   /**
+   * 获取天体在惯性系中的瞬时切向物理速度 (公里/秒)
+   * 采用开普勒解析公转微分，杜绝 [0, 0, 0] 虚假占位
+   */
+  public getPhysicalVelocityKmPerSec(id: BodyId, simTimeHours: number): [number, number, number] {
+    const data = BODIES[id];
+    if (!data || data.type === 'star') {
+      return [0, 0, 0];
+    }
+
+    if (data.type === 'planet') {
+      const d = data.orbitSemiMajorAxisKm;
+      const periodHours = data.orbitPeriodDays * 24.0;
+      if (periodHours === 0) return [0, 0, 0];
+      const omega = (2.0 * Math.PI) / (periodHours * 3600.0); // 弧度/秒
+      const initialPhase = PLANET_INITIAL_PHASES[id] || 0;
+      const angleRad = ((2.0 * Math.PI) / periodHours) * simTimeHours + initialPhase;
+      const incRad = ((data.orbitalInclinationDeg || 0) * Math.PI) / 180.0;
+
+      // x = d * cos(θ), y = d * sin(θ) * sin(i), z = d * sin(θ) * cos(i)
+      return [
+        -d * omega * Math.sin(angleRad),
+        d * omega * Math.cos(angleRad) * Math.sin(incRad),
+        d * omega * Math.cos(angleRad) * Math.cos(incRad),
+      ];
+    }
+
+    if (data.type === 'moon') {
+      const parentId = data.parentId || 'earth';
+      const [pvx, pvy, pvz] = this.getPhysicalVelocityKmPerSec(parentId, simTimeHours);
+      const periodHours = Math.abs(data.orbitPeriodDays) * 24.0;
+      if (periodHours === 0) return [pvx, pvy, pvz];
+      const omega = (2.0 * Math.PI) / (periodHours * 3600.0);
+      const initialPhase = SATELLITE_INITIAL_PHASES[id] || 0;
+      const angleRad = ((2.0 * Math.PI) / periodHours) * simTimeHours + initialPhase;
+      const d = data.orbitSemiMajorAxisKm;
+      const incRad = ((data.orbitalInclinationDeg || 0) * Math.PI) / 180.0;
+
+      const relVx = -d * omega * Math.sin(angleRad);
+      const relVy = d * omega * Math.cos(angleRad) * Math.sin(incRad);
+      const relVz = d * omega * Math.cos(angleRad) * Math.cos(incRad);
+      return [pvx + relVx, pvy + relVy, pvz + relVz];
+    }
+
+    return [0, 0, 0];
+  }
+
+  /**
+   * 获取天体固连坐标系到惯性系的姿态四元数 [x, y, z, w]
+   * 诚实声明：这是简化姿态模型——极轴倾角绕惯性 +Z 一次旋转 + 绕本体极轴的自转角；
+   * 卫星分支采用同步自转（潮汐锁定）近似（自转角 = -轨道角 + 观赏偏置），非 IAU 精确指向解，
+   * quality 标记为 analytic-approximation；非潮汐锁定天体（如 Hyperion）不应套用此假设。
+   */
+  public getFixedToInertialQuaternion(id: BodyId, simTimeHours: number): [number, number, number, number] {
+    const data = BODIES[id];
+    const axialTiltDeg = data?.axialTiltDeg || 0;
+    const axialTiltRad = (axialTiltDeg * Math.PI) / 180.0;
+    const spinOffset = PLANET_SPIN_OFFSETS[id] || 0;
+
+    let rotRad = 0;
+    if (data?.type === 'star') {
+      const periodHours = data.rotationPeriodHours || 609.12;
+      rotRad = ((2.0 * Math.PI) / periodHours) * simTimeHours;
+    } else if (data?.type === 'moon') {
+      const periodHours = Math.abs(data.orbitPeriodDays || 27.32) * 24.0;
+      const initialPhase = SATELLITE_INITIAL_PHASES[id] || 0;
+      const orbitAngle = ((2.0 * Math.PI) / periodHours) * simTimeHours + initialPhase;
+      rotRad = -orbitAngle + spinOffset;
+    } else if (data) {
+      const periodHours = data.rotationPeriodHours || 24.0;
+      rotRad = periodHours !== 0 ? ((2.0 * Math.PI) / periodHours) * simTimeHours + spinOffset : 0;
+    }
+
+    const qZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), axialTiltRad);
+    const qY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rotRad);
+    const q = qZ.multiply(qY);
+    return [q.x, q.y, q.z, q.w];
+  }
+
+  /**
+   * 获取天体三轴物理半径 [a, b, c] (公里)
+   */
+  public getPhysicalRadiiKm(id: BodyId): [number, number, number] {
+    if (BodyPoseProvider.TRIAXIAL_RADII_KM[id]) {
+      return BodyPoseProvider.TRIAXIAL_RADII_KM[id];
+    }
+    const r = BodyPoseProvider.PHYSICAL_RADII_KM[id] ?? BODIES[id]?.radiusKm ?? 1000.0;
+    return [r, r, r];
+  }
+
+  /**
+   * 获取单个天体的瞬时完整物理状态 (PhysicalBodyState)
+   */
+  public getPhysicalBodyState(id: BodyId, simTimeHours: number): PhysicalBodyState {
+    const data = BODIES[id];
+    const posKm = this.getPhysicalPositionKm(id, simTimeHours);
+    const velKmS = this.getPhysicalVelocityKmPerSec(id, simTimeHours);
+    const quat = this.getFixedToInertialQuaternion(id, simTimeHours);
+    const radii = this.getPhysicalRadiiKm(id);
+    const meanRadiusKm = BodyPoseProvider.PHYSICAL_RADII_KM[id] ?? data?.radiusKm ?? 1000.0;
+    // 时间基：UTC 秒差 + 固定闰秒/TT 偏移的近似 TDB（见 UTC_TO_TT_APPROX_SEC 注释），非星历级换算
+    const tdbSecondsFromJ2000 = BodyPoseProvider.utcSecondsToApproxTdb(
+      BodyPoseProvider.BASE_J2000_OFFSET_UTC_SEC + simTimeHours * 3600.0
+    );
+
+    return {
+      id,
+      tdbSecondsFromJ2000,
+      positionKm: posKm,
+      velocityKmPerSec: velKmS,
+      fixedToInertialQuaternion: quat,
+      radiiKm: radii,
+      meanRadiusKm,
+      positionFrameId: BodyPoseProvider.POSITION_FRAME_ID,
+      cartographicFrameId: BodyPoseProvider.CARTOGRAPHIC_FRAME_ID,
+      quality: 'analytic-approximation',
+      sourceVersion: '2026.09-P1-PHYSICS-V2',
+    };
+  }
+
+  /**
+   * 构建太阳系全系统瞬时物理快照 (PhysicalSystemSnapshot)
+   */
+  public getPhysicalSystemSnapshot(simTimeHours: number): PhysicalSystemSnapshot {
+    const bodiesRecord: Record<string, PhysicalBodyState> = {};
+    const epochDate = new Date(Date.parse(BodyPoseProvider.BASE_EPOCH_ISO) + simTimeHours * 3600 * 1000);
+    const epochIso = epochDate.toISOString();
+    const tdbSecondsFromJ2000 = BodyPoseProvider.utcSecondsToApproxTdb(
+      BodyPoseProvider.BASE_J2000_OFFSET_UTC_SEC + simTimeHours * 3600.0
+    );
+
+    for (const id of Object.keys(BODIES) as BodyId[]) {
+      bodiesRecord[id] = this.getPhysicalBodyState(id, simTimeHours);
+    }
+
+    return {
+      tdbSecondsFromJ2000,
+      simTimeHours,
+      epochIso,
+      bodies: bodiesRecord,
+      frameId: BodyPoseProvider.POSITION_FRAME_ID,
+    };
+  }
+
+  /**
    * 计算天体在当前展示策略与过渡进度下的位置、显示半径与物理太阳向量
    * 采用 Smootherstep 保证二阶导数平滑无跳跃
    */
@@ -294,11 +510,12 @@ export class BodyPoseProvider {
     const t = this.transitionProgress;
     const smoothT = t * t * t * (t * (t * 6 - 15) + 10);
 
-    // 物理观察策略计算（以地月系为核心先行标杆）
-    if (id === 'earth') {
+    // 物理观察策略：以参考行星系统为局部基准标尺线性化（P1 泛化：地月/木星系/土星系等同一规则）
+    if (id === this.physicalReferenceBodyId) {
+      // 参考行星本尊保持导航位置与半径，作为本系统局部物理坐标系的基准标尺
       return {
         position: navPos,
-        displayRadius: navRadius, // 地球作为地月系局部物理坐标系的基准标尺
+        displayRadius: navRadius,
         renderSurfaceRadius: navRadius,
         renderFramingRadius: navRadius,
         policy: this.currentPolicy,
@@ -307,19 +524,19 @@ export class BodyPoseProvider {
       };
     }
 
-    if (id === 'moon') {
-      // 物理真实比例换算：
-      // 地球基准显示半径为 1.35
-      // 真实半径比: 1737.4 / 6371.0 ≈ 0.2727044 -> physMoonRadius ≈ 0.36815
-      const earthData = BODIES['earth'];
-      const earthNavRadius = getNavDisplayRadius(earthData.radiusKm, earthData.type);
-      const physMoonRadius = earthNavRadius * (BodyPoseProvider.PHYSICAL_RADII_KM.moon / BodyPoseProvider.PHYSICAL_RADII_KM.earth);
+    if (data?.type === 'moon' && data.parentId === this.physicalReferenceBodyId) {
+      const parentData = BODIES[this.physicalReferenceBodyId];
+      const parentNavRadius = getNavDisplayRadius(parentData.radiusKm, parentData.type);
+      const parentPhysRadiusKm =
+        BodyPoseProvider.PHYSICAL_RADII_KM[this.physicalReferenceBodyId] ?? parentData.radiusKm;
+      const moonPhysRadiusKm = BodyPoseProvider.PHYSICAL_RADII_KM[id] ?? data.radiusKm;
 
-      // 真实物理地月间距对应场景单位：
-      // distanceScene = earthNavRadius * (384400.0 / 6371.0) ≈ 1.35 * 60.33589 ≈ 81.4534
-      const physDistanceScene = earthNavRadius * (BodyPoseProvider.MOON_ORBIT_SEMI_MAJOR_AXIS_KM / BodyPoseProvider.PHYSICAL_RADII_KM.earth);
+      // 物理真实比例换算：卫星半径与轨道距离都以参考行星的导航显示半径为统一标尺
+      const physMoonRadius = parentNavRadius * (moonPhysRadiusKm / parentPhysRadiusKm);
+      const physDistanceScene =
+        parentNavRadius * (data.orbitSemiMajorAxisKm / parentPhysRadiusKm);
 
-      // 保持当前月球公转航向角方向
+      // 保持当前公转航向角方向
       const orbitDir = navPos.clone().normalize();
       if (orbitDir.lengthSq() < 1e-4) {
         orbitDir.set(1, 0, 0);
@@ -371,21 +588,24 @@ export class BodyPoseProvider {
     for (const id of Object.keys(BODIES) as BodyId[]) {
       const data = BODIES[id];
       const posKm = this.getPhysicalPositionKm(id, simTimeHours);
+      const velKmS = this.getPhysicalVelocityKmPerSec(id, simTimeHours);
       const pose = this.getBodyPose(id, simTimeHours);
       const sunDir = this.getPhysicalSunDirection(id, simTimeHours);
 
       bodiesMap.set(id, {
         bodyId: id,
         epochIso,
-        epochTdbSeconds: simTimeHours * 3600,
+        epochTdbSeconds: BodyPoseProvider.utcSecondsToApproxTdb(
+          BodyPoseProvider.BASE_J2000_OFFSET_UTC_SEC + simTimeHours * 3600
+        ),
         positionKm: posKm,
-        velocityKmPerSec: [0, 0, 0],
+        velocityKmPerSec: velKmS,
         apparentRadiusKm: BodyPoseProvider.PHYSICAL_RADII_KM[id] ?? data.radiusKm,
         renderPosition: [pose.position.x, pose.position.y, pose.position.z],
         renderSurfaceRadius: pose.renderSurfaceRadius,
         renderFramingRadius: pose.renderFramingRadius,
-        sourceFrame: 'J2000-ECLIPTIC-EARTH-MOON-PHYSICAL',
-        orientationSource: 'IAU-CARTOGRAPHIC-MODEL',
+        sourceFrame: BodyPoseProvider.POSITION_FRAME_ID,
+        orientationSource: 'analytic-approximation',
         physicalSunDirection: [sunDir.x, sunDir.y, sunDir.z],
       });
     }
@@ -401,7 +621,7 @@ export class BodyPoseProvider {
       presentation: {
         policy: this.currentPolicy,
         blend: this.transitionProgress,
-        referenceBodyId: this.currentPolicy === 'PHYSICAL_OBSERVATION' ? 'earth' : null,
+        referenceBodyId: this.currentPolicy === 'PHYSICAL_OBSERVATION' ? this.physicalReferenceBodyId : null,
       },
       bodies: bodiesMap,
       observer,
