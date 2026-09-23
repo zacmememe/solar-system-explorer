@@ -67,6 +67,7 @@ import {
 import { soundEffects } from '../audio/SoundEffects';
 import { VehicleLoader } from '../vehicles/VehicleLoader';
 import { LandingController } from '../surface/LandingController';
+import { RegionalAlbedoLayer } from '../surface/RegionalAlbedoLayer';
 import { LANDING_SITES, type LandingTelemetry, type LandingAvailability } from '../contracts/landing';
 import {
   latLonDirection,
@@ -230,6 +231,10 @@ export class SolarEngine {
   private landingController: LandingController = new LandingController('taurus-littrow');
   private lunarValleyMesh?: THREE.Mesh;
   private moonMesh?: THREE.Mesh;
+  // P3b-C：WAC EMP 区域反照率层（中远景影像；DTM 装载后创建，SSE 门控显隐）
+  private regionalAlbedo: RegionalAlbedoLayer | null = null;
+  private collarMaterial: THREE.MeshStandardMaterial | null = null;
+  private drawingBufferSizeTmp: THREE.Vector2 = new THREE.Vector2();
 
   // 动画与时钟
   private isRunning: boolean = true;
@@ -780,7 +785,9 @@ export class SolarEngine {
                   roughness: 0.95,
                   metalness: 0.05,
                 });
+                this.collarMaterial = collarMat;
                 new THREE.TextureLoader().load('/assets/textures/moon/lroc_color_2k.jpg', (tex) => {
+                  if (collarMat.map) return; // WAC 已先行换装则保持
                   tex.colorSpace = THREE.SRGBColorSpace;
                   collarMat.map = tex;
                   collarMat.needsUpdate = true;
@@ -790,6 +797,23 @@ export class SolarEngine {
                 collarMesh.receiveShadow = true;
                 satMesh.add(collarMesh);
               }
+
+              // P3b-C：WAC EMP 区域反照率层——孔边界之外到裁窗边界的中远景实测影像。
+              // 就绪后裙边同步换装同源 WAC（窗口 NAC 5m → 裙边/环带 WAC 99.75m 同源衔接）；
+              // 失败则全球图兜底，不阻塞已有链路（Pro C 批：缺细级时父级显示）。
+              this.regionalAlbedo = new RegionalAlbedoLayer(satRadius, holed.holeBounds);
+              void this.regionalAlbedo.load().then(() => {
+                const layer = this.regionalAlbedo;
+                if (!layer || !layer.isReady) {
+                  console.warn('[SolarEngine] WAC 区域反照率层不可用（全球图兜底）:', layer?.error);
+                  return;
+                }
+                const collarTex = layer.attach(satMesh);
+                if (collarTex && this.collarMaterial) {
+                  this.collarMaterial.map = collarTex;
+                  this.collarMaterial.needsUpdate = true;
+                }
+              });
             }
           })
           .catch((err: unknown) => {
@@ -1849,6 +1873,46 @@ export class SolarEngine {
     return this.lunarValleyMesh;
   }
 
+  /** P3b-C：WAC 区域反照率层诊断（验收脚本/HUD 用，只读） */
+  public getRegionalAlbedoStatus(): {
+    ready: boolean;
+    error: string | null;
+    gate: { layerTexelPx: number; baseTexelPx: number; visible: boolean } | null;
+    provenance: {
+      layerId: string;
+      sourceProduct: string;
+      nativeSpacingMeters: number;
+      bounds: { lonMin: number; lonMax: number; latMin: number; latMax: number };
+    } | null;
+    meshVisible: boolean | null;
+    collarSwapped: boolean | null;
+  } {
+    const layer = this.regionalAlbedo;
+    if (!layer) {
+      return { ready: false, error: null, gate: null, provenance: null, meshVisible: null, collarSwapped: null };
+    }
+    const mesh = this.getMoonMesh()?.children.find((c) => c.name === 'wac-emp-regional-albedo');
+    const collar = this.getMoonMesh()?.children.find((c) => c.name === 'taurus-littrow-collar') as THREE.Mesh | undefined;
+    return {
+      ready: layer.isReady,
+      error: layer.error,
+      gate: layer.lastGateDiagnostics,
+      provenance: layer.provenance
+        ? {
+            layerId: layer.provenance.layerId,
+            sourceProduct: layer.provenance.sourceProduct,
+            nativeSpacingMeters: layer.provenance.nativeSpacingMeters,
+            bounds: layer.provenance.bounds,
+          }
+        : null,
+      meshVisible: mesh ? mesh.visible : null,
+      collarSwapped: collar
+        ? !!collar.material &&
+          (collar.material as THREE.MeshStandardMaterial).map?.image?.width === layer.provenance?.width
+        : null,
+    };
+  }
+
   public setShowClouds(show: boolean): void {
     this.showClouds = show;
     this.syncEarthCloudVisibility();
@@ -2282,6 +2346,27 @@ export class SolarEngine {
       this.landingStartQuat = null; // 任务结束/取消：起始四元数失效
       this.landingGuidedQuat = null;
       this.landingGuideActive = false;
+    }
+
+    // P3b-C：WAC 区域反照率层 SSE 门控（实际 drawingBuffer 与 FOV，带迟滞；
+    // viewDepth 用近端地表距离=保守下界——斜视时门控偏早开而非漏开）
+    if (this.regionalAlbedo?.isReady) {
+      const moonPose = this.getBodyWorldPose('moon');
+      const moonNode = this.bodyNodes.get('moon');
+      const sceneRadius =
+        moonNode?.mesh ? moonNode.displayRadius * moonNode.mesh.scale.x : moonNode?.displayRadius ?? 0.368;
+      const metersPerScene = 1737400 / Math.max(1e-9, sceneRadius);
+      const surfaceDistM = Math.max(
+        1,
+        (this.camera.position.distanceTo(moonPose.pos) - sceneRadius) * metersPerScene
+      );
+      this.renderer.getDrawingBufferSize(this.drawingBufferSizeTmp);
+      this.regionalAlbedo.update(
+        surfaceDistM,
+        this.drawingBufferSizeTmp.y,
+        THREE.MathUtils.degToRad(this.camera.fov),
+        deltaSec
+      );
     }
 
     // 5. 更新单一相机控制器

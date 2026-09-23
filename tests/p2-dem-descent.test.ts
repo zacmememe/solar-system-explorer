@@ -217,16 +217,22 @@ describe('P2 RasterTerrainSource 采样语义', () => {
       const out = src.sampleHeight(0, 0);
       expect(out.valid).toBe(false);
       expect(out.reason).toBe('outside');
-      const far = src.sampleHeight(20.48, 30.68); // 北断块山顶在窗外
+      // P3b-C 扩窗后北断块山 (20.48, 30.68) 已在窗内（measured）；窗外拒绝用新窗外的远处点验证
+      const massif = src.sampleHeight(20.48, 30.68);
+      expect(massif.valid).toBe(true);
+      expect(massif.fidelity).toBe('measured-dem');
+      const far = src.sampleHeight(20.9, 31.6); // 12km 窗（lat 20.152–20.548 / lon 30.57–30.99）外
       expect(far.valid).toBe(false);
       expect(far.reason).toBe('outside');
     });
 
     it('窗口边界与打包窗口一致', () => {
       const b = src.windowBounds!;
-      // 窗口 1199×1199 像元 × 5 m ≈ 6×6 km：纬度跨度 ~0.198°，经度跨度 ~0.210°（cos20° 收缩）
-      expect(b.latMax - b.latMin).toBeCloseTo(0.1977, 3);
-      expect(b.lonMax - b.lonMin).toBeCloseTo(0.2104, 3);
+      // P3b-C：2400×2400 像元 × 5 m ≈ 12×12 km。跨度按投影公式：xM=R·cos(20°)·Δlon·rad
+      const latSpan = ((meta.height - 1) * 5) / 30325.7; // R·rad = 1° 纬度米数
+      const lonSpan = ((meta.width - 1) * 5) / (30325.7 * Math.cos((20.0 * Math.PI) / 180)); // 标准纬线 20°
+      expect(b.latMax - b.latMin).toBeCloseTo(latSpan, 3);
+      expect(b.lonMax - b.lonMin).toBeCloseTo(lonSpan, 3);
       expect(b.latMin).toBeLessThan(20.35);
       expect(b.latMax).toBeGreaterThan(20.35);
     });

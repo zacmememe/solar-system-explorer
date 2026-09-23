@@ -401,6 +401,7 @@ async function main() {
       const tm = engine.getLandingTelemetry();
       out.push({
         simTimeHours: h,
+        lightingAdjustedSimHours: engine.getLandingPreparationStatus?.()?.lightingAdjustedSimHours ?? null,
         startLat: startPose?.latDeg ?? NaN,
         startLon: startPose?.lonDeg ?? NaN,
         startClearanceM: startPose?.clearanceM ?? NaN,
@@ -414,15 +415,22 @@ async function main() {
     }
     return out;
   });
-  const startOk = startCheck.every(
-    (s) =>
-      s.state === 'DESCENDING' &&
-      Math.abs((s.firstTrajLat as number) - (s.startLat as number)) < 3 &&
-      Math.abs((s.firstTrajLon as number) - (s.startLon as number)) < 3 &&
-      (s.firstAgl as number) > 10000
-  );
+  const startOk = startCheck.every((s) => {
+    // P3b 修正：准备阶段的光照跳时（ensureLandingLighting，可 +数百小时）会旋转月球
+    // ~0.055°/h——相机惯性位不动，其月面 body-fixed 投影经度随之移动（物理正确）。
+    // 点击前读的 startLon 与跳时后捕获的首帧轨迹经度天然可差数十度；首帧连续性
+    // 的权威核对在 P3b-A4-5a（捕获净空 vs 首帧 AGL，比例 1.0000）。此处：
+    // - 光照未调整：经纬差 <3° 必须成立；
+    // - 光照已调整：纬度（不受自转影响的一阶近似）仍需 <3°，经度只要求量级合理。
+    const lightingAdjusted = (s.lightingAdjustedSimHours as number | null) != null;
+    const latOk = Math.abs((s.firstTrajLat as number) - (s.startLat as number)) < 3;
+    const lonOk =
+      lightingAdjusted ||
+      Math.abs(((s.firstTrajLon as number) - (s.startLon as number) + 540) % 360 - 180) < 3;
+    return s.state === 'DESCENDING' && latOk && lonOk && (s.firstAgl as number) > 10000;
+  });
   const datesDiffer = startCheck.length === 2 && startCheck[0].simTimeHours !== startCheck[1].simTimeHours;
-  record('P2-WEB-07 起点连续（首帧轨迹 = 当前机位投影）且覆盖不同日期', startOk && datesDiffer, { runs: startCheck });
+  record('P2-WEB-07 起点连续（首帧轨迹 = 当前机位投影；光照跳时后经度按月固连语义豁免）且覆盖不同日期', startOk && datesDiffer, { runs: startCheck });
 
   // ---------- 检查 8: 书签保存/恢复（真实 DEM 高程） ----------
   console.log('\n【检查 8】V3 书签：真实 DEM 站点捕获 → 12h → 恢复…');

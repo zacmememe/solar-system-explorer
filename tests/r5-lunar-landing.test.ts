@@ -61,19 +61,19 @@ describe('月球落地闭环测试 (真实 DTM 栅格后端)', () => {
       expect(siteSample.sourceId).toBe('NAC_DTM_APOLLO17');
       expect(siteSample.heightM).toBeCloseTo(-1690.9, 0);
 
-      // 窗内数值在打包 metadata 的 min/max 范围内
+      // 窗内数值在打包 metadata 的 min/max 范围内（P3b-C 扩窗后 [−2746.5, −646.9]）
       const inWin = provider.getHeightSample('moon', 20.36, 30.79);
       expect(inWin.valid).toBe(true);
-      expect(inWin.heightM).toBeGreaterThanOrEqual(-2713);
-      expect(inWin.heightM).toBeLessThanOrEqual(-878);
+      expect(inWin.heightM).toBeGreaterThanOrEqual(-2747);
+      expect(inWin.heightM).toBeLessThanOrEqual(-646);
 
-      // 窗外（0,0 与远处地标）显式 datum-sphere：高程 0 且 fidelity 如实标注，不隐式补平原
+      // 窗外（0,0）显式 datum-sphere：高程 0 且 fidelity 如实标注，不隐式补平原
       const outside = provider.getHeightSample('moon', 0, 0);
       expect(outside.heightM).toBe(0);
       expect(outside.fidelity).toBe('datum-sphere');
-      // 北断块山顶在窗外——同样显式回退（不以解析山体伪装）
+      // 北断块山 (20.48, 30.68)：P3b-C 扩窗(6km→12km)后已在窗内——实测而非回退
       const northMassif = provider.getHeightSample('moon', 20.48, 30.68);
-      expect(northMassif.fidelity).toBe('datum-sphere');
+      expect(northMassif.fidelity).toBe('measured-dem');
     });
 
     it('R5-02: 渲染半径转换、AGL 读数与真实 DTM 网格生成', () => {

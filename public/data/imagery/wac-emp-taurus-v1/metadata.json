@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "layerId": "wac-emp-taurus-v1",
+  "fidelityClaim": "measured-imagery",
+  "sourceProduct": "WAC_EMP_643NM_E300N0450_304P",
+  "sourceLabelFile": "WAC_EMP_643NM_E300N0450_304P.xml (PDS4, version_id 2.0)",
+  "sourceUrl": "https://pds.lroc.im-ldi.com/data/LRO-L-WAC-5-RDR-V1.0/LROLRC_2001/DATA/MDR/WAC_EMP/WAC_EMP_643NM_E300N0450_304P.IMG",
+  "fetchedViaUrl": "https://pds.mcp.nasa.gov/data/store/img/lunar_reconnaissance_orbiter/pds4/lroc/lro-l-lroc-5-rdr/LROLRC_2001/DATA/MDR/WAC_EMP/WAC_EMP_643NM_E300N0450_304P.IMG",
+  "licenseNote": "NASA LRO LROC PDS 公共数据 LRO-L-WAC-5-RDR-V1.0，Arizona State University 制作",
+  "band": "643nm 单波段（WAC EMP 经验归一化中位数镶嵌，i=30°/e=0°/phase=30°，n≈142）——非肉眼真彩、非 UV 假彩",
+  "pixelsPerDegree": 304,
+  "nativeSpacingMeters": 99.747863237334,
+  "sourceMd5": "97af2366068cffb38415b3658993b4f1",
+  "sourceBytes": 1996295040,
+  "width": 4256,
+  "height": 3040,
+  "bounds": {
+    "lonMin": 23.77960526315794,
+    "lonMax": 37.77960526315796,
+    "latMin": 15.350328947368418,
+    "latMax": 25.350328947368418
+  },
+  "sampling": "像元中心 lon(col)=col·dx/(R·rad)（col0=0°E）；lat(row)=60°−(row+0.5)/304°；标准纬线 0° 等距圆柱（与 NAC DTM 的 20° 不同，两者各自换算）",
+  "displayTransform": {
+    "rule": "linear reflectance ×gain → sRGB 编码，8-bit 灰度；外缘 0.25° 羽化混合全球底图 lroc_color_2k.jpg",
+    "gain": 1.4914,
+    "gainAnchor": "NAC 5m 正射窗口显示均值（u16/(p995/255)，与 buildOrthoTexture 同口径）——单一全局标量，无逐瓦片拉伸",
+    "missing": "源 missing 像元 0 个（本窗实测为 0）"
+  },
+  "coordinateSystem": "PLANETOCENTRIC, Positive East, R=1737400 m",
+  "albedoSha256": "5f55464e9908d3873ea5dc739fd937fb79b45a2e51f96085b74a68946c0d90cb",
+  "note": "P3b-C 数据层：中远景反射率近似（可重新照明）；几何仍由 datum 球 + NAC DTM 窗口承担，影像采样 ≠ DEM 格点 ≠ 几何误差（三者分离）"
+}

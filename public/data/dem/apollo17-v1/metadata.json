@@ -13,8 +13,8 @@
   "licenseNote": "NASA LRO LROC PDS 公共数据 LRO-L-LROC-5-RDR-V1.0，Arizona State University 制作",
   "verticalDatum": "参考球体半径 1737400 m (LBL a=b=c)；与 LOLA 拟合 RMS 1.77 m；SOCET SET 报告精度 2.55 m",
   "nativeSpacingMeters": 5,
-  "width": 1200,
-  "height": 1200,
+  "width": 2400,
+  "height": 2400,
   "projection": {
     "type": "EQUIRECTANGULAR",
     "coordinateSystem": "PLANETOCENTRIC",
@@ -33,24 +33,24 @@
   },
   "sampleCenterRule": "像元中心 = pixelCornerAffine(col+0.5, row+0.5)，再按 projection 公式转经纬",
   "window": {
-    "colStart": 4382,
-    "rowStart": 5181,
-    "width": 1200,
-    "height": 1200
+    "colStart": 3782,
+    "rowStart": 4581,
+    "width": 2400,
+    "height": 2400
   },
   "sourceStrip0": 93471,
   "sourceRowBytes": 39940,
   "windowFirstSampleCenter": {
-    "latDeg": 20.44901013003357,
-    "lonDeg": 30.674751543907007
+    "latDeg": 20.54794378868399,
+    "lonDeg": 30.569468543421493
   },
   "sourceNoDataValue": -3.4028226550889045e+38,
   "format": "float32-le",
   "units": "metres above sphere radius 1737400 m",
   "noData": "NaN",
-  "validSampleCount": 1440000,
-  "minimumHeightM": -2712.222900390625,
-  "maximumHeightM": -878.156982421875,
+  "validSampleCount": 5760000,
+  "minimumHeightM": -2746.458740234375,
+  "maximumHeightM": -646.9012451171875,
   "ortho": {
     "file": "ortho.u16",
     "format": "uint16-le I/F",
@@ -60,8 +60,20 @@
     "sameGridAsDem": true,
     "note": "README: 正射不含 scale/offset 地理标签；网格与 DEM 对齐（LBL 与尺寸核实）"
   },
-  "heightSha256": "b5017e3528de52baa9fb4738bb02fe6f2b3d16231b0884b5cf36f5e97f1b1c68",
-  "validSha256": "26214137c25aa6ad9bdb6a81976afb0cdbd22b76902a3ee2f707655f1f80a700",
-  "orthoSha256": "fdcea23e7712b4a2748c9c252661c87165379e08ecee808a5595724d12cc76a7",
-  "warning": "No reprojection or vertical datum conversion was performed. Native sampling is not vertical accuracy. 2026-09-24: 网关大块 Range 拼装被证实内容漂移，本包由整文件单流下载后本地裁窗生成。"
+  "heightSha256": "7abf63d11b868def1048a940383dc86a1a989dc11aab740fbf28ec495f6b3c69",
+  "validSha256": "0dfe037e63da709ae6d17bdd6ccef6d47ed888350f0c6c4de22358ab72bdec2c",
+  "orthoSha256": "5bbbd505fd8808513f51f0a67a1333f93e645d6c0e4ed060559b1d71411d7557",
+  "warning": "No reprojection or vertical datum conversion was performed. Native sampling is not vertical accuracy. 2026-09-24: 网关大块 Range 拼装被证实内容漂移，本包由整文件单流下载后本地裁窗生成。 P3b-C 扩窗后待重新走三点远程交叉验收（verify-p2-dem-descent）。",
+  "windowLastSampleCenter": {
+    "latDeg": 20.152374043513387,
+    "lonDeg": 30.990425073696002
+  },
+  "fullImageValidBboxCoarse": {
+    "note": "整幅 11600x9985 每 16px 粗扫的有效数据包围盒（P3b-C 扩窗调查）",
+    "colMin": 208,
+    "colMax": 9792,
+    "rowMin": 16,
+    "rowMax": 11568
+  },
+  "expansionNote": "P3b-C（Pro C 批第 3 条）：窗口由 1200px(6km) 扩至 2400px(12.0km)——以站点为中心的最大全有效方窗（上限 2400px）。网格/挖孔/裙边由 windowBounds 驱动自动适配；native 5m 采样不变。"
 }
