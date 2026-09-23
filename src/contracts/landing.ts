@@ -20,6 +20,33 @@ export type LandingState =
   | 'ASCENDING';
 
 /**
+ * P3b-A：降落入口权威可用性（引擎发布，HUD 与产品 API 共用）。
+ * 不以"选中天体 + 着陆状态机空闲"冒充到达——先到达，再降落（Pro P3b 审查 §4.1）。
+ */
+export type LandingAvailabilityAction =
+  | 'land'            // 可执行降落
+  | 'travel-to-site'  // 已在月球本地但落区在背面 → 前往着陆区
+  | 'wait'            // 到达但框架/资源未就绪 → 显示有原因的不可执行状态
+  | 'none';           // 未到达/任务进行中 → 不显示降落入口
+
+export type LandingAvailabilityReason =
+  | 'ready'
+  | 'not-at-body'        // 未在目标天体本地观察（正常导航前往）
+  | 'travel-in-progress' // 导航飞行未结束
+  | 'mission-active'     // 降落任务/地表停驻进行中（HUD 显示任务控制）
+  | 'frame-transition'   // 比例框架切换中
+  | 'far-side-site'      // 落区在当前半球背面
+  | 'assets-loading'     // DTM 数据装载中
+  | 'assets-error';      // DTM 装载失败
+
+export interface LandingAvailability {
+  action: LandingAvailabilityAction;
+  reason: LandingAvailabilityReason;
+  /** 人类可读的原因说明（等待态展示给用户） */
+  detail?: string;
+}
+
+/**
  * 降落地点权威定义
  */
 export interface LandingSite {

@@ -799,10 +799,9 @@ export const App: React.FC = () => {
         <p style={{ lineHeight: 1.7 }}>需要支持 WebGL2 的浏览器与图形环境。这里不会以空白画面或模拟读数冒充成功。</p>
       </div>}
 
-      {/* 批次 R5：月球着陆与地表停驻遥测仪表 HUD */}
+      {/* 批次 R5：月球着陆与地表停驻遥测仪表 HUD（P3b-A：入口由引擎权威可用性驱动） */}
       <LunarLandingHUD
         engine={engineRef.current}
-        activeBodyId={selectedBodyId}
       />
 
       {/* 航天器机库全屏模态窗口 */}

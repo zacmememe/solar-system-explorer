@@ -8,16 +8,17 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import type { LandingTelemetry } from '../contracts/landing';
+import type { LandingTelemetry, LandingAvailability } from '../contracts/landing';
 import type { SolarEngine } from '../engine/SolarEngine';
 
 interface LunarLandingHUDProps {
   engine: SolarEngine | null;
-  activeBodyId: string;
 }
 
-export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine, activeBodyId }) => {
+export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine }) => {
   const [telemetry, setTelemetry] = useState<LandingTelemetry | null>(null);
+  const [availability, setAvailability] = useState<LandingAvailability | null>(null);
+  const [prepStatus, setPrepStatus] = useState<ReturnType<SolarEngine['getLandingPreparationStatus']> | null>(null);
 
   useEffect(() => {
     if (!engine) return;
@@ -28,10 +29,20 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine, active
     return () => unsub();
   }, [engine]);
 
+  // P3b-A：入口由引擎权威可用性驱动（300ms 轮询）——不以"选中月球"冒充到达
+  useEffect(() => {
+    if (!engine) return;
+    const tick = () => {
+      setAvailability(engine.getLandingAvailability());
+      setPrepStatus(engine.getLandingPreparationStatus());
+    };
+    tick();
+    const id = window.setInterval(tick, 300);
+    return () => window.clearInterval(id);
+  }, [engine]);
+
   if (!engine) return null;
 
-  const targetId = engine.getCameraSnapshot()?.targetBodyId || activeBodyId;
-  const isMoonSelected = targetId === 'moon' || activeBodyId === 'moon';
   const state = telemetry?.state || 'ORBIT';
 
   // 格式化高度
@@ -44,8 +55,8 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine, active
 
   return (
     <>
-      {/* 1. 月球处于轨道模式时，显式提供着陆行动入口按钮 */}
-      {isMoonSelected && state === 'ORBIT' && (
+      {/* 1. P3b-A：入口按权威可用性分派——先到达，再降落 */}
+      {state === 'ORBIT' && availability?.action === 'land' && (
         <div
           style={{
             position: 'absolute',
@@ -98,6 +109,65 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine, active
               5m DTM 真实地形
             </span>
           </button>
+        </div>
+      )}
+
+      {/* 1b. 落区在背面：前往着陆区（球外绕行到达，不穿球不改落区） */}
+      {state === 'ORBIT' && availability?.action === 'travel-to-site' && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 84,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 35,
+            pointerEvents: 'auto',
+          }}
+        >
+          <button
+            data-testid="lunar-landing-travel-site-btn"
+            onClick={() => engine.travelToLandingSite()}
+            style={{
+              padding: '10px 20px',
+              borderRadius: 24,
+              border: '1px solid rgba(148, 163, 184, 0.5)',
+              background: 'rgba(15, 23, 42, 0.6)',
+              backdropFilter: 'blur(12px)',
+              color: '#e2e8f0',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}
+          >
+            <span style={{ fontSize: 16 }}>🧭</span>
+            <span>前往着陆区（月球背面）</span>
+          </button>
+        </div>
+      )}
+
+      {/* 1c. 到达但未就绪：显示有原因的不可执行状态 */}
+      {state === 'ORBIT' && availability?.action === 'wait' && (
+        <div
+          data-testid="lunar-landing-wait"
+          style={{
+            position: 'absolute',
+            bottom: 84,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 35,
+            pointerEvents: 'none',
+            padding: '8px 16px',
+            borderRadius: 20,
+            border: '1px solid rgba(148, 163, 184, 0.3)',
+            background: 'rgba(15, 23, 42, 0.6)',
+            color: '#94a3b8',
+            fontSize: 12,
+          }}
+        >
+          ⏳ {availability.detail ?? '准备中…'}
         </div>
       )}
 
@@ -251,6 +321,20 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine, active
 
           {/* 交互提示 */}
           <div style={{ fontSize: 10, color: '#94a3b8', marginBottom: 12, lineHeight: 1.4 }}>
+            {state === 'PREPARING' && (
+              <span>
+                📡 正在准备降落：{prepStatus?.phase === 'policy' && '切换物理观察比例…'}
+                {prepStatus?.phase === 'lighting' && '选择光照良好的模拟时刻…'}
+                {prepStatus?.phase === 'capture' && '捕获当前机位与视线…'}
+                {!prepStatus?.phase && '等待资源…'}
+                {prepStatus?.lightingAdjustedSimHours != null && (
+                  <span data-testid="landing-prep-lighting-notice">
+                    {' '}已调整模拟时刻至站点白昼（T+{Math.round(prepStatus.lightingAdjustedSimHours)}h）
+                  </span>
+                )}
+                <br />准备期间可自由环顾——任何操作都会从新机位重新准备。
+              </span>
+            )}
             {state === 'DESCENDING' && '💡 提示：按住鼠标拖拽画面可随时暂停位移进行悬停检查。'}
             {state === 'HOLD' && '⏸ 当前已进入悬停保持模式，位移已停驻，可自由拖拽环顾周围山谷。'}
             {state === 'SURFACE_LOOK' && '👀 位于陶拉斯—利特罗谷底 1.7m 人眼视高，可 360° 原地转头与仰望天空。'}

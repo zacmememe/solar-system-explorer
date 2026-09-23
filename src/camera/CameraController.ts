@@ -49,6 +49,8 @@ export class CameraController {
   // 地面原地环顾姿态 (SURFACE_LOOK 模式)
   private surfaceYawDeg: number = 225.0; // 默认朝向西南偏南 (正对月面看地球方向)
   private surfacePitchDeg: number = 12.0; // 默认轻微平视山谷地平线
+  /** P3b-A：完整四元数覆盖（下降导引 slerp 混合；用户视线操作即解除） */
+  private surfaceQuatOverride: [number, number, number, number] | null = null;
   /** 地面停驻近裁剪面采用的米制净空 (米)：1.7m 眼高下 0.1m，见 P1 规范 */
   public static readonly SURFACE_NEAR_METERS = 0.1;
   private latestSurfaceStationPose: SurfaceStationPose | null = null;
@@ -88,6 +90,15 @@ export class CameraController {
 
   // 命令令牌，防止异步与旧动画干扰
   private currentCommandId: number = 0;
+
+  // P3b-A：用户相机输入版本号——orbit/zoomInput/zoom（真实用户手势）递增；
+  // 引擎自身命令（flyTo/enterSurfaceLook 等）不递增。准备阶段据此判定"用户已输入，
+  // 旧自动启动许可失效"（Pro P3b 审查 §3.3/§8.1）。
+  private userInputRevision: number = 0;
+
+  public getUserInputRevision(): number {
+    return this.userInputRevision;
+  }
 
   private reduceMotion: boolean = false;
 
@@ -165,7 +176,7 @@ export class CameraController {
       case 'flyTo': {
         const dur = command.durationSec ?? (this.reduceMotion ? 0.15 : 2.5);
         this.lookTarget = command.lookTarget ?? { kind: 'center' };
-        this.initiateFlight(command.bodyId, dur, token, command.targetPos);
+        this.initiateFlight(command.bodyId, dur, token, command.targetPos, command.exact);
         break;
       }
 
@@ -181,11 +192,13 @@ export class CameraController {
 
       case 'orbit':
         // 用户主动操作，若正在飞行则立即打断
+        this.userInputRevision++;
         if (this.isTransitioning) {
           this.cancelFlight();
         }
         if (this.mode === 'SURFACE_LOOK') {
           // 地表第一人称视线环顾：水平拖拽转动 yaw (360°)，垂直拖拽调整 pitch (±85°)
+          this.surfaceQuatOverride = null; // 用户接管视线 → 解除导引四元数覆盖
           this.surfaceYawDeg = THREE.MathUtils.euclideanModulo(
             this.surfaceYawDeg - command.deltaTheta * (180 / Math.PI),
             360
@@ -205,6 +218,7 @@ export class CameraController {
         break;
 
       case 'zoomInput':
+        this.userInputRevision++;
         if (this.isTransitioning) {
           this.cancelFlight();
         }
@@ -216,6 +230,7 @@ export class CameraController {
         break;
 
       case 'zoom':
+        this.userInputRevision++;
         if (this.isTransitioning) {
           this.cancelFlight();
         }
@@ -241,6 +256,16 @@ export class CameraController {
         };
         this.targetBodyId = command.bodyId;
         this.selectedBodyId = command.bodyId;
+        // P3b-A：完整四元数优先（含滚转，下降导引 slerp 混合用）；
+        // 用户后续任何视线操作都会解除该覆盖，回到 yaw/pitch 模型。
+        this.surfaceQuatOverride = command.orientationQuat
+          ? [
+              command.orientationQuat[0],
+              command.orientationQuat[1],
+              command.orientationQuat[2],
+              command.orientationQuat[3],
+            ]
+          : null;
         if (command.initialYawDeg !== undefined) {
           this.surfaceYawDeg = command.initialYawDeg;
         }
@@ -254,6 +279,7 @@ export class CameraController {
 
       case 'setSurfaceLook': {
         if (this.mode === 'SURFACE_LOOK') {
+          this.surfaceQuatOverride = null;
           this.surfaceYawDeg = THREE.MathUtils.euclideanModulo(command.yawDeg, 360);
           this.surfacePitchDeg = Math.max(-85, Math.min(85, command.pitchDeg));
           this.lookTarget = { kind: 'center' };
@@ -264,6 +290,7 @@ export class CameraController {
 
       case 'lookAtSkyTarget': {
         if (this.mode === 'SURFACE_LOOK') {
+          this.surfaceQuatOverride = null;
           this.lookTarget = { kind: 'body', bodyId: command.targetBodyId };
           this.updateCameraTransform();
         }
@@ -342,7 +369,8 @@ export class CameraController {
     targetId: BodyId,
     durationSec: number,
     token: number,
-    targetPos?: [number, number, number]
+    targetPos?: [number, number, number],
+    exact?: boolean
   ): void {
     if (token !== this.currentCommandId) return;
 
@@ -385,6 +413,21 @@ export class CameraController {
 
     let targetTheta = this.spherical.theta + 0.25;
     let targetPhi = Math.PI / 2.22;
+
+    // P3b-A exact 模式：targetPos 为精确相机终点（世界系）——把终点换算为绕目标天体
+    // 的球坐标偏移（供"前往着陆区"等需要精确到达的导航；普通 flyTo 仍走向阳面构图）。
+    if (exact && targetPos) {
+      const offset = new THREE.Vector3(targetPos[0], targetPos[1], targetPos[2]).sub(this.targetPosition);
+      if (offset.lengthSq() > 1e-12) {
+        const sph = new THREE.Spherical().setFromVector3(offset);
+        this.transitionTargetSpherical.set(
+          Math.max(this.minDistance, sph.radius),
+          THREE.MathUtils.clamp(sph.phi, 0.01, Math.PI - 0.01),
+          sph.theta
+        );
+        return;
+      }
+    }
 
     // 太阳位于原点 (0, 0, 0)。
     // 行星指向太阳的矢量为 -P_target。
@@ -786,7 +829,15 @@ export class CameraController {
       this.camera.position.copy(eyeWorldPos);
 
       // 观察朝向判断
-      if (this.lookTarget.kind === 'body' && this.latestGetBodyPos) {
+      if (this.surfaceQuatOverride) {
+        // P3b-A：导引四元数直接采用（含滚转，保持任意起始姿态；用户视线操作即解除）
+        this.camera.quaternion.set(
+          this.surfaceQuatOverride[0],
+          this.surfaceQuatOverride[1],
+          this.surfaceQuatOverride[2],
+          this.surfaceQuatOverride[3]
+        );
+      } else if (this.lookTarget.kind === 'body' && this.latestGetBodyPos) {
         const skyTargetPos = this.latestGetBodyPos(this.lookTarget.bodyId).pos;
         this.camera.up.copy(uW);
         this.camera.lookAt(skyTargetPos);

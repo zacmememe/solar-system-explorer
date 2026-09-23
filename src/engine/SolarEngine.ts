@@ -67,8 +67,8 @@ import {
 import { soundEffects } from '../audio/SoundEffects';
 import { VehicleLoader } from '../vehicles/VehicleLoader';
 import { LandingController } from '../surface/LandingController';
-import { LANDING_SITES, type LandingTelemetry } from '../contracts/landing';
-import { latLonDirection } from '../world-support/descentCurve';
+import { LANDING_SITES, type LandingTelemetry, type LandingAvailability } from '../contracts/landing';
+import { latLonDirection, slerpShortestQuat } from '../world-support/descentCurve';
 import { TerrainHeightProvider } from '../surface/TerrainHeightProvider';
 import { RasterTerrainSource } from '../surface/RasterTerrainSource';
 import productionAssetsData from '../../sources/production-assets.json';
@@ -199,6 +199,19 @@ export class SolarEngine {
   private prevIsTransitioning: boolean = false;
   /** 着陆状态机上一帧状态 (识别 ASCENDING->ORBIT 返轨边沿，避免抢占外部地表观察) */
   private prevLandingState: string = 'ORBIT';
+
+  // P3b-A：降落任务与准备流水线（Pro P3b 审查 §3.3/§7——无定时器，帧驱动；
+  // 异步/延迟动作一律绑定 missionId，用户输入或世界变化使旧许可失效）
+  private landingMissionId = 0;
+  private landingPrep: {
+    missionId: number;
+    phase: 'policy' | 'lighting' | 'capture';
+    userInputRevisionAtStart: number;
+  } | null = null;
+  /** 最近一次准备阶段为光照做出的模拟时刻调整（HUD 如实提示；null=未调整） */
+  private lastLandingLightingAdjustHours: number | null = null;
+  /** P3b-A：同帧捕获的起始四元数（含滚转；下降导引 slerp 的 q0） */
+  private landingStartQuat: THREE.Quaternion | null = null;
 
   // 批次 R5：着陆控制器与月表 3D 浮雕网格
   private landingController: LandingController = new LandingController('taurus-littrow');
@@ -1309,6 +1322,16 @@ export class SolarEngine {
     // P2：用户改选其它天体时收回过期的着陆准备（不自动重发）
     if (cmd.type === 'select' && cmd.bodyId !== 'moon') {
       this.landingController.cancelPreparation();
+      this.landingPrep = null;
+    }
+    // P3b-A：准备期内的任何相机命令（用户导航/改选）使旧自动启动许可失效——
+    // 重置准备流水线从当前状态重新走（Pro §8.1；若世界已不可用，step 会收回）
+    if (this.landingPrep && this.landingController.getState() === 'PREPARING') {
+      this.landingPrep = {
+        missionId: this.landingPrep.missionId,
+        phase: 'policy',
+        userInputRevisionAtStart: this.cameraController.getUserInputRevision(),
+      };
     }
     if (cmd.type === 'flyTo' && !cmd.targetPos) {
       const node = this.bodyNodes.get(cmd.bodyId);
@@ -1364,40 +1387,267 @@ export class SolarEngine {
   }
 
   /**
-   * 启动月球 Taurus–Littrow 陶拉斯—利特罗山谷真实降落序列
-   * P2：下降起点取当前机位（body-fixed 地面投射 + 当前净空），不瞬移到固定点。
+   * P3b-A：降落入口权威可用性（HUD 与本 API 共用）。先到达，再降落——
+   * 不以"选中月球 + 着陆状态机空闲"冒充到达（Pro P3b 审查 §3.1/§4.1）。
    */
-  public startLunarLanding(): void {
-    // 1. 确保聚焦月球并切入物理比例模式
+  public getLandingAvailability(): LandingAvailability {
+    const ctlState = this.landingController.getState();
+    if (ctlState !== 'ORBIT') {
+      return { action: 'none', reason: 'mission-active' };
+    }
+    const camSnap = this.cameraController.getSnapshot();
+    if (camSnap.isTransitioning) {
+      return { action: 'none', reason: 'travel-in-progress' };
+    }
+    if (camSnap.mode === 'SURFACE_LOOK') {
+      return { action: 'none', reason: 'mission-active' };
+    }
+    if (camSnap.targetBodyId !== 'moon' && camSnap.selectedBodyId !== 'moon') {
+      return { action: 'none', reason: 'not-at-body' };
+    }
+    // 到达判定：相机与月心的实际渲染距离（整球取景属可访问——不设公里级门槛
+    // 使正常取景失效）。×10 而非几何严格的 ×6：现存 displayRadius(0.368) 与
+    // 球体几何/取景半径(0.687) 口径不一致（预存在问题，已登记待专项），
+    // 正常 flyTo 取景距离(~2.9)在严格阈值下会被误判为未到达。
+    const moonPose = this.getBodyWorldPose('moon');
+    const dist = this.camera.position.distanceTo(moonPose.pos);
+    if (dist > moonPose.surfaceRadius * 10) {
+      return { action: 'none', reason: 'not-at-body' };
+    }
+    // 比例框架：仅在有进行中的过渡时等待（空闲时为 NAV 是正常状态——
+    // 切换到 PHYSICAL 由准备流水线负责，不作为入口前置条件）
+    if (this.bodyPoseProvider.getTransitionProgress() > 0 && this.bodyPoseProvider.getTransitionProgress() < 1) {
+      return { action: 'wait', reason: 'frame-transition', detail: '比例框架过渡中…' };
+    }
+    // 资产就绪（DTM fail-closed：未就绪等待并展示原因，不伪造地形）
+    const raster = RasterTerrainSource.getInstance();
+    if (raster.state === 'failed') {
+      return { action: 'wait', reason: 'assets-error', detail: `DTM 装载失败：${raster.error ?? '未知原因'}` };
+    }
+    if (!raster.isReady) {
+      return { action: 'wait', reason: 'assets-loading', detail: '正在装载真实 DTM 地形…' };
+    }
+    // 落区可见性：相机与站点是否同半球（背面 → 前往着陆区，沿球外绕行，不穿球不改起点）
+    const rel = this.camera.position.clone().sub(moonPose.pos).applyQuaternion(moonPose.quaternion.clone().invert()).normalize();
+    const site = LANDING_SITES['taurus-littrow'];
+    const siteDir = latLonDirection(site.centerLat, site.centerLon);
+    const dot = rel.x * siteDir[0] + rel.y * siteDir[1] + rel.z * siteDir[2];
+    if (dot < 0) {
+      return { action: 'travel-to-site', reason: 'far-side-site', detail: '着陆区在月球背面，需先前往着陆区上空' };
+    }
+    return { action: 'land', reason: 'ready' };
+  }
+
+  /** P3b-A：前往着陆区上空（球外绕行到达站点同侧；不修改落区与起点） */
+  public travelToLandingSite(): void {
+    const moonPose = this.getBodyWorldPose('moon');
+    const site = LANDING_SITES['taurus-littrow'];
+    const siteDir = new THREE.Vector3(...latLonDirection(site.centerLat, site.centerLon));
+    const siteWorld = siteDir.clone().applyQuaternion(moonPose.quaternion).normalize();
+    const dist = this.camera.position.distanceTo(moonPose.pos);
+    const target = moonPose.pos.clone().addScaledVector(siteWorld, dist);
+    this.cameraController.executeCommand({
+      type: 'flyTo',
+      bodyId: 'moon',
+      durationSec: 2.8,
+      targetPos: [target.x, target.y, target.z],
+      exact: true,
+    });
+  }
+
+  /** P3b-A：准备流水线状态（HUD 提示光照调整等信息；startQuat 供验收核对首帧姿态） */
+  public getLandingPreparationStatus(): {
+    active: boolean;
+    phase: 'policy' | 'lighting' | 'capture' | null;
+    lightingAdjustedSimHours: number | null;
+    startQuat: [number, number, number, number] | null;
+  } {
+    return {
+      active: !!this.landingPrep,
+      phase: this.landingPrep?.phase ?? null,
+      lightingAdjustedSimHours: this.lastLandingLightingAdjustHours,
+      startQuat: this.landingStartQuat
+        ? [this.landingStartQuat.x, this.landingStartQuat.y, this.landingStartQuat.z, this.landingStartQuat.w]
+        : null,
+    };
+  }
+
+  /**
+   * 启动月球 Taurus–Littrow 真实降落（P3b-A 重构）。
+   * 可用性由 getLandingAvailability() 权威判定；不可用直接拒绝且不改变任何世界状态
+   * （相机/时间/比例策略）。可用则进入准备流水线（策略过渡 → 光照选时 → 同帧捕获），
+   * 完成后由控制器以完整起点（含 q0 提取的 yaw/pitch）开始下降。
+   */
+  public startLunarLanding(): boolean {
+    const avail = this.getLandingAvailability();
+    if (avail.action !== 'land') {
+      return false; // 入口拒绝：世界状态保持不变（UI 也不应显示可执行入口）
+    }
+    const missionId = ++this.landingMissionId;
+    // 旧流程的 select 命令在此触发相机目标切换→updateEphemerisPoses 物理分支以地月系
+    // 线性化参考（月面 mesh 按真实比例 0.687 摆放）。P3b-A 重写时一度删除该命令，
+    // 导致物理模式下月面仍按 NAV 半径 0.368 摆放（实测回归）——保留。
+    // 注意顺序：select 必须在 landingPrep 设置之前（executeCameraCommand 的准备期
+    // 失效钩子只在 prep 存在时触发）。
     this.cameraController.executeCommand({ type: 'select', bodyId: 'moon' });
     if (this.callbacks.onSelectBody) {
       this.callbacks.onSelectBody('moon');
     }
-    this.setPresentationPolicy('PHYSICAL_OBSERVATION');
+    this.landingPrep = {
+      missionId,
+      phase: 'policy',
+      userInputRevisionAtStart: this.cameraController.getUserInputRevision(),
+    };
+    this.lastLandingLightingAdjustHours = null;
     soundEffects.playWarp();
+    this.setPresentationPolicy('PHYSICAL_OBSERVATION');
+    this.landingController.startDescent();
+    return true;
+  }
 
-    // 2. 当前机位 → 月面 body-fixed 地面投射（同帧姿态逆变换）
-    const startPose = this.computeMoonGroundPose();
-    const altM = Math.max(2, startPose.clearanceM);
+  /**
+   * P3b-A：准备流水线（animate 帧驱动，无定时器）。任一步骤前检查用户输入与世界状态：
+   * 用户在准备期操作相机 → 旧许可失效，从当前状态重新准备（保持缓存，不回拉机位）；
+   * 世界变化导致不再可用 → 收回准备。全部就绪后同帧捕获完整起点并开始下降。
+   */
+  private stepLandingPreparation(): void {
+    const prep = this.landingPrep;
+    if (!prep) {
+      // 无引擎准备上下文（如外部直接调用控制器）时收回，避免卡死在 PREPARING
+      this.landingController.cancelPreparation();
+      return;
+    }
+    // 用户输入 → 许可失效，重新准备（Pro §4.1/§8.1：重新从当前机位准备，不回拉）
+    if (this.cameraController.getUserInputRevision() !== prep.userInputRevisionAtStart) {
+      this.landingPrep = {
+        missionId: prep.missionId,
+        phase: 'policy',
+        userInputRevisionAtStart: this.cameraController.getUserInputRevision(),
+      };
+      return;
+    }
+    // 世界变化导致不可用（选了别的天体/开始导航飞行）→ 收回。
+    // 注意 1：不能直接调 getLandingAvailability()——PREPARING 本身会被它判为 mission-active
+    // 形成自灭回环；此处只查真实的失效条件。
+    // 注意 2：不做距离守卫——策略过渡期月球场面位置/尺度瞬变、相机跟随滞后，
+    // 距离瞬时超限会被误杀（实测）；用户飞离必然伴随 isTransitioning，已被覆盖。
+    const camSnap = this.cameraController.getSnapshot();
+    if (camSnap.isTransitioning) {
+      this.landingPrep = null;
+      this.landingController.cancelPreparation();
+      return;
+    }
+    if (camSnap.targetBodyId !== 'moon' && camSnap.selectedBodyId !== 'moon') {
+      this.landingPrep = null;
+      this.landingController.cancelPreparation();
+      return;
+    }
 
-    // P3-T4：光照时刻——站点处于阴影时，扫描模拟时刻选太阳高度角 12°–45°（目标 28°）
-    // 的最近未来时刻，避免触地落在月夜（用户 2026-09-23 已批准此取舍）。
-    // 延迟到 PHYSICAL_OBSERVATION 切换过渡（2s）完成后执行：过渡期间 getBodyWorldPose
-    // 返回 NAV/混合几何，扫描口径与最终渲染不一致会选错时刻。
-    const controller = this.landingController;
-    window.setTimeout(() => {
-      const st = controller.getState();
-      if (st === 'PREPARING' || st === 'DESCENDING') {
-        this.ensureLandingLighting();
+    if (prep.phase === 'policy') {
+      if (this.bodyPoseProvider.getPolicy() !== 'PHYSICAL_OBSERVATION') {
+        this.setPresentationPolicy('PHYSICAL_OBSERVATION');
+        return;
       }
-    }, 2200);
+      if (this.bodyPoseProvider.getTransitionProgress() < 1) return; // 等待过渡完成（帧驱动）
+      prep.phase = 'lighting';
+      return;
+    }
+    if (prep.phase === 'lighting') {
+      // 光照选时前置到准备阶段（用户已批准的推荐白昼取舍）；此后下降过程不再改时间。
+      const before = this.simTimeHours;
+      this.ensureLandingLighting();
+      if (Math.abs(this.simTimeHours - before) > 1e-9) {
+        this.lastLandingLightingAdjustHours = this.simTimeHours;
+        this.emitSnapshot();
+      }
+      prep.phase = 'capture';
+      return;
+    }
+    if (prep.phase === 'capture') {
+      // 资源门槛（DTM ready + 站点 measured-dem）——就绪前不捕获不开始
+      const site = LANDING_SITES['taurus-littrow'];
+      const hp = TerrainHeightProvider.getInstance();
+      if (!hp.isRasterReady || hp.getHeightSample('moon', site.centerLat, site.centerLon).fidelity !== 'measured-dem') {
+        return;
+      }
+      // 同帧完整起点：位置（地面投射+净空）+ 姿态（q0 四元数 + 起点 yaw/pitch 提取）
+      const groundPose = this.computeMoonGroundPose();
+      const orientation = this.extractMoonSurfaceOrientation(groundPose.latDeg, groundPose.lonDeg);
+      this.landingStartQuat = this.camera.quaternion.clone();
+      try {
+        this.landingPrep = null;
+        this.landingController.completePreparation(
+          () => this.timeScale,
+          (scale) => this.setTimeScale(scale),
+          {
+            latDeg: groundPose.latDeg,
+            lonDeg: groundPose.lonDeg,
+            clearanceM: Math.max(2, groundPose.clearanceM),
+            yaw0Deg: orientation.yawDeg,
+            pitch0Deg: orientation.pitchDeg,
+          }
+        );
+      } catch (err) {
+        // 对跖等路径能力上限：拒绝启动（Pro §3.2——不修改起点规避）
+        console.error('[SolarEngine] 下降起点路径不可解，已取消准备：', err);
+        this.landingController.cancelPreparation();
+      }
+    }
+  }
 
-    // 3. 启动降落状态机（PREPARING 资源门槛由控制器处理）
-    this.landingController.startDescent(
-      () => this.timeScale,
-      (scale) => this.setTimeScale(scale),
-      { latDeg: startPose.latDeg, lonDeg: startPose.lonDeg, clearanceM: altM }
-    );
+  /**
+   * P3b-A：按站点局部基 (u/e/n) 与 yaw/pitch 构造 SURFACE_LOOK 目标四元数
+   * （与 CameraController.updateCameraTransform 的 yaw/pitch 重建公式一致）。
+   */
+  private buildSurfaceLookQuaternion(
+    latDeg: number,
+    lonDeg: number,
+    yawDeg: number,
+    pitchDeg: number
+  ): THREE.Quaternion {
+    const moonPose = this.getBodyWorldPose('moon');
+    const latRad = THREE.MathUtils.degToRad(latDeg);
+    const lonRad = THREE.MathUtils.degToRad(lonDeg);
+    const cosLat = Math.cos(latRad);
+    const u = new THREE.Vector3(cosLat * Math.cos(lonRad), Math.sin(latRad), -cosLat * Math.sin(lonRad)).normalize();
+    const e = new THREE.Vector3(-Math.sin(lonRad), 0, -Math.cos(lonRad)).normalize();
+    const n = new THREE.Vector3().crossVectors(u, e).normalize();
+    const uW = u.applyQuaternion(moonPose.quaternion).normalize();
+    const eW = e.applyQuaternion(moonPose.quaternion).normalize();
+    const nW = n.applyQuaternion(moonPose.quaternion).normalize();
+    const yawRad = THREE.MathUtils.degToRad(yawDeg);
+    const pitchRad = THREE.MathUtils.degToRad(pitchDeg);
+    const forward = new THREE.Vector3().addScaledVector(nW, Math.cos(yawRad)).addScaledVector(eW, Math.sin(yawRad)).normalize();
+    const lookDir = new THREE.Vector3().addScaledVector(forward, Math.cos(pitchRad)).addScaledVector(uW, Math.sin(pitchRad)).normalize();
+    const m = new THREE.Matrix4().lookAt(new THREE.Vector3(0, 0, 0), lookDir, uW);
+    return new THREE.Quaternion().setFromRotationMatrix(m);
+  }
+
+  /**
+   * P3b-A：从当前相机实际四元数提取起点局部基 (u/e/n) 的 yaw/pitch。
+   * 与 CameraController.updateCameraTransform 的表面姿态公式严格互逆：
+   * forward = n·cos(yaw) + e·sin(yaw)；lookDir = forward·cos(pitch) + u·sin(pitch)
+   * → yaw = atan2(f·e, f·n)，pitch = asin(f·u)。
+   */
+  private extractMoonSurfaceOrientation(latDeg: number, lonDeg: number): { yawDeg: number; pitchDeg: number } {
+    const moonPose = this.getBodyWorldPose('moon');
+    const latRad = THREE.MathUtils.degToRad(latDeg);
+    const lonRad = THREE.MathUtils.degToRad(lonDeg);
+    const cosLat = Math.cos(latRad);
+    const u = new THREE.Vector3(cosLat * Math.cos(lonRad), Math.sin(latRad), -cosLat * Math.sin(lonRad)).normalize();
+    const e = new THREE.Vector3(-Math.sin(lonRad), 0, -Math.cos(lonRad)).normalize();
+    const n = new THREE.Vector3().crossVectors(u, e).normalize();
+    const uW = u.applyQuaternion(moonPose.quaternion).normalize();
+    const eW = e.applyQuaternion(moonPose.quaternion).normalize();
+    const nW = n.applyQuaternion(moonPose.quaternion).normalize();
+    const f = new THREE.Vector3();
+    this.camera.getWorldDirection(f);
+    const pitchDeg = THREE.MathUtils.radToDeg(Math.asin(Math.max(-1, Math.min(1, f.dot(uW)))));
+    const yawDeg = THREE.MathUtils.radToDeg(Math.atan2(f.dot(eW), f.dot(nW)));
+    return {
+      yawDeg: ((yawDeg % 360) + 360) % 360,
+      pitchDeg: Math.max(-85, Math.min(85, pitchDeg)),
+    };
   }
 
   /**
@@ -1868,8 +2118,23 @@ export class SolarEngine {
     const landingState = this.landingController.getState();
     if (landingState === 'PREPARING' || landingState === 'DESCENDING' || landingState === 'ASCENDING') {
       this.landingController.update(deltaSec, (s) => this.setTimeScale(s));
-      if (landingState !== 'PREPARING') {
+      if (landingState === 'PREPARING') {
+        // P3b-A：准备流水线（策略过渡 → 光照选时 → 同帧捕获），帧驱动无定时器
+        this.stepLandingPreparation();
+      } else {
         const traj = this.landingController.evaluateTrajectory();
+        // P3b-A：完整姿态导引——q0(捕获帧) → 导引目标按控制器混合权重 slerp（含滚转）。
+        // 轨道相机 up=世界Y、yaw/pitch 重建用局部 up，滚转不同——yaw/pitch 模型无法
+        // 表达任意起始姿态，必须走四元数（Pro §5.3）。
+        let orientationQuat: [number, number, number, number] | undefined;
+        if (traj.guideBlend != null && traj.guideYawDeg != null && traj.guidePitchDeg != null && this.landingStartQuat) {
+          const qTarget = this.buildSurfaceLookQuaternion(traj.lat, traj.lon, traj.guideYawDeg, traj.guidePitchDeg);
+          orientationQuat = slerpShortestQuat(
+            [this.landingStartQuat.x, this.landingStartQuat.y, this.landingStartQuat.z, this.landingStartQuat.w],
+            [qTarget.x, qTarget.y, qTarget.z, qTarget.w],
+            traj.guideBlend
+          );
+        }
         // P2：用户接管后 cameraYaw/Pitch 为 null —— 只推进位移，不覆盖视线
         this.cameraController.executeCommand({
           type: 'enterSurfaceLook',
@@ -1879,6 +2144,7 @@ export class SolarEngine {
           eyeHeightM: traj.altitudeAGLM,
           ...(traj.cameraYawDeg != null ? { initialYawDeg: traj.cameraYawDeg } : {}),
           ...(traj.cameraPitchDeg != null ? { initialPitchDeg: traj.cameraPitchDeg } : {}),
+          ...(orientationQuat ? { orientationQuat } : {}),
         });
       }
     } else if (
@@ -1893,6 +2159,14 @@ export class SolarEngine {
       });
     }
     this.prevLandingState = landingState;
+    if (landingState !== 'PREPARING' && this.landingPrep) {
+      // 准备被取消（HUD 取消按钮等）或已开始下降：清理引擎侧准备上下文，
+      // 旧 missionId 的任何残留状态不再生效（Pro §8.6）
+      this.landingPrep = null;
+    }
+    if (landingState === 'ORBIT') {
+      this.landingStartQuat = null; // 任务结束/取消：起始四元数失效
+    }
 
     // 5. 更新单一相机控制器
     this.cameraController.update(deltaSec, (id: BodyId) => this.getBodyWorldPose(id));

@@ -106,11 +106,16 @@ describe('月球落地闭环测试 (真实 DTM 栅格后端)', () => {
         lastTelemetry = t;
       });
 
-      // 1. 启动（DTM 已注入 → 直接 DESCENDING）
-      controller.startDescent(undefined, undefined, {
+      // 1. 启动（P3b-A：startDescent 进 PREPARING，由引擎准备流水线 completePreparation
+      //    以同帧捕获的完整起点开始下降——控制器不再自行 auto-begin）
+      controller.startDescent();
+      expect(controller.getState()).toBe('PREPARING');
+      controller.completePreparation(undefined, undefined, {
         latDeg: 20.1,
         lonDeg: 30.5,
         clearanceM: 50000,
+        yaw0Deg: 200,
+        pitch0Deg: -5,
       });
       expect(controller.getState()).toBe('DESCENDING');
       expect(lastTelemetry.altitudeAGLM).toBeGreaterThan(10000);
@@ -201,6 +206,106 @@ describe('月球落地闭环测试 (真实 DTM 栅格后端)', () => {
         targetBodyId: 'earth',
       });
       expect(controller.getSnapshot().lookTarget?.kind).toBe('body');
+    });
+  });
+
+  describe('P3b-A：入口语义、完整初态与取消', () => {
+    it('P3b-A-1: 首帧姿态=捕获的 q0 (yaw0/pitch0)，随后连续混合到导引目标', () => {
+      const controller = new LandingController('taurus-littrow');
+      controller.startDescent();
+      expect(controller.getState()).toBe('PREPARING');
+      controller.completePreparation(undefined, undefined, {
+        latDeg: 20.1,
+        lonDeg: 30.5,
+        clearanceM: 50000,
+        yaw0Deg: 95,
+        pitch0Deg: -8,
+      });
+      expect(controller.getState()).toBe('DESCENDING');
+
+      // 首帧（t=0）：严格等于捕获姿态（无 SNAP）
+      const first = controller.evaluateTrajectory();
+      expect(first.cameraYawDeg).toBeCloseTo(95, 6);
+      expect(first.cameraPitchDeg).toBeCloseTo(-8, 6);
+
+      // 早期帧：从起点向导引目标连续变化（旧导引起点为 -45° 俯瞰，先向下后上抬；
+      // P3b-B 将替换为地平线投影导引）——不跳变（|Δ| < 5°/s·t）
+      controller.update(2.0);
+      const early = controller.evaluateTrajectory();
+      expect(early.cameraPitchDeg!).toBeLessThan(-8 + 1e-6);
+      expect(early.cameraPitchDeg!).toBeGreaterThan(-8 - 4.0);
+
+      // 混合完成（12s 平滑混合 + 全局进度导引）：收敛到导引终点邻域
+      controller.update(10.0);
+      controller.update(10.0);
+      controller.update(10.0);
+      controller.update(10.0);
+      controller.update(10.0);
+      const late = controller.evaluateTrajectory();
+      // 导引 pitch 从 -45 → 12（按全局进度^0.7），后期应显著高于起点 -8
+      expect(late.cameraPitchDeg!).toBeGreaterThan(-8 + 10);
+    });
+
+    it('P3b-A-2: 偏航混合走最短弧（yaw0=300, 导引起点 180 → 差 -120° 不绕远）', () => {
+      const controller = new LandingController('taurus-littrow');
+      controller.startDescent();
+      controller.completePreparation(undefined, undefined, {
+        latDeg: 20.1,
+        lonDeg: 30.5,
+        clearanceM: 50000,
+        yaw0Deg: 300,
+        pitch0Deg: 0,
+      });
+      const first = controller.evaluateTrajectory();
+      expect(first.cameraYawDeg).toBeCloseTo(300, 6);
+      controller.update(1.0);
+      const t1 = controller.evaluateTrajectory();
+      // 从 300 向 180 方向走最短弧（递减），1s 内变化小于 15°
+      const delta = ((t1.cameraYawDeg! - 300 + 540) % 360) - 180;
+      expect(delta).toBeLessThan(0);
+      expect(Math.abs(delta)).toBeLessThan(15);
+    });
+
+    it('P3b-A-3: 对跖起点拒绝启动（不再 +1.5° 规避），普通路径不受影响', () => {
+      const controller = new LandingController('taurus-littrow'); // 站点 (20.35, 30.78)
+      controller.startDescent();
+      expect(() =>
+        controller.completePreparation(undefined, undefined, {
+          latDeg: -20.35,
+          lonDeg: 30.78 - 180,
+          clearanceM: 50000,
+        })
+      ).toThrow(/antipodal/);
+      expect(controller.getState()).toBe('PREPARING'); // 拒绝不破坏状态机，可收回
+      controller.cancelPreparation();
+      expect(controller.getState()).toBe('ORBIT');
+    });
+
+    it('P3b-A-4: 无 400km 起点截断——远处起点首帧 clearance=真实值（不瞬移）', () => {
+      const controller = new LandingController('taurus-littrow');
+      controller.startDescent();
+      controller.completePreparation(undefined, undefined, {
+        latDeg: 20.1,
+        lonDeg: 30.5,
+        clearanceM: 2600000, // ~2600km（超过旧 400km clamp）
+      });
+      const first = controller.evaluateTrajectory();
+      expect(first.altitudeAGLM).toBeCloseTo(2600000, 0);
+      // 接近段时长按距离延长（8s × log10(2600000/50000)+1 = 8×~2.7 ≈ 21.4s）
+      controller.update(8.0);
+      expect(controller.getState()).toBe('DESCENDING'); // 仍在接近段
+      expect(controller.evaluateTrajectory().altitudeAGLM).toBeGreaterThan(50000);
+    });
+
+    it('P3b-A-5: PREPARING 不因资源就绪自行放行（引擎流水线驱动）', async () => {
+      const controller = new LandingController('taurus-littrow');
+      controller.startDescent();
+      expect(controller.getState()).toBe('PREPARING');
+      // 即使 DTM 已注入就绪，控制器 update 不 auto-begin
+      controller.update(5.0);
+      expect(controller.getState()).toBe('PREPARING');
+      controller.cancelPreparation();
+      expect(controller.getState()).toBe('ORBIT');
     });
   });
 });

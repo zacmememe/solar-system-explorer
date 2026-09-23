@@ -40,6 +40,37 @@ export function smootherstepDerivative(t: number): number {
   return t <= 0 || t >= 1 ? 0 : 30 * t * t * (1 - t) * (1 - t);
 }
 
+/** P3b-A：四元数最短弧 slerp（Pro 参考 slerpShortest 的等价实现，纯函数，[x,y,z,w]） */
+export function slerpShortestQuat(
+  a: [number, number, number, number],
+  b: [number, number, number, number],
+  t: number
+): [number, number, number, number] {
+  const la = Math.hypot(a[0], a[1], a[2], a[3]);
+  const lb = Math.hypot(b[0], b[1], b[2], b[3]);
+  const A: [number, number, number, number] = [a[0] / la, a[1] / la, a[2] / la, a[3] / la];
+  let B: [number, number, number, number] = [b[0] / lb, b[1] / lb, b[2] / lb, b[3] / lb];
+  let d = A[0] * B[0] + A[1] * B[1] + A[2] * B[2] + A[3] * B[3];
+  if (d < 0) {
+    B = [-B[0], -B[1], -B[2], -B[3]];
+    d = -d;
+  }
+  const tt = Math.max(0, Math.min(1, t));
+  if (d > 0.9995) {
+    return [
+      A[0] + (B[0] - A[0]) * tt,
+      A[1] + (B[1] - A[1]) * tt,
+      A[2] + (B[2] - A[2]) * tt,
+      A[3] + (B[3] - A[3]) * tt,
+    ];
+  }
+  const angle = Math.acos(Math.min(1, Math.max(-1, d)));
+  const s = Math.sin(angle);
+  const wa = Math.sin((1 - tt) * angle) / s;
+  const wb = Math.sin(tt * angle) / s;
+  return [A[0] * wa + B[0] * wb, A[1] * wa + B[1] * wb, A[2] * wa + B[2] * wb, A[3] * wa + B[3] * wb];
+}
+
 type V3 = readonly [number, number, number];
 const dot = (a: V3, b: V3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const unit = (v: V3): V3 => {
