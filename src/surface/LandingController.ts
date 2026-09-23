@@ -362,15 +362,22 @@ export class LandingController {
 
     const s = sampleDescent(leg, this.elapsedSec);
     const elevM = this.heightProvider.getHeightMeters('moon', s.latDeg, s.lonDeg);
+    // P3-T1：导引朝向按"全部腿合并的全局进度"参数化（接近段+主段共用一条曲线），
+    // 消除段边界的俯仰/偏航硬切（此前段内 progress 各自从 0→1，边界瞬间跳 57°+45°）。
+    // 位置曲线 smootherstep 两端零速导数，段边界本就 C1 连续，无需改动。
+    const totalDur = this.legs.reduce((acc, l) => acc + l.durationSec, 0);
+    let prefixDur = 0;
+    for (let i = 0; i < this.legIndex; i++) prefixDur += this.legs[i].durationSec;
+    const globalT = totalDur > 0 ? Math.min(1, (prefixDur + s.progress * leg.durationSec) / totalDur) : 1;
     // 导引朝向：高空俯瞰 → 接地前抬头看地平线。仅用户未接管时生效。
-    const guideT = Math.pow(s.progress, 0.7);
+    const guideT = Math.pow(globalT, 0.7);
     return {
       lat: s.latDeg,
       lon: s.lonDeg,
       altitudeAGLM: s.clearanceM,
       altitudeMSLM: elevM + s.clearanceM,
       cameraPitchDeg: this.userInterrupted ? null : -45 + (this.surfacePitchDeg + 45) * guideT,
-      cameraYawDeg: this.userInterrupted ? null : 180 + (this.surfaceYawDeg - 180) * s.progress,
+      cameraYawDeg: this.userInterrupted ? null : 180 + (this.surfaceYawDeg - 180) * globalT,
       commandedClearanceRateMps: s.commandedClearanceRateMps,
       commandedTangentialSpeedMps: s.commandedTangentialSpeedMps,
     };

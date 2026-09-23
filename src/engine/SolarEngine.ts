@@ -67,7 +67,8 @@ import {
 import { soundEffects } from '../audio/SoundEffects';
 import { VehicleLoader } from '../vehicles/VehicleLoader';
 import { LandingController } from '../surface/LandingController';
-import type { LandingTelemetry } from '../contracts/landing';
+import { LANDING_SITES, type LandingTelemetry } from '../contracts/landing';
+import { latLonDirection } from '../world-support/descentCurve';
 import { TerrainHeightProvider } from '../surface/TerrainHeightProvider';
 import { RasterTerrainSource } from '../surface/RasterTerrainSource';
 import productionAssetsData from '../../sources/production-assets.json';
@@ -738,6 +739,32 @@ export class SolarEngine {
             valleyMesh.geometry.dispose();
             valleyMesh.geometry = geo;
             valleyMesh.visible = true;
+
+            // P3-T2：球面挖孔 + 裙边。DTM 高程为负（谷底在基准球之下），旧 32×24 粗球面
+            // 靠面片缝隙"碰巧"露出谷地；现在按设计挖孔，裙边内缘接窗口边缘高程、
+            // 外缘落在球面格线上（共顶点无缝），用全球纹理着色抹平方块边界。
+            const holed = heightProvider.buildHoledMoonSphereGeometry(satRadius);
+            if (holed) {
+              satMesh.geometry.dispose();
+              satMesh.geometry = holed.geometry;
+              const collarGeo = heightProvider.buildCollarGeometry(satRadius, holed.holeBounds);
+              if (collarGeo) {
+                const collarMat = new THREE.MeshStandardMaterial({
+                  color: 0xffffff,
+                  roughness: 0.95,
+                  metalness: 0.05,
+                });
+                new THREE.TextureLoader().load('/assets/textures/moon/lroc_color_2k.jpg', (tex) => {
+                  tex.colorSpace = THREE.SRGBColorSpace;
+                  collarMat.map = tex;
+                  collarMat.needsUpdate = true;
+                });
+                const collarMesh = new THREE.Mesh(collarGeo, collarMat);
+                collarMesh.name = 'taurus-littrow-collar';
+                collarMesh.receiveShadow = true;
+                satMesh.add(collarMesh);
+              }
+            }
           })
           .catch((err: unknown) => {
             console.error('[SolarEngine] DTM 装载失败，真实地表网格保持隐藏:', err);
@@ -1353,12 +1380,64 @@ export class SolarEngine {
     const startPose = this.computeMoonGroundPose();
     const altM = Math.max(2, startPose.clearanceM);
 
+    // P3-T4：光照时刻——站点处于阴影时，扫描模拟时刻选太阳高度角 12°–45°（目标 28°）
+    // 的最近未来时刻，避免触地落在月夜（用户 2026-09-23 已批准此取舍）。
+    // 延迟到 PHYSICAL_OBSERVATION 切换过渡（2s）完成后执行：过渡期间 getBodyWorldPose
+    // 返回 NAV/混合几何，扫描口径与最终渲染不一致会选错时刻。
+    const controller = this.landingController;
+    window.setTimeout(() => {
+      const st = controller.getState();
+      if (st === 'PREPARING' || st === 'DESCENDING') {
+        this.ensureLandingLighting();
+      }
+    }, 2200);
+
     // 3. 启动降落状态机（PREPARING 资源门槛由控制器处理）
     this.landingController.startDescent(
       () => this.timeScale,
       (scale) => this.setTimeScale(scale),
       { latDeg: startPose.latDeg, lonDeg: startPose.lonDeg, clearanceM: altM }
     );
+  }
+
+  /**
+   * P3-T4：确保下降时刻站点有光照。仰角必须与渲染同源——直接读 getBodyWorldPose
+   * （网格世界四元数 + 渲染太阳位置）：此前用物理系 API 选时与渲染系不一致，
+   * 选出的"白昼"实测是月夜（168.08h 渲染仰角 −17.2°）。扫描采用临时推进
+   * simTimeHours + updateEphemerisPoses(0) 的实测法（focusEarthRegion 同款），
+   * 结束时一次性落到选定时刻。当前已在 [12°,45°] 则不调整。
+   */
+  private ensureLandingLighting(): void {
+    const site = LANDING_SITES['taurus-littrow'];
+    const siteLocal = new THREE.Vector3(...latLonDirection(site.centerLat, site.centerLon));
+    const elevationNow = (): number => {
+      const moon = this.getBodyWorldPose('moon');
+      const sun = this.getBodyWorldPose('sun');
+      const sunDir = new THREE.Vector3().subVectors(sun.pos, moon.pos).normalize();
+      const siteWorld = siteLocal.clone().applyQuaternion(moon.quaternion);
+      const d = siteWorld.dot(sunDir);
+      return (Math.asin(Math.max(-1, Math.min(1, d))) * 180) / Math.PI;
+    };
+    const cur = elevationNow();
+    if (cur >= 12 && cur <= 45) return;
+
+    const original = this.simTimeHours;
+    let bestT: number | null = null;
+    let bestScore = Infinity;
+    for (let t = original + 4; t < original + 720; t += 4) {
+      this.simTimeHours = t; // 扫描期直接写字段，避免逐次触发时刻回调
+      this.updateEphemerisPoses(0);
+      const e = elevationNow();
+      if (e >= 12 && e <= 45) {
+        const score = Math.abs(e - 28);
+        if (score < bestScore) {
+          bestScore = score;
+          bestT = t;
+        }
+      }
+    }
+    this.setSimTimeHours(bestT != null ? bestT : original);
+    this.updateEphemerisPoses(0);
   }
 
   /** 当前相机在月面 body-fixed 系下的地面投射与净空（用于下降起点连续） */

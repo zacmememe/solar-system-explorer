@@ -23,7 +23,6 @@ function writeMjpegAvi(frames: Buffer[], width: number, height: number, fps: num
   const fourcc = (s: string) => Buffer.from(s, 'ascii');
   const u32 = (v: number) => { const b = Buffer.alloc(4); b.writeUInt32LE(v >>> 0, 0); return b; };
   const u16 = (v: number) => { const b = Buffer.alloc(2); b.writeUInt16LE(v & 0xffff, 0); return b; };
-  const chunk = (id: string, data: Buffer) => Buffer.concat([fourcc(id), u32(data.length), data, data.length % 2 ? Buffer.from([0]) : Buffer.alloc(0)]);
 
   const n = frames.length;
   const maxFrame = frames.reduce((m, f) => Math.max(m, f.length), 0);

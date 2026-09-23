@@ -224,4 +224,155 @@ export class TerrainHeightProvider {
     geo.computeVertexNormals();
     return geo;
   }
+
+  /**
+   * P3-T2：月面挖孔球面。孔 = 包含 DTM 窗口+裙带的整格经纬带（边界落在网格线上），
+   * 由 buildCollarGeometry 的外环沿同一批格线无缝填补。
+   * 背景：DTM 高程为负（谷底在基准球之下），原 32×24 粗球面靠面片下垂的缝隙"碰巧"
+   * 让谷地透出——可见性是偶然的；本方法把可见性变成设计。
+   */
+  public buildHoledMoonSphereGeometry(
+    baseRadius: number,
+    widthSegs = 128,
+    heightSegs = 64
+  ): {
+    geometry: THREE.BufferGeometry;
+    holeBounds: { latMin: number; latMax: number; lonMin: number; lonMax: number };
+  } | null {
+    if (!this.raster.isReady) return null;
+    const wb = this.raster.windowBounds;
+    if (!wb) return null;
+
+    const PAD_DEG = 0.35; // 裙带外扩（窗口边缘→孔边界的缓冲）
+    const dLon = 360 / widthSegs;
+    const dLat = 180 / heightSegs;
+    const j0 = Math.floor((wb.lonMin - PAD_DEG + 180) / dLon);
+    const j1 = Math.ceil((wb.lonMax + PAD_DEG + 180) / dLon);
+    const i0 = Math.floor((wb.latMin - PAD_DEG + 90) / dLat);
+    const i1 = Math.ceil((wb.latMax + PAD_DEG + 90) / dLat);
+    const holeBounds = {
+      lonMin: -180 + j0 * dLon,
+      lonMax: -180 + j1 * dLon,
+      latMin: -90 + i0 * dLat,
+      latMax: -90 + i1 * dLat,
+    };
+
+    // SphereGeometry 顶点为行主序网格：vertex(ix, iy) = iy*(widthSegs+1)+ix
+    const sphere = new THREE.SphereGeometry(baseRadius, widthSegs, heightSegs);
+    const index = sphere.getIndex()!;
+    const src = index.array as ArrayLike<number>;
+    const kept: number[] = [];
+    const stride = widthSegs + 1;
+    for (let f = 0; f < src.length; f += 3) {
+      let inHole = true;
+      for (let k = 0; k < 3; k++) {
+        const vi = src[f + k];
+        const iy = Math.floor(vi / stride);
+        const ix = vi - iy * stride;
+        if (iy < i0 || iy > i1 || ix < j0 || ix > j1) {
+          inHole = false;
+          break;
+        }
+      }
+      if (!inHole) kept.push(src[f], src[f + 1], src[f + 2]);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', sphere.getAttribute('position').clone());
+    geo.setAttribute('normal', sphere.getAttribute('normal').clone());
+    geo.setAttribute('uv', sphere.getAttribute('uv').clone());
+    geo.setIndex(kept);
+    sphere.dispose();
+    return { geometry: geo, holeBounds };
+  }
+
+  /**
+   * P3-T2：裙边环网格。内缘 = DTM 窗口边界（同采样核心，与窗口网格沿同曲线无缝相接），
+   * 高度从窗口边缘真实高程向外 smoothstep 归零；外缘 = 挖孔边界格线（高程 0 = 球面，
+   * 与挖孔球面共顶点）。着色用全球月面纹理（UV 与 SphereGeometry 等距圆柱约定一致：
+   * u=(lon+180)/360, v=(lat+90)/180）。
+   */
+  public buildCollarGeometry(
+    baseRadius: number,
+    holeBounds: { latMin: number; latMax: number; lonMin: number; lonMax: number },
+    rings = 10,
+    edgeSegs = 96
+  ): THREE.BufferGeometry | null {
+    if (!this.raster.isReady) return null;
+    const wb = this.raster.windowBounds;
+    if (!wb) return null;
+
+    // 环形参数化：周向 k ∈ [0,4*edgeSegs)（四边顺时针），径向 r ∈ [0,rings]（0=内缘窗口边）
+    const perimeter = 4 * edgeSegs;
+    const innerAt = (k: number): { lat: number; lon: number } => {
+      const s = k % perimeter;
+      const e = s / edgeSegs; // 0..4：S→E→N→W
+      if (e < 1) return { lat: wb.latMin, lon: wb.lonMin + (e % 1) * (wb.lonMax - wb.lonMin) };
+      if (e < 2) return { lat: wb.latMin + (e % 1) * (wb.latMax - wb.latMin), lon: wb.lonMax };
+      if (e < 3) return { lat: wb.latMax, lon: wb.lonMax - (e % 1) * (wb.lonMax - wb.lonMin) };
+      return { lat: wb.latMax - (e % 1) * (wb.latMax - wb.latMin), lon: wb.lonMin };
+    };
+    // 外环：从窗口中心过内点方向的射线与孔边界矩形的交点（内点本身在孔内，
+    // 直接 clamp 会退化为内点本身——裙边零宽度）
+    const cLat = (wb.latMin + wb.latMax) / 2;
+    const cLon = (wb.lonMin + wb.lonMax) / 2;
+    const outerAt = (k: number): { lat: number; lon: number } => {
+      const p = innerAt(k);
+      const dLat = p.lat - cLat;
+      const dLon = p.lon - cLon;
+      let tMax = Infinity;
+      if (dLat > 1e-12) tMax = Math.min(tMax, (holeBounds.latMax - cLat) / dLat);
+      else if (dLat < -1e-12) tMax = Math.min(tMax, (holeBounds.latMin - cLat) / dLat);
+      if (dLon > 1e-12) tMax = Math.min(tMax, (holeBounds.lonMax - cLon) / dLon);
+      else if (dLon < -1e-12) tMax = Math.min(tMax, (holeBounds.lonMin - cLon) / dLon);
+      if (!Number.isFinite(tMax) || tMax < 1) tMax = 1;
+      return { lat: cLat + dLat * tMax, lon: cLon + dLon * tMax };
+    };
+
+    const positions: number[] = [];
+    const uvs: number[] = [];
+    const indices: number[] = [];
+    const heightAt = (lat: number, lon: number): number => {
+      const cLat = THREE.MathUtils.clamp(lat, wb.latMin, wb.latMax);
+      const cLon = THREE.MathUtils.clamp(lon, wb.lonMin, wb.lonMax);
+      return this.raster.sampleHeight(cLat, cLon).heightM;
+    };
+
+    for (let r = 0; r <= rings; r++) {
+      const tR = r / rings;
+      const w = tR * tR * (3 - 2 * tR); // smoothstep：内缘 0 → 外缘 1
+      for (let k = 0; k < perimeter; k++) {
+        const a = innerAt(k);
+        const b = outerAt(k);
+        const lat = a.lat + (b.lat - a.lat) * tR;
+        const lon = a.lon + (b.lon - a.lon) * tR;
+        const hM = heightAt(a.lat, a.lon) * (1 - w); // 内缘=DTM 边缘高程，外缘=0（球面）
+        // 半径公式与窗口网格/球面一致：baseRadius + hM*(baseRadius/datumM)
+        const rr = baseRadius + hM * (baseRadius / TerrainHeightProvider.MOON_DATUM_RADIUS_M);
+        const latRad = THREE.MathUtils.degToRad(lat);
+        const lonRad = THREE.MathUtils.degToRad(lon);
+        const cosLat = Math.cos(latRad);
+        positions.push(rr * cosLat * Math.cos(lonRad), rr * Math.sin(latRad), -rr * cosLat * Math.sin(lonRad));
+        uvs.push((lon + 180) / 360, (lat + 90) / 180);
+      }
+    }
+    const rowStride = perimeter;
+    for (let r = 0; r < rings; r++) {
+      for (let k = 0; k < perimeter; k++) {
+        const kNext = (k + 1) % perimeter;
+        const a = r * rowStride + k;
+        const d = r * rowStride + kNext;
+        const b = (r + 1) * rowStride + k;
+        const c = (r + 1) * rowStride + kNext;
+        indices.push(a, d, b);
+        indices.push(b, d, c);
+      }
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+    return geo;
+  }
 }

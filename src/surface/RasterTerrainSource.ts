@@ -306,7 +306,7 @@ export class RasterTerrainSource {
     return { valid: true, heightM: h, fidelity: 'measured-dem', sourceId: 'NAC_DTM_APOLLO17' };
   }
 
-  /** 正射 I/F 纹理（8-bit 归一化灰度，RedFormat；归一化分母记录于纹理 userData） */
+  /** 正射 I/F 纹理（8-bit 归一化灰度，RGBA 灰阶复制；归一化分母记录于纹理 userData） */
   public buildOrthoTexture(): THREE.DataTexture | null {
     if (!this.orthoU16 || !this.meta) return null;
     if (this.orthoTexture) return this.orthoTexture;
@@ -317,12 +317,17 @@ export class RasterTerrainSource {
     const sorted = Array.from(this.orthoU16).sort((a, b) => a - b);
     const p995 = sorted[Math.floor((n - 1) * 0.995)] || 4096;
     const denom = Math.max(1, p995 / 255);
-    const gray = new Uint8Array(n);
+    // P3-T3：RedFormat 单通道作 map 会渲染成 (r,0,0) 纯红灰度（P2 录像的"火星"偏色根因），
+    // 改为 RGBAFormat 把灰度复制进 RGB 三通道。
+    const rgba = new Uint8Array(n * 4);
     for (let i = 0; i < n; i++) {
-      const v = Math.min(255, Math.round(this.orthoU16[i] / denom));
-      gray[i] = this.validMask ? (this.validMask[i] ? v : 0) : v;
+      const v = this.validMask ? (this.validMask[i] ? Math.min(255, Math.round(this.orthoU16[i] / denom)) : 0) : Math.min(255, Math.round(this.orthoU16[i] / denom));
+      rgba[i * 4] = v;
+      rgba[i * 4 + 1] = v;
+      rgba[i * 4 + 2] = v;
+      rgba[i * 4 + 3] = 255;
     }
-    const tex = new THREE.DataTexture(gray, m.width, m.height, THREE.RedFormat, THREE.UnsignedByteType);
+    const tex = new THREE.DataTexture(rgba, m.width, m.height, THREE.RGBAFormat, THREE.UnsignedByteType);
     tex.magFilter = THREE.LinearFilter;
     tex.minFilter = THREE.LinearMipmapLinearFilter;
     tex.generateMipmaps = true;

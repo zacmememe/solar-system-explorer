@@ -15,6 +15,7 @@
  *   - 任一断言失败 → 非零退出，报告写 artifacts/pro-review/batch-p2-cancel-paths-report.json。
  */
 import puppeteer from 'puppeteer-core';
+import type { HTTPRequest, Page } from 'puppeteer-core';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 
@@ -36,7 +37,7 @@ function record(name: string, pass: boolean, detail: Record<string, unknown>) {
   console.log(`   ${JSON.stringify(detail)}`);
 }
 
-type Req = puppeteer.HTTPRequest;
+type Req = HTTPRequest;
 
 async function main() {
   console.log('='.repeat(80));
@@ -56,24 +57,24 @@ async function main() {
     ],
   });
 
-  const saveShot = async (page: puppeteer.Page, f: string) => {
+  const saveShot = async (page: Page, f: string) => {
     await page.screenshot({ path: path.join(OUTPUT_DIR, f) });
     console.log(`📸 截图: ${f}`);
   };
-  const waitEngine = async (page: puppeteer.Page) => {
+  const waitEngine = async (page: Page) => {
     await page.waitForFunction(() => {
       const e = (window as any).__solarEngine;
       return e && typeof e.getLandingTelemetry === 'function';
     }, { timeout: 60000 });
   };
   /** 选中月球使 HUD 入口按钮出现（沿用 P2 验收 check6 的既有布置方式） */
-  const focusMoon = async (page: puppeteer.Page) => {
+  const focusMoon = async (page: Page) => {
     await page.evaluate(() => {
       (window as any).__solarEngine.executeCameraCommand({ type: 'flyTo', bodyId: 'moon', durationSec: 1.2 });
     });
     await page.waitForSelector('[data-testid="lunar-landing-start-btn"]', { timeout: 30000 });
   };
-  const readState = (page: puppeteer.Page): Promise<string> =>
+  const readState = (page: Page): Promise<string> =>
     page.evaluate(() => ((window as any).__solarEngine.getLandingTelemetry()?.state as string) || 'ORBIT');
 
   // ---------- CP-1: 装载停滞 → PREPARING 取消 ----------
