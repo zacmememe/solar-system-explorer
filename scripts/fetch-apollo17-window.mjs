@@ -26,7 +26,7 @@ const FETCH_BASE =
   'https://pds.mcp.nasa.gov/data/store/img/lunar_reconnaissance_orbiter/pds4/lroc/lro-l-lroc-5-rdr/LROLRC_2001/DATA/SDP/NAC_DTM/APOLLO17';
 const DEM_URL = `${FETCH_BASE}/NAC_DTM_APOLLO17.TIF`;
 const ORTHO_URL = `${FETCH_BASE}/NAC_DTM_APOLLO17_MOSAIC_5M.IMG`;
-const CACHE_DIR = 'data/lroc-apollo17';
+const CACHE_DIR = process.env.DEM_CACHE_DIR || 'D:/solar-evidence/data-cache/lroc-apollo17';
 const OUT_DIR = 'public/data/dem/apollo17-v1';
 
 const TARGET = { lat: 20.35, lon: 30.78 }; // Taurus-Littrow 站点

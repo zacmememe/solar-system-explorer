@@ -19,7 +19,7 @@ import { upgradeBookmarkToV3 } from '../src/contracts/bookmark';
 
 const TARGET_URL = process.env.TEST_URL || 'http://localhost:4173';
 const EDGE_PATH = process.env.EDGE_PATH || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
-const OUTPUT_DIR = path.resolve('artifacts/pro-review');
+const OUTPUT_DIR = (process.env.EVIDENCE_DIR ? path.resolve(process.env.EVIDENCE_DIR) : 'D:/solar-evidence/pro-review');
 const COMMIT = process.env.P1_COMMIT || 'worktree-uncommitted';
 
 interface CheckResult {
