@@ -57,6 +57,7 @@ import type { CameraCommand, CameraStateSnapshot } from '../contracts/camera';
 import type { HudFrame } from '../contracts/hud';
 import type { VehicleId, ViewCameraMode } from '../contracts/vehicle';
 import type { BookmarkItemV2 } from '../contracts/bookmark';
+import type { ObservationMode } from '../world-support/visibility';
 import {
   getMoonTextureByBodyId,
   getTitanHazeTexture,
@@ -110,6 +111,7 @@ export interface SolarEngineCallbacks {
   onWebGLInfo?: (info: WebGLDiagnosticInfo) => void;
   onContextState?: (state: 'lost' | 'restored') => void;
   onCelestialLabels?: (labels: CelestialLabelItem[]) => void;
+  onObservationModeChange?: (mode: ObservationMode) => void;
 }
 
 function safeDisposeMaterial(mat: THREE.Material | THREE.Material[]): void {
@@ -197,6 +199,8 @@ export class SolarEngine {
   private callistoMaterial: THREE.ShaderMaterial | null = null;
   private tempQuat: THREE.Quaternion = new THREE.Quaternion();
   private earthTileManager: SurfaceTileManager | null = null;
+  private earthNightTexture: THREE.Texture | null = null;
+  private observationMode: ObservationMode = 'physical';
 
   // 航天器伴飞系统
   private currentVehicleId: VehicleId | null = null;
@@ -511,9 +515,13 @@ export class SolarEngine {
         this.earthTileManager = new SurfaceTileManager({
           manifest: earthTileManifest,
           radius: displayRadius, // 瓦片地表全权作为物理地表
-          maxMemoryTiles: 64,
+          maxMemoryTiles: 256,
           sseThreshold: 2.0,
         });
+        this.earthTileManager.setObservationMode(this.observationMode);
+        if (this.earthNightTexture) {
+          this.earthTileManager.setNightTexture(this.earthNightTexture);
+        }
         poleFrame.add(this.earthTileManager.group);
         node.mesh.visible = false; // 由 EarthTileManager 独占接管地表渲染，彻底消除双球穿插与 Z-fighting
 
@@ -828,12 +836,19 @@ export class SolarEngine {
         safeDisposeMaterial(earthNode.mesh.material);
         earthNode.mesh.material = this.earthMaterial;
       }
+      if (nightTex) {
+        this.earthNightTexture = nightTex;
+        if (this.earthTileManager) {
+          this.earthTileManager.setNightTexture(nightTex);
+        }
+      }
       if (earthNode && earthNode.cloudMesh && cloudsTex) {
         this.earthCloudMaterial = createEarthCloudMaterial(cloudsTex);
         const sunDir = earthNode.systemGroup.position.clone().negate().normalize();
         this.earthCloudMaterial.uniforms.sunDirection.value.copy(sunDir);
         safeDisposeMaterial(earthNode.cloudMesh.material);
         earthNode.cloudMesh.material = this.earthCloudMaterial;
+        earthNode.cloudMesh.visible = this.observationMode === 'physical';
       }
     }).catch((e) => console.error('[Texture] Earth load failed:', e));
 
@@ -1667,6 +1682,299 @@ export class SolarEngine {
     }
 
     // 2. 更新所有天体的位置与自转
+    this.updateEphemerisPoses(deltaSec);
+
+    // 3. 更新载具空间位置与伴飞/随船/绕飞姿态
+    if (this.currentVehicleMesh && this.currentVehicleId) {
+      const origDim = (this.currentVehicleMesh.userData.maxDim as number) || (this.currentVehicleMesh.userData.originalMaxDim as number) || 5.0;
+
+      if (this.viewCameraMode === 'VEHICLE_FORMATION') {
+        if (this.vehicleGroup.parent !== this.camera) {
+          this.camera.add(this.vehicleGroup);
+        }
+        this.vehicleGroup.visible = true;
+
+        // 伴飞视角：航天器稳固置于相机右前下方前景（视觉占比约 18%-22%）
+        const normScale = 0.85 / origDim;
+        this.currentVehicleMesh.scale.setScalar(normScale);
+
+        const bob = this.reduceMotion ? 0.0 : Math.sin(now * 0.002) * 0.012;
+        this.vehicleGroup.position.set(0.48, -0.34 + bob, -2.1);
+        this.vehicleGroup.rotation.set(0.12, -0.38, 0);
+      } else if (this.viewCameraMode === 'VEHICLE_ONBOARD') {
+        if (this.vehicleGroup.parent !== this.camera) {
+          this.camera.add(this.vehicleGroup);
+        }
+        this.vehicleGroup.visible = true;
+
+        // 随船视角：前向传感器/机鼻俯瞰观察
+        const normScale = 0.95 / origDim;
+        this.currentVehicleMesh.scale.setScalar(normScale);
+
+        this.vehicleGroup.position.set(0.0, -0.42, -1.35);
+        this.vehicleGroup.rotation.set(0.06, 0, 0);
+      } else {
+        // PLANET_OBSERVE: 纯净行星全景观测，隐藏航天器以确保宏伟的天体、星环与微卫星视野不受遮挡
+        this.vehicleGroup.visible = false;
+      }
+    } else {
+      this.vehicleGroup.visible = false;
+    }
+
+    // 4. 星空背景天球跟随相机移动（保持无尽远景感）
+    if (this.skyboxMesh) {
+      this.skyboxMesh.position.copy(this.camera.position);
+    }
+
+    // 批次 R5：着陆控制器生命周期驱动 (50km 轨道 -> 1.7m 月表人眼视高)
+    const landingState = this.landingController.getState();
+    if (landingState === 'DESCENDING' || landingState === 'ASCENDING') {
+      this.landingController.update(deltaSec, (s) => this.setTimeScale(s));
+      const traj = this.landingController.evaluateTrajectory();
+      this.cameraController.executeCommand({
+        type: 'enterSurfaceLook',
+        bodyId: 'moon',
+        lat: traj.lat,
+        lon: traj.lon,
+        eyeHeightM: traj.altitudeAGLM,
+        initialYawDeg: traj.cameraYawDeg,
+        initialPitchDeg: traj.cameraPitchDeg,
+      });
+    } else if (landingState === 'ORBIT' && this.cameraController.getSnapshot().mode === 'SURFACE_LOOK') {
+      this.cameraController.executeCommand({
+        type: 'flyTo',
+        bodyId: 'moon',
+        durationSec: 1.5,
+      });
+    }
+
+    // 5. 更新单一相机控制器
+    this.cameraController.update(deltaSec, (id: BodyId) => this.getBodyWorldPose(id));
+
+    // 飞行状态变化监听：飞行结束切入 ORBIT_TARGET 时立即同步状态给 UI，飞行过程中同步实时插值进度
+    const isTransitioningNow = this.cameraController.getSnapshot().isTransitioning;
+    if (this.prevIsTransitioning !== isTransitioningNow) {
+      this.prevIsTransitioning = isTransitioningNow;
+      this.emitSnapshot();
+    }
+
+    // 6. 渲染一帧
+    this.renderer.render(this.scene, this.camera);
+
+    this.emitHudFrame(now);
+
+    // 7. 计算并回调屏幕空间天体悬浮引导标识
+    if (this.callbacks.onCelestialLabels) {
+      const snap = this.cameraController.getSnapshot();
+      const currentTargetId = snap.targetBodyId;
+      const currentTargetNode = currentTargetId ? this.bodyNodes.get(currentTargetId) : undefined;
+      const targetSystemPlanet = currentTargetNode?.data.type === 'moon' ? currentTargetNode.data.parentId : currentTargetId;
+
+      const labels: CelestialLabelItem[] = [];
+      const camPos = this.camera.position;
+      const camDir = new THREE.Vector3();
+      this.camera.getWorldDirection(camDir);
+
+      const width = this.canvas.clientWidth || window.innerWidth;
+      const height = this.canvas.clientHeight || window.innerHeight;
+      const fovRad = THREE.MathUtils.degToRad(this.camera.fov);
+      const tempPos = new THREE.Vector3();
+      const toBody = new THREE.Vector3();
+
+      for (const [id, node] of this.bodyNodes.entries()) {
+        node.mesh.getWorldPosition(tempPos);
+        toBody.subVectors(tempPos, camPos);
+        const dist = toBody.length();
+
+        // 核心视觉沉浸：当前正在观测、已选中或正在飞往的天体本尊，绝不展示浮动标签，留出 100% 纯净沉浸式天体特写
+        if (id === currentTargetId || id === snap.selectedBodyId) {
+          continue;
+        }
+
+        // 当近距特写观测某颗卫星时，母星本身作为壮丽背景，不展示母星的文本标签以防抢镜
+        if (currentTargetNode?.data.type === 'moon' && id === targetSystemPlanet) {
+          continue;
+        }
+
+        // 空间过滤：当镜头处于某一特定行星系时，仅投射太阳、母星与本系统内的卫星，杜绝数十AU外其它天体产生干扰堆叠
+        if (targetSystemPlanet && targetSystemPlanet !== 'sun') {
+          const isSun = node.data.type === 'star';
+          const isSystemPlanet = id === targetSystemPlanet;
+          const isSystemMoon = node.data.type === 'moon' && node.data.parentId === targetSystemPlanet;
+          if (!isSun && !isSystemPlanet && !isSystemMoon) {
+            continue;
+          }
+        } else {
+          // 全景模式下，微卫星不单独投射，避免全景视角下数十颗小卫星重叠混乱
+          if (node.data.type === 'moon') {
+            continue;
+          }
+        }
+
+        // 剔除相机后方的天体
+        if (toBody.dot(camDir) <= 0) continue;
+
+        const projected = tempPos.project(this.camera);
+        if (projected.z < -1.0 || projected.z > 1.0) continue;
+        if (projected.x < -1.05 || projected.x > 1.05 || projected.y < -1.05 || projected.y > 1.05) continue;
+
+        // 计算屏幕空间投射半径，将标签优雅浮置于天体顶部边缘上方，绝不遮挡天体表面！
+        let effectiveR = node.displayRadius;
+        if (node.ringMesh && node.data.ringConfig) {
+          effectiveR *= (node.data.ringConfig.outerRadiusRatio * 0.75);
+        }
+        const screenRadius = (effectiveR / Math.max(0.1, dist)) * (height / (2.0 * Math.tan(fovRad / 2.0)));
+
+        const screenX = ((projected.x + 1) / 2) * width;
+        const screenY = ((-projected.y + 1) / 2) * height - screenRadius - 8;
+
+        // 视线遮挡剔除：如果卫星在母星背后，且屏幕投影落在母星盘面内部，则绝不在母星正面虚假投射
+        if (node.data.type === 'moon' && targetSystemPlanet && targetSystemPlanet !== id) {
+          const parentNode = this.bodyNodes.get(targetSystemPlanet);
+          if (parentNode) {
+            const parentWorldPos = new THREE.Vector3();
+            parentNode.mesh.getWorldPosition(parentWorldPos);
+            const distToParent = camPos.distanceTo(parentWorldPos);
+            if (dist > distToParent) {
+              const parentProjected = parentWorldPos.project(this.camera);
+              const parentScreenX = ((parentProjected.x + 1) / 2) * width;
+              const parentScreenY = ((-parentProjected.y + 1) / 2) * height;
+              let parentEffectiveR = parentNode.displayRadius;
+              if (parentNode.ringMesh && parentNode.data.ringConfig) {
+                parentEffectiveR *= (parentNode.data.ringConfig.outerRadiusRatio * 0.72);
+              }
+              const parentScreenRadius = (parentEffectiveR / Math.max(0.1, distToParent)) * (height / (2.0 * Math.tan(fovRad / 2.0)));
+              const distToParentCenterPx = Math.hypot(screenX - parentScreenX, ((-projected.y + 1) / 2) * height - parentScreenY);
+              if (distToParentCenterPx < parentScreenRadius * 1.05) {
+                continue; // 卫星被母星遮挡在背面，跳过标签展示
+              }
+            }
+          }
+        }
+
+        labels.push({
+          id,
+          name: node.data.name,
+          nameEn: node.data.nameEn,
+          screenX,
+          screenY,
+          isVisible: true,
+          type: node.data.type,
+        });
+      }
+
+      this.callbacks.onCelestialLabels(labels);
+    }
+  };
+
+  public getEarthTileManager(): SurfaceTileManager | null {
+    return this.earthTileManager;
+  }
+
+  /**
+   * 切换观测模式 (物理观测 vs 地貌观察)
+   * physical: 真实时间/昼夜/云层，保持物理天体真实感
+   * terrain-study: 隐藏云层，提供全向参考照明，模拟时间保持不变
+   */
+  public setObservationMode(mode: ObservationMode): void {
+    this.observationMode = mode;
+    if (this.earthTileManager) {
+      this.earthTileManager.setObservationMode(mode);
+    }
+    const earthNode = this.bodyNodes.get('earth');
+    if (earthNode && earthNode.cloudMesh) {
+      earthNode.cloudMesh.visible = mode === 'physical';
+    }
+    if (this.callbacks.onObservationModeChange) {
+      this.callbacks.onObservationModeChange(mode);
+    }
+  }
+
+  public getObservationMode(): ObservationMode {
+    return this.observationMode;
+  }
+
+  /**
+   * 飞向地球特定地表区域 (focusEarthRegion)
+   * 严格遵循 R2 规范：由唯一 CameraController 统一执行地理命令
+   */
+  public focusEarthRegion(regionKey: 'pearl-river-delta' | string): void {
+    if (regionKey === 'pearl-river-delta') {
+      // 核心修复：执行地理对焦前立即刷新天体瞬时姿态与相机控制器世界位置，杜绝时钟修改后的姿态延迟
+      this.updateEphemerisPoses(0);
+      this.cameraController.update(0, (id: BodyId) => this.getBodyWorldPose(id));
+
+      // 珠江口大湾区核心伶仃洋与香港/澳门/深圳/珠海 (经度 113.8°E, 纬度 22.3°N)
+      // 近地观察净高度 0.05 场景单位 (对应地表近地高精观察，真实细节展开)
+      this.cameraController.executeCommand({
+        type: 'focusRegion',
+        bodyId: 'earth',
+        lat: 22.3,
+        lon: 113.8,
+        altitude: 0.05,
+        durationSec: 2.2,
+      });
+    }
+  }
+
+  public getCameraController(): CameraController {
+    return this.cameraController;
+  }
+
+  public getCamera(): THREE.PerspectiveCamera {
+    return this.camera;
+  }
+
+  public getBodyNode(id: BodyId): BodyRenderNode | undefined {
+    return this.bodyNodes.get(id);
+  }
+
+  /**
+   * 获取指定天体在当前世界空间中的绝对坐标与四元数姿态（解耦 Three.js 异步矩阵更新）
+   */
+  public getBodyWorldPose(id: BodyId) {
+    const node = this.bodyNodes.get(id);
+    if (!node) {
+      return {
+        pos: new THREE.Vector3(0, 0, 0),
+        radius: 5.0,
+        surfaceRadius: 5.0,
+        framingRadius: 5.0,
+        quaternion: new THREE.Quaternion(),
+      };
+    }
+
+    const worldPos = new THREE.Vector3();
+    if (node.data.parentId) {
+      const parentNode = this.bodyNodes.get(node.data.parentId);
+      if (parentNode) {
+        worldPos.copy(parentNode.systemGroup.position).add(node.systemGroup.position);
+      }
+    } else {
+      worldPos.copy(node.systemGroup.position);
+    }
+    if (worldPos.lengthSq() < 0.001) {
+      node.mesh.updateWorldMatrix(true, false);
+      node.mesh.getWorldPosition(worldPos);
+    }
+    node.mesh.updateWorldMatrix(true, false);
+    const quat = new THREE.Quaternion();
+    node.mesh.getWorldQuaternion(quat);
+
+    const pose = this.bodyPoseProvider.getBodyPose(id, this.simTimeHours);
+    return {
+      pos: worldPos,
+      radius: pose.renderFramingRadius,
+      surfaceRadius: pose.renderSurfaceRadius,
+      framingRadius: pose.renderFramingRadius,
+      quaternion: quat,
+    };
+  }
+
+  /**
+   * 刷新所有天体的开普勒公转位置、自转四元数、光照向量与高精瓦片状态
+   */
+  public updateEphemerisPoses(deltaSec: number = 0): void {
     const isPhysicalObservation = this.bodyPoseProvider.getPolicy() === 'PHYSICAL_OBSERVATION';
     const sunNode = this.bodyNodes.get('sun');
     if (sunNode) {
@@ -1878,251 +2186,6 @@ export class SolarEngine {
         (node.haloMesh.material as THREE.ShaderMaterial).uniforms.sunDirection.value.copy(sunDir);
       }
     }
-
-    // 3. 更新载具空间位置与伴飞/随船/绕飞姿态
-    if (this.currentVehicleMesh && this.currentVehicleId) {
-      const origDim = (this.currentVehicleMesh.userData.maxDim as number) || (this.currentVehicleMesh.userData.originalMaxDim as number) || 5.0;
-
-      if (this.viewCameraMode === 'VEHICLE_FORMATION') {
-        if (this.vehicleGroup.parent !== this.camera) {
-          this.camera.add(this.vehicleGroup);
-        }
-        this.vehicleGroup.visible = true;
-
-        // 伴飞视角：航天器稳固置于相机右前下方前景（视觉占比约 18%-22%）
-        const normScale = 0.85 / origDim;
-        this.currentVehicleMesh.scale.setScalar(normScale);
-
-        const bob = this.reduceMotion ? 0.0 : Math.sin(now * 0.002) * 0.012;
-        this.vehicleGroup.position.set(0.48, -0.34 + bob, -2.1);
-        this.vehicleGroup.rotation.set(0.12, -0.38, 0);
-      } else if (this.viewCameraMode === 'VEHICLE_ONBOARD') {
-        if (this.vehicleGroup.parent !== this.camera) {
-          this.camera.add(this.vehicleGroup);
-        }
-        this.vehicleGroup.visible = true;
-
-        // 随船视角：前向传感器/机鼻俯瞰观察
-        const normScale = 0.95 / origDim;
-        this.currentVehicleMesh.scale.setScalar(normScale);
-
-        this.vehicleGroup.position.set(0.0, -0.42, -1.35);
-        this.vehicleGroup.rotation.set(0.06, 0, 0);
-      } else {
-        // PLANET_OBSERVE: 纯净行星全景观测，隐藏航天器以确保宏伟的天体、星环与微卫星视野不受遮挡
-        this.vehicleGroup.visible = false;
-      }
-    } else {
-      this.vehicleGroup.visible = false;
-    }
-
-    // 4. 星空背景天球跟随相机移动（保持无尽远景感）
-    if (this.skyboxMesh) {
-      this.skyboxMesh.position.copy(this.camera.position);
-    }
-
-    // 批次 R5：着陆控制器生命周期驱动 (50km 轨道 -> 1.7m 月表人眼视高)
-    const landingState = this.landingController.getState();
-    if (landingState === 'DESCENDING' || landingState === 'ASCENDING') {
-      this.landingController.update(deltaSec, (s) => this.setTimeScale(s));
-      const traj = this.landingController.evaluateTrajectory();
-      this.cameraController.executeCommand({
-        type: 'enterSurfaceLook',
-        bodyId: 'moon',
-        lat: traj.lat,
-        lon: traj.lon,
-        eyeHeightM: traj.altitudeAGLM,
-        initialYawDeg: traj.cameraYawDeg,
-        initialPitchDeg: traj.cameraPitchDeg,
-      });
-    } else if (landingState === 'ORBIT' && this.cameraController.getSnapshot().mode === 'SURFACE_LOOK') {
-      this.cameraController.executeCommand({
-        type: 'flyTo',
-        bodyId: 'moon',
-        durationSec: 1.5,
-      });
-    }
-
-    // 5. 更新单一相机控制器
-    this.cameraController.update(deltaSec, (id: BodyId) => {
-      const node = this.bodyNodes.get(id);
-      if (!node) {
-        return { pos: new THREE.Vector3(0, 0, 0), radius: 5.0 };
-      }
-
-      // 获取天体在世界空间中的绝对坐标（彻底解耦 Three.js 异步矩阵更新）
-      const worldPos = new THREE.Vector3();
-      if (node.data.parentId) {
-        const parentNode = this.bodyNodes.get(node.data.parentId);
-        if (parentNode) {
-          worldPos.copy(parentNode.systemGroup.position).add(node.systemGroup.position);
-        }
-      } else {
-        worldPos.copy(node.systemGroup.position);
-      }
-      if (worldPos.lengthSq() < 0.001) {
-        node.mesh.updateWorldMatrix(true, false);
-        node.mesh.getWorldPosition(worldPos);
-      }
-
-      const pose = this.bodyPoseProvider.getBodyPose(id, this.simTimeHours);
-      return {
-        pos: worldPos,
-        radius: pose.renderFramingRadius,
-        surfaceRadius: pose.renderSurfaceRadius,
-        framingRadius: pose.renderFramingRadius,
-      };
-    });
-
-    // 飞行状态变化监听：飞行结束切入 ORBIT_TARGET 时立即同步状态给 UI，飞行过程中同步实时插值进度
-    const isTransitioningNow = this.cameraController.getSnapshot().isTransitioning;
-    if (this.prevIsTransitioning !== isTransitioningNow) {
-      this.prevIsTransitioning = isTransitioningNow;
-      this.emitSnapshot();
-    }
-
-    // 6. 渲染一帧
-    this.renderer.render(this.scene, this.camera);
-
-    this.emitHudFrame(now);
-
-    // 7. 计算并回调屏幕空间天体悬浮引导标识
-    if (this.callbacks.onCelestialLabels) {
-      const snap = this.cameraController.getSnapshot();
-      const currentTargetId = snap.targetBodyId;
-      const currentTargetNode = currentTargetId ? this.bodyNodes.get(currentTargetId) : undefined;
-      const targetSystemPlanet = currentTargetNode?.data.type === 'moon' ? currentTargetNode.data.parentId : currentTargetId;
-
-      const labels: CelestialLabelItem[] = [];
-      const camPos = this.camera.position;
-      const camDir = new THREE.Vector3();
-      this.camera.getWorldDirection(camDir);
-
-      const width = this.canvas.clientWidth || window.innerWidth;
-      const height = this.canvas.clientHeight || window.innerHeight;
-      const fovRad = THREE.MathUtils.degToRad(this.camera.fov);
-      const tempPos = new THREE.Vector3();
-      const toBody = new THREE.Vector3();
-
-      for (const [id, node] of this.bodyNodes.entries()) {
-        node.mesh.getWorldPosition(tempPos);
-        toBody.subVectors(tempPos, camPos);
-        const dist = toBody.length();
-
-        // 核心视觉沉浸：当前正在观测、已选中或正在飞往的天体本尊，绝不展示浮动标签，留出 100% 纯净沉浸式天体特写
-        if (id === currentTargetId || id === snap.selectedBodyId) {
-          continue;
-        }
-
-        // 当近距特写观测某颗卫星时，母星本身作为壮丽背景，不展示母星的文本标签以防抢镜
-        if (currentTargetNode?.data.type === 'moon' && id === targetSystemPlanet) {
-          continue;
-        }
-
-        // 空间过滤：当镜头处于某一特定行星系时，仅投射太阳、母星与本系统内的卫星，杜绝数十AU外其它天体产生干扰堆叠
-        if (targetSystemPlanet && targetSystemPlanet !== 'sun') {
-          const isSun = node.data.type === 'star';
-          const isSystemPlanet = id === targetSystemPlanet;
-          const isSystemMoon = node.data.type === 'moon' && node.data.parentId === targetSystemPlanet;
-          if (!isSun && !isSystemPlanet && !isSystemMoon) {
-            continue;
-          }
-        } else {
-          // 全景模式下，微卫星不单独投射，避免全景视角下数十颗小卫星重叠混乱
-          if (node.data.type === 'moon') {
-            continue;
-          }
-        }
-
-        // 剔除相机后方的天体
-        if (toBody.dot(camDir) <= 0) continue;
-
-        const projected = tempPos.project(this.camera);
-        if (projected.z < -1.0 || projected.z > 1.0) continue;
-        if (projected.x < -1.05 || projected.x > 1.05 || projected.y < -1.05 || projected.y > 1.05) continue;
-
-        // 计算屏幕空间投射半径，将标签优雅浮置于天体顶部边缘上方，绝不遮挡天体表面！
-        let effectiveR = node.displayRadius;
-        if (node.ringMesh && node.data.ringConfig) {
-          effectiveR *= (node.data.ringConfig.outerRadiusRatio * 0.75);
-        }
-        const screenRadius = (effectiveR / Math.max(0.1, dist)) * (height / (2.0 * Math.tan(fovRad / 2.0)));
-
-        const screenX = ((projected.x + 1) / 2) * width;
-        const screenY = ((-projected.y + 1) / 2) * height - screenRadius - 8;
-
-        // 视线遮挡剔除：如果卫星在母星背后，且屏幕投影落在母星盘面内部，则绝不在母星正面虚假投射
-        if (node.data.type === 'moon' && targetSystemPlanet && targetSystemPlanet !== id) {
-          const parentNode = this.bodyNodes.get(targetSystemPlanet);
-          if (parentNode) {
-            const parentWorldPos = new THREE.Vector3();
-            parentNode.mesh.getWorldPosition(parentWorldPos);
-            const distToParent = camPos.distanceTo(parentWorldPos);
-            if (dist > distToParent) {
-              const parentProjected = parentWorldPos.project(this.camera);
-              const parentScreenX = ((parentProjected.x + 1) / 2) * width;
-              const parentScreenY = ((-parentProjected.y + 1) / 2) * height;
-              let parentEffectiveR = parentNode.displayRadius;
-              if (parentNode.ringMesh && parentNode.data.ringConfig) {
-                parentEffectiveR *= (parentNode.data.ringConfig.outerRadiusRatio * 0.72);
-              }
-              const parentScreenRadius = (parentEffectiveR / Math.max(0.1, distToParent)) * (height / (2.0 * Math.tan(fovRad / 2.0)));
-              const distToParentCenterPx = Math.hypot(screenX - parentScreenX, ((-projected.y + 1) / 2) * height - parentScreenY);
-              if (distToParentCenterPx < parentScreenRadius * 1.05) {
-                continue; // 卫星被母星遮挡在背面，跳过标签展示
-              }
-            }
-          }
-        }
-
-        labels.push({
-          id,
-          name: node.data.name,
-          nameEn: node.data.nameEn,
-          screenX,
-          screenY,
-          isVisible: true,
-          type: node.data.type,
-        });
-      }
-
-      this.callbacks.onCelestialLabels(labels);
-    }
-  };
-
-  public getEarthTileManager(): SurfaceTileManager | null {
-    return this.earthTileManager;
-  }
-
-  /**
-   * 飞向地球特定地表区域 (focusEarthRegion)
-   * 严格遵循 R2 规范：由唯一 CameraController 统一执行地理命令
-   */
-  public focusEarthRegion(regionKey: 'pearl-river-delta' | string): void {
-    if (regionKey === 'pearl-river-delta') {
-      // 珠江口大湾区核心伶仃洋与香港/澳门/深圳/珠海 (经度 113.8°E, 纬度 22.3°N)
-      // 近地观察净高度 0.05 场景单位 (对应地表近地高精观察，真实细节展开)
-      this.cameraController.executeCommand({
-        type: 'focusRegion',
-        bodyId: 'earth',
-        lat: 22.3,
-        lon: 113.8,
-        altitude: 0.05,
-        durationSec: 2.2,
-      });
-    }
-  }
-
-  public getCameraController(): CameraController {
-    return this.cameraController;
-  }
-
-  public getCamera(): THREE.PerspectiveCamera {
-    return this.camera;
-  }
-
-  public getBodyNode(id: BodyId): BodyRenderNode | undefined {
-    return this.bodyNodes.get(id);
   }
 
   /**
@@ -2165,6 +2228,9 @@ export class SolarEngine {
   public setSimTimeHours(hours: number): void {
     if (Number.isFinite(hours)) {
       this.simTimeHours = hours;
+      // 立即刷新所有天体公转与自转姿态，保证后续相机指令获取到最新瞬时四元数
+      this.updateEphemerisPoses(0);
+      this.cameraController.update(0, (id: BodyId) => this.getBodyWorldPose(id));
     }
   }
 

@@ -37,6 +37,7 @@ export class CameraController {
     radius: number;
     surfaceRadius?: number;
     framingRadius?: number;
+    quaternion?: THREE.Quaternion;
   };
 
   // 观察状态（球坐标：相对于 targetPosition）
@@ -482,8 +483,14 @@ export class CameraController {
       -cosLat * Math.sin(lonRad)
     ).normalize();
 
+    // 核心修复 (P0: REGION-FRAME)：应用天体地表姿态四元数（含地轴倾角与当前自转姿态）
+    // 使得相机视线正对当前自转朝向的真实经纬度目标点！
+    const targetInfo = this.latestGetBodyPos ? this.latestGetBodyPos(targetId) : null;
+    const bodyQuat = targetInfo?.quaternion || new THREE.Quaternion();
+    const normalWorld = normal.clone().applyQuaternion(bodyQuat).normalize();
+
     // 转换为 Three.js 球坐标 (r, phi, theta)
-    const targetSph = new THREE.Spherical().setFromVector3(normal);
+    const targetSph = new THREE.Spherical().setFromVector3(normalWorld);
 
     // 目标半径：物理地表半径 + altitude 净高度
     const safeAltitude = Math.max(this.collisionClearance, altitude);

@@ -13,6 +13,7 @@ import { LunarLandingHUD } from './LunarLandingHUD';
 import { createHudStore } from './hud/store';
 import './app.css';
 import type { BookmarkItem } from '../contracts/bookmark';
+import type { ObservationMode } from '../world-support/visibility';
 import { generateDiscoveryPostcard } from '../utils/postcard';
 import {
   Compass,
@@ -91,16 +92,24 @@ export const App: React.FC = () => {
   const [isGeneratingPostcard, setIsGeneratingPostcard] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // 地貌观察 / 物理观测模式 (P0 核心体验)
+  const [observationMode, setObservationMode] = useState<ObservationMode>('physical');
+  const [focusedRegion, setFocusedRegion] = useState<string | null>(null);
+
   useEffect(() => {
     if (!containerRef.current) return;
 
     try {
       const engine = new SolarEngine(containerRef.current, {
         onHudSnapshot: hudStore.publish,
-        onSelectBody: (id) => setSelectedBodyId(id),
+        onSelectBody: (id) => {
+          setSelectedBodyId(id);
+          setFocusedRegion(null);
+        },
         onCameraSnapshot: (snap) => setCameraSnapshot(snap),
         onWebGLInfo: (info) => setWebglInfo(info),
         onCelestialLabels: (labels) => setCelestialLabels(labels),
+        onObservationModeChange: (mode) => setObservationMode(mode),
         onContextState: (state) => {
           if (state === 'lost') {
             showToast('⚠️ 显卡 WebGL 上下文中断，系统正在全力保护与恢复...');
@@ -128,7 +137,25 @@ export const App: React.FC = () => {
 
   const handleFlyTo = (id: BodyId) => {
     setSelectedBodyId(id);
+    setFocusedRegion(null);
     engineRef.current?.executeCameraCommand({ type: 'flyTo', bodyId: id });
+  };
+
+  const handleFocusPearlRiverDelta = () => {
+    setFocusedRegion('pearl-river-delta');
+    engineRef.current?.focusEarthRegion('pearl-river-delta');
+    showToast('🌏 正在俯瞰珠江口 (约236km·NASA BMNG D1)');
+  };
+
+  const handleToggleObservationMode = () => {
+    const nextMode = observationMode === 'physical' ? 'terrain-study' : 'physical';
+    setObservationMode(nextMode);
+    engineRef.current?.setObservationMode(nextMode);
+    if (nextMode === 'terrain-study') {
+      showToast('🔭 已切换至地貌观察模式：隐藏云层 · 参考照明 (模拟时间不变)');
+    } else {
+      showToast('🌍 已切换至物理观测模式：真实昼夜与云层');
+    }
   };
 
   const handleOverview = () => {
@@ -527,19 +554,94 @@ export const App: React.FC = () => {
               <div style={{ width: 1, height: 12, background: 'rgba(255,255,255,0.15)', margin: '0 4px', flexShrink: 0 }} />
               <button
                 data-testid="earth-region-prd-btn"
-                onClick={() => {
-                  engineRef.current?.focusEarthRegion('pearl-river-delta');
-                  showToast('🌏 正在飞向地表高精区域：珠江口大湾区 (NASA 500m 真实观测)');
-                }}
+                onClick={handleFocusPearlRiverDelta}
                 className="app-satellite-btn"
                 style={{ borderColor: 'rgba(56, 189, 248, 0.45)', color: '#38bdf8' }}
-                aria-label="观测地表高精区域 珠江口大湾区"
+                aria-label="俯瞰珠江口 (约236km)"
               >
-                <span>📍 珠江口 (500m高精)</span>
+                <span>📍 俯瞰珠江口 (约236km)</span>
+              </button>
+              <button
+                data-testid="earth-observation-mode-btn"
+                onClick={handleToggleObservationMode}
+                className={`app-satellite-btn ${observationMode === 'terrain-study' ? 'is-active' : ''}`}
+                style={{
+                  borderColor: observationMode === 'terrain-study' ? '#f59e0b' : 'rgba(255,255,255,0.25)',
+                  color: observationMode === 'terrain-study' ? '#fcd34d' : '#cbd5e1',
+                }}
+                aria-label={observationMode === 'terrain-study' ? '切换为物理观测' : '切换为地貌观察'}
+                title={observationMode === 'terrain-study' ? '地貌观察：隐藏云层并提供参考照明；模拟时间不变' : '物理观测：真实时间、昼夜阴晴与动态云层'}
+              >
+                <span>{observationMode === 'terrain-study' ? '🔭 地貌观察' : '🌍 物理观测'}</span>
               </button>
             </>
           )}
         </div>
+      )}
+
+      {/* 珠江口俯瞰与地貌观察模式状态卡片 */}
+      {selectedBodyId === 'earth' && focusedRegion === 'pearl-river-delta' && (
+        <aside
+          data-testid="earth-region-status-card"
+          style={{
+            position: 'absolute',
+            top: 72,
+            left: 20,
+            background: 'rgba(15, 23, 42, 0.92)',
+            backdropFilter: 'blur(12px)',
+            border: '1px solid rgba(56, 189, 248, 0.4)',
+            borderRadius: 8,
+            padding: '10px 14px',
+            color: '#f8fafc',
+            fontSize: 12,
+            zIndex: 25,
+            maxWidth: 320,
+            boxShadow: '0 8px 30px rgba(0,0,0,0.6)',
+          }}
+          aria-label="珠江口俯瞰状态"
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+            <span style={{ fontWeight: 600, color: '#38bdf8' }}>📍 俯瞰珠江口 (约236km)</span>
+            <span style={{ fontSize: 10, color: '#94a3b8' }}>NASA BMNG D1</span>
+          </div>
+          <div style={{ fontSize: 11, color: '#cbd5e1', lineHeight: 1.5, marginBottom: 8 }}>
+            {observationMode === 'terrain-study'
+              ? '【地貌观察】已隐藏云层，提供全向参考照明，便于核验地形与海岸线。模拟时间保持不变。'
+              : '【物理观测】依据当前模拟时钟实时呈现昼夜与云层。夜面可见城市夜景，若需排查地表可切换至地貌观察。'}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              data-testid="toggle-study-mode-btn"
+              onClick={handleToggleObservationMode}
+              style={{
+                flex: 1,
+                padding: '4px 8px',
+                fontSize: 11,
+                borderRadius: 4,
+                border: '1px solid ' + (observationMode === 'terrain-study' ? '#f59e0b' : 'rgba(56, 189, 248, 0.5)'),
+                background: observationMode === 'terrain-study' ? 'rgba(245, 158, 11, 0.2)' : 'rgba(56, 189, 248, 0.15)',
+                color: observationMode === 'terrain-study' ? '#fcd34d' : '#38bdf8',
+                cursor: 'pointer',
+              }}
+            >
+              {observationMode === 'terrain-study' ? '切换为物理观测' : '切换为地貌观察'}
+            </button>
+            <button
+              onClick={() => setFocusedRegion(null)}
+              style={{
+                padding: '4px 8px',
+                fontSize: 11,
+                borderRadius: 4,
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                background: 'transparent',
+                color: '#94a3b8',
+                cursor: 'pointer',
+              }}
+            >
+              关闭提示
+            </button>
+          </div>
+        </aside>
       )}
 
       {/* 3D 屏幕空间天体悬浮引导标识 */}
@@ -635,8 +737,11 @@ export const App: React.FC = () => {
         onReframe={() => handleFlyTo(selectedBodyId)}
         onCancelTransition={() => engineRef.current?.executeCameraCommand({ type: 'cancelFlight' })}
         onFocusRegion={(regionKey) => {
-          engineRef.current?.focusEarthRegion(regionKey);
-          showToast('🌏 正在飞向地表高精区域：珠江口大湾区 (NASA 500m 真实观测)');
+          if (regionKey === 'pearl-river-delta') {
+            handleFocusPearlRiverDelta();
+          } else {
+            engineRef.current?.focusEarthRegion(regionKey);
+          }
         }}
       />
 

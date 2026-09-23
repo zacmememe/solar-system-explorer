@@ -1,14 +1,14 @@
 {
   "bodyId": "earth",
   "datasetId": "nasa-blue-marble-200409-tiles",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "source": "NASA Earth Observatory / Blue Marble Next Generation",
   "sourceDate": "2004-09",
   "sourceUrl": "https://science.nasa.gov/earth/earth-observatory/blue-marble-next-generation/base-map/",
-  "sourceSha256": "7cf788e13a3a7b4a926b524f8f71d635c56a18c48ba0bfe35695b05a305db3f3",
-  "sourceResolution": "21600x10800 (Global Base Map), 21600x21600 (500m C2 East Asia Regional)",
-  "nativeGsdKm": 1.85,
-  "processingVersion": "2.0-dualroot-downsample-r2",
+  "sourceSha256": "54fa2c1b6417e05cc2af635abe88b1254af51e035285a787ba79e85d8ba29cf6",
+  "sourceResolution": "21600x10800 (Global Base Map), 21600x21600 (500m D1 East Asia Regional)",
+  "nativeGsdKm": 0.463,
+  "processingVersion": "2.1-d1-east-asia-quadrant",
   "projection": "equirectangular-dual-root",
   "referenceRadiusKm": 6371,
   "maxLevel": 9,
@@ -743,8 +743,8 @@
       "latMin": 21.8,
       "latMax": 23.2,
       "targetLevel": 9,
-      "nativeGsdKm": 0.5,
-      "source": "NASA MODIS BMNG C2 500m true composite"
+      "nativeGsdKm": 0.463,
+      "source": "NASA MODIS BMNG D1 500m true composite (90°E~180°E, 0°~90°N)"
     }
   ]
 }

@@ -18,10 +18,12 @@ import {
 import { SurfaceTileScheme } from './SurfaceTileScheme';
 import { TileGeometryBuilder } from './TileGeometryBuilder';
 import { createTileShaderMaterial } from './TileMaterial';
+import { tileGlobalUvTransform } from '../world-support/bmng';
 
 export interface SurfaceTileManagerOptions {
   manifest: SurfaceDatasetManifest;
   radius: number;
+  nightTexture?: THREE.Texture | null;
   maxMemoryTiles?: number;
   sseThreshold?: number; // 屏幕空间误差触发阈值系数 (默认 1.0)
 }
@@ -31,6 +33,8 @@ export class SurfaceTileManager {
   private radius: number;
   private maxMemoryTiles: number;
   private sseThreshold: number;
+  private nightTexture: THREE.Texture | null = null;
+  private observationMode: number = 0.0; // 0.0 = physical, 1.0 = terrain-study
 
   public group: THREE.Group; // 挂载至天体 poleFrame
   private activeTiles: Map<string, SurfaceTileItem> = new Map();
@@ -52,6 +56,7 @@ export class SurfaceTileManager {
   constructor(options: SurfaceTileManagerOptions) {
     this.manifest = options.manifest;
     this.radius = options.radius;
+    this.nightTexture = options.nightTexture ?? null;
     this.maxMemoryTiles = options.maxMemoryTiles ?? 64;
     this.sseThreshold = options.sseThreshold ?? 1.0;
 
@@ -111,12 +116,26 @@ export class SurfaceTileManager {
 
     const { offset, scale } = SurfaceTileScheme.getAncestorUvTransform(coord, ancCoord);
 
+    // 计算当前瓦片在全球夜景贴图中的 UV 映射偏移与尺度 (P0 核心修复)
+    const { offset: gOffset, scale: gScale } = tileGlobalUvTransform({
+      west: bbox.lonMin,
+      east: bbox.lonMax,
+      south: bbox.latMin,
+      north: bbox.latMax,
+    });
+    const tileGlobalUvOffset = new THREE.Vector2(gOffset[0], gOffset[1]);
+    const tileGlobalUvScale = new THREE.Vector2(gScale[0], gScale[1]);
+
     const isCached = this.textureCache.has(key);
     const dayTex = isCached ? this.textureCache.get(key)! : ancTex;
 
     const material = createTileShaderMaterial({
       dayTexture: dayTex,
       coarseTexture: ancTex,
+      nightTexture: this.nightTexture,
+      tileGlobalUvOffset,
+      tileGlobalUvScale,
+      observationMode: this.observationMode,
       ancestorUvOffset: offset,
       ancestorUvScale: scale,
       imageMix: isCached ? 1.0 : 0.0,
@@ -284,17 +303,23 @@ export class SurfaceTileManager {
     this.frustum.setFromProjectionMatrix(this.projScreenMatrix);
 
     // 计算相机在天体 poleFrame 局部坐标系下的位置与高度
+    this.group.updateWorldMatrix(true, false);
     const worldCameraPos = camera.position.clone();
     const localCameraPos = this.group.worldToLocal(worldCameraPos);
     const altitude = localCameraPos.length() - this.radius;
 
-    // 递归评估细分与合并决策
+    // 递归评估细分与合并决策（距离相机最近的根节点优先评估）
     const rootKeys = ['0/0/0', '0/1/0'];
-    for (const rootKey of rootKeys) {
-      const rootTile = this.activeTiles.get(rootKey);
-      if (rootTile) {
-        this.evaluateTileLOD(rootTile, camera, localCameraPos, altitude, now);
-      }
+    const sortedRoots = rootKeys
+      .map((k) => this.activeTiles.get(k))
+      .filter((t): t is SurfaceTileItem => !!t)
+      .sort((a, b) => {
+        const distA = SurfaceTileScheme.getTileCenter(a.coord, this.radius).distanceTo(localCameraPos);
+        const distB = SurfaceTileScheme.getTileCenter(b.coord, this.radius).distanceTo(localCameraPos);
+        return distA - distB;
+      });
+    for (const rootTile of sortedRoots) {
+      this.evaluateTileLOD(rootTile, camera, localCameraPos, altitude, now);
     }
 
     // 更新所有活跃材质的太阳方向与渐变混合进度
@@ -361,10 +386,15 @@ export class SurfaceTileManager {
     const distToTile = tileCenter.distanceTo(localCameraPos);
 
     // 地平线背离剔除 (Horizon culling)：背向视线的瓦片不细分
+    // 根瓦片与大尺度区域 (z <= 2) 跨度过大，不可使用单点法线做视背剔除；且相机在瓦片包围球内部时绝不剔除
     const dirToCam = localCameraPos.clone().sub(tileCenter).normalize();
     const tileNormal = tileCenter.clone().normalize();
     const dotHorizon = tileNormal.dot(dirToCam);
-    const isBackfacing = dotHorizon < -0.2 && distToTile > this.radius * 0.5;
+    const isBackfacing =
+      tile.coord.z > 2 &&
+      distToTile > sphere.radius &&
+      dotHorizon < -0.2 &&
+      distToTile > this.radius * 0.5;
 
     // 屏幕空间误差 (SSE) 估算
     const fovDeg = camera.fov;
@@ -381,7 +411,7 @@ export class SurfaceTileManager {
     if (shouldSplit) {
       if (!tile.children) {
         // 预算守卫与平摊控制：若活跃瓦片将超出上限或单帧分裂次数已满，推迟至后续帧平滑细分 (TILE-08)
-        if (this.activeTiles.size + 4 > this.maxMemoryTiles || this.frameSplits >= 2) {
+        if (this.activeTiles.size + 4 > this.maxMemoryTiles || this.frameSplits >= 4) {
           return;
         }
 
@@ -403,8 +433,13 @@ export class SurfaceTileManager {
         return;
       }
 
-      // 递归细分已有子节点
-      for (const child of tile.children) {
+      // 递归细分已有子节点（距离相机最近者优先，保证目标视区率先下潜至高精层级）
+      const sortedChildren = [...tile.children].sort((a, b) => {
+        const distA = SurfaceTileScheme.getTileCenter(a.coord, this.radius).distanceTo(localCameraPos);
+        const distB = SurfaceTileScheme.getTileCenter(b.coord, this.radius).distanceTo(localCameraPos);
+        return distA - distB;
+      });
+      for (const child of sortedChildren) {
         this.evaluateTileLOD(child, camera, localCameraPos, altitude, now);
       }
     } else {
@@ -482,6 +517,21 @@ export class SurfaceTileManager {
       this.availableTilesSet = new Set(newManifest.availableTiles);
     } else {
       this.availableTilesSet = null;
+    }
+  }
+
+  public setObservationMode(mode: 'physical' | 'terrain-study'): void {
+    this.observationMode = mode === 'terrain-study' ? 1.0 : 0.0;
+    for (const tile of this.activeTiles.values()) {
+      tile.material.uniforms.observationMode.value = this.observationMode;
+    }
+  }
+
+  public setNightTexture(texture: THREE.Texture): void {
+    this.nightTexture = texture;
+    for (const tile of this.activeTiles.values()) {
+      tile.material.uniforms.nightTexture.value = texture;
+      tile.material.uniforms.hasNightTexture.value = 1.0;
     }
   }
 

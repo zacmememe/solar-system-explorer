@@ -18,15 +18,15 @@ describe('批次 R2 真实地表数据与地理入口测试 (R2 Truthful Data & 
     const manifest = await loadEarthTileManifest();
 
     expect(manifest.bodyId).toBe('earth');
-    expect(manifest.version).toBe('2.0.0');
+    expect(manifest.version).toBe('2.1.0');
     expect(manifest.source).toContain('NASA Earth Observatory');
     expect(manifest.sourceUrl).toBe(
       'https://science.nasa.gov/earth/earth-observatory/blue-marble-next-generation/base-map/'
     );
     expect(manifest.sourceSha256).toBe(
-      '7cf788e13a3a7b4a926b524f8f71d635c56a18c48ba0bfe35695b05a305db3f3'
+      '54fa2c1b6417e05cc2af635abe88b1254af51e035285a787ba79e85d8ba29cf6'
     );
-    expect(manifest.nativeGsdKm).toBe(1.85);
+    expect(manifest.nativeGsdKm).toBe(0.463);
     expect(manifest.tileCount).toBe(716);
     expect(Array.isArray(manifest.availableTiles)).toBe(true);
     expect(manifest.availableTiles!.length).toBe(716);
@@ -35,7 +35,7 @@ describe('批次 R2 真实地表数据与地理入口测试 (R2 Truthful Data & 
     expect(manifest.coverageRoi).toBeDefined();
     const prd = manifest.coverageRoi!.find((r) => r.name.includes('珠江口'));
     expect(prd).toBeDefined();
-    expect(prd!.nativeGsdKm).toBe(0.5);
+    expect(prd!.nativeGsdKm).toBe(0.463);
     expect(prd!.targetLevel).toBe(9);
     expect(prd!.source).toContain('500m');
   });

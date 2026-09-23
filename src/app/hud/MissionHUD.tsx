@@ -203,9 +203,9 @@ export function MissionHUD(props: MissionHUDProps) {
           <p className="hud-source-note">{materialNote(body.id, props.titanInfraredMode)}<br />原项目标注来源：{body.sourceRef}</p>
           {body.id === 'earth' && (
             <div style={{ marginTop: 10, padding: '8px 10px', background: 'rgba(56, 189, 248, 0.08)', borderRadius: 6, border: '1px solid rgba(56, 189, 248, 0.25)' }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: '#38bdf8', marginBottom: 3 }}>🌍 真实地表高精区域 (R2)</div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: '#38bdf8', marginBottom: 3 }}>🌍 真实高空俯瞰 (约236km)</div>
               <div style={{ fontSize: 10, color: '#cbd5e1', marginBottom: 6, lineHeight: 1.4 }}>
-                NASA BMNG 真实观测 · 珠江口大湾区 (500m/px · 30–50km 尺度)
+                NASA BMNG D1 官方数据 · 珠江口大湾区 (463m/px)
               </div>
               <button
                 data-testid="hud-focus-prd-btn"
@@ -216,7 +216,7 @@ export function MissionHUD(props: MissionHUDProps) {
                   closePanel();
                 }}
               >
-                🔍 飞向珠江口大湾区
+                🔍 俯瞰珠江口 (约236km)
               </button>
             </div>
           )}
