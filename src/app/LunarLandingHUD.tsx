@@ -126,10 +126,20 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine, active
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ fontSize: 14 }}>
-                {state === 'DESCENDING' ? '🛬' : state === 'HOLD' ? '⏸' : state === 'SURFACE_LOOK' ? '🌕' : '🚀'}
+                {state === 'PREPARING'
+                  ? '📡'
+                  : state === 'DESCENDING'
+                  ? '🛬'
+                  : state === 'HOLD'
+                  ? '⏸'
+                  : state === 'SURFACE_LOOK'
+                  ? '🌕'
+                  : '🚀'}
               </span>
               <span style={{ fontWeight: 700, fontSize: 13, color: '#38bdf8' }}>
-                {state === 'DESCENDING'
+                {state === 'PREPARING'
+                  ? '正在装载真实 DTM 地形…'
+                  : state === 'DESCENDING'
                   ? '下降序列进行中'
                   : state === 'HOLD'
                   ? '下降已暂停 · 悬停检查'
@@ -173,6 +183,19 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine, active
           <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 12, borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: 8 }}>
             <div style={{ fontWeight: 600, color: '#e2e8f0' }}>{telemetry.site.subtitle}</div>
             <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>{telemetry.site.provenance}</div>
+            {telemetry.terrain && (
+              <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>
+                地形：{telemetry.terrain.fidelity === 'measured-dem'
+                  ? `真实 DTM (${telemetry.terrain.sourceId})`
+                  : telemetry.terrain.fidelity === 'datum-sphere'
+                  ? '基准球（无本地 DTM 覆盖）'
+                  : '未装载'}
+                <span style={{ color: telemetry.terrain.admissionState.startsWith('admitted') ? '#4ade80' : '#fde047' }}>
+                  {' · '}
+                  {telemetry.terrain.admissionState.startsWith('admitted') ? '已验收准入' : '待配准验收'}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* 核心飞行读数仪表网格 */}
@@ -235,6 +258,23 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine, active
 
           {/* 操作行动按钮栏 */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {state === 'PREPARING' && (
+              <button
+                data-testid="landing-btn-cancel-prep"
+                onClick={() => engine.getLandingController().cancelPreparation()}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 8,
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  background: 'rgba(255,255,255,0.05)',
+                  color: '#cbd5e1',
+                  cursor: 'pointer',
+                }}
+              >
+                ↩ 取消准备
+              </button>
+            )}
+
             {state === 'DESCENDING' && (
               <>
                 <button

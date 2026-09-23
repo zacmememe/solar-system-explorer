@@ -9,12 +9,15 @@
  * 6. CameraController SURFACE_LOOK 站点随天体四元数旋转、1.7m 眼高 0.1m 近裁剪面。
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import * as THREE from 'three';
+import { readFileSync } from 'node:fs';
+import * as path from 'node:path';
 import { BodyPoseProvider } from '../src/astronomy/BodyPoseProvider';
 import { BODIES, getNavDisplayRadius } from '../src/astronomy/bodies';
 import { CameraController } from '../src/camera/CameraController';
 import { TerrainHeightProvider } from '../src/surface/TerrainHeightProvider';
+import { RasterTerrainSource } from '../src/surface/RasterTerrainSource';
 import {
   geodeticToBodyFixedM,
   bodyFixedToPlanetocentric,
@@ -27,6 +30,16 @@ import {
   datumForBody,
 } from '../src/world-support/local-frame';
 import type { BodyId } from '../src/contracts/body';
+
+// P2 起：月面高程由真实 DTM 后端提供，站点类断言注入真实数据（Node 无相对 URL fetch）
+beforeAll(async () => {
+  const demDir = path.resolve('public/data/dem/apollo17-v1');
+  const meta = JSON.parse(readFileSync(path.join(demDir, 'metadata.json'), 'utf-8'));
+  const heightBuf = readFileSync(path.join(demDir, 'height.f32')).slice().buffer;
+  const validBuf = readFileSync(path.join(demDir, 'valid.u8')).slice().buffer;
+  const orthoBuf = readFileSync(path.join(demDir, 'ortho.u16')).slice().buffer;
+  await RasterTerrainSource.getInstance().injectBuffers(meta, heightBuf, validBuf, orthoBuf);
+});
 
 const DEG = Math.PI / 180;
 
@@ -346,8 +359,8 @@ describe('批次 P1: SURFACE_LOOK 站点随自转与米制近裁剪 (CameraContr
     const station = pose!.station;
     expect(station.bodyId).toBe('moon');
     expect(station.datum).toBe('MOON_PA453');
-    expect(station.heightM).toBeLessThan(-2000); // 谷底地面高程 (TerrainHeightProvider)
-    expect(station.heightM).toBeGreaterThan(-2600);
+    expect(station.heightM).toBeLessThan(-1400); // 谷底地面高程：真实 DTM 站点值 ≈ −1690.9 m (P2)
+    expect(station.heightM).toBeGreaterThan(-2000);
     expect(station.eyeHeightM).toBe(1.7);
     const posLen = Math.hypot(...station.bodyFixedPosM);
     expect(posLen).toBeCloseTo(1737400 + station.heightM, -1);

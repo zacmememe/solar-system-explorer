@@ -69,6 +69,7 @@ import { VehicleLoader } from '../vehicles/VehicleLoader';
 import { LandingController } from '../surface/LandingController';
 import type { LandingTelemetry } from '../contracts/landing';
 import { TerrainHeightProvider } from '../surface/TerrainHeightProvider';
+import { RasterTerrainSource } from '../surface/RasterTerrainSource';
 import productionAssetsData from '../../sources/production-assets.json';
 
 export interface WebGLDiagnosticInfo {
@@ -702,25 +703,45 @@ export class SolarEngine {
           satMat.needsUpdate = true;
         });
 
-        // 挂载 Taurus–Littrow 高精 3D 浮雕地形网格 (Apollo 17 区域)
-        // P1: FrontSide 单侧渲染——高度场外壳按外向绕序仅绘制向外交面。
-        // DoubleSide 在 0.1m 米制近裁剪面 (near≈2.1e-8 场景单位) 下会让地形
-        // 背面 (月体内侧) 参与光栅化，实测在 D3D11/ANGLE 上整屏输出纯黑
-        // (MeshStandard 背面法线翻转后着色为 0)，见 docs/pro-review-batch-p1-handoff.md。
+        // 挂载真实 DTM 地表网格 (P2: LROC NAC DTM APOLLO17, 5 m/px, Taurus–Littrow 窗口)
+        // 数据装载完成前网格保持隐藏——不以占位几何伪造真实地形。
+        // FrontSide 单侧渲染 + 外向绕序 (P1 勘误结论)：DoubleSide 不是绕序修复，
+        // 且在 0.1m 米制近裁剪面下背面着色会使整屏输出纯黑（见 P1 交接文档）。
         const heightProvider = TerrainHeightProvider.getInstance();
-        const valleyGeo = heightProvider.buildTaurusLittrowGeometry(satRadius);
+        const rasterSource = RasterTerrainSource.getInstance();
         const valleyMat = new THREE.MeshStandardMaterial({
           color: 0x94a3b8,
           roughness: 0.95,
           metalness: 0.05,
           side: THREE.FrontSide,
         });
-        const valleyMesh = new THREE.Mesh(valleyGeo, valleyMat);
+        const valleyMesh = new THREE.Mesh(new THREE.BufferGeometry(), valleyMat);
         valleyMesh.name = 'taurus-littrow-terrain';
+        valleyMesh.visible = false;
         valleyMesh.receiveShadow = true;
         valleyMesh.castShadow = true;
         satMesh.add(valleyMesh);
         this.lunarValleyMesh = valleyMesh;
+        rasterSource
+          .load()
+          .then(() => {
+            const geo = heightProvider.buildDemWindowGeometry(satRadius);
+            const ortho = rasterSource.buildOrthoTexture();
+            if (!geo || !ortho) {
+              console.error('[SolarEngine] DTM 已装载但网格构建失败');
+              return;
+            }
+            ortho.colorSpace = THREE.SRGBColorSpace; // I/F 影像产品按显示意图处理
+            valleyMat.map = ortho;
+            valleyMat.color.set(0xffffff);
+            valleyMat.needsUpdate = true;
+            valleyMesh.geometry.dispose();
+            valleyMesh.geometry = geo;
+            valleyMesh.visible = true;
+          })
+          .catch((err: unknown) => {
+            console.error('[SolarEngine] DTM 装载失败，真实地表网格保持隐藏:', err);
+          });
       }
 
       // 卫星局部公转轨道线（优雅微弱半透明环，直观呈现多星系同心轨道分布）
@@ -1258,6 +1279,10 @@ export class SolarEngine {
   }
 
   public executeCameraCommand(cmd: CameraCommand): void {
+    // P2：用户改选其它天体时收回过期的着陆准备（不自动重发）
+    if (cmd.type === 'select' && cmd.bodyId !== 'moon') {
+      this.landingController.cancelPreparation();
+    }
     if (cmd.type === 'flyTo' && !cmd.targetPos) {
       const node = this.bodyNodes.get(cmd.bodyId);
       if (node) {
@@ -1312,7 +1337,8 @@ export class SolarEngine {
   }
 
   /**
-   * 启动月球 Taurus–Littrow 陶拉斯—利特罗山谷真实降落序列 (批次 R5)
+   * 启动月球 Taurus–Littrow 陶拉斯—利特罗山谷真实降落序列
+   * P2：下降起点取当前机位（body-fixed 地面投射 + 当前净空），不瞬移到固定点。
    */
   public startLunarLanding(): void {
     // 1. 确保聚焦月球并切入物理比例模式
@@ -1323,11 +1349,39 @@ export class SolarEngine {
     this.setPresentationPolicy('PHYSICAL_OBSERVATION');
     soundEffects.playWarp();
 
-    // 2. 启动降落状态机
+    // 2. 当前机位 → 月面 body-fixed 地面投射（同帧姿态逆变换）
+    const startPose = this.computeMoonGroundPose();
+    const altM = Math.max(2, startPose.clearanceM);
+
+    // 3. 启动降落状态机（PREPARING 资源门槛由控制器处理）
     this.landingController.startDescent(
       () => this.timeScale,
-      (scale) => this.setTimeScale(scale)
+      (scale) => this.setTimeScale(scale),
+      { latDeg: startPose.latDeg, lonDeg: startPose.lonDeg, clearanceM: altM }
     );
+  }
+
+  /** 当前相机在月面 body-fixed 系下的地面投射与净空（用于下降起点连续） */
+  private computeMoonGroundPose(): { latDeg: number; lonDeg: number; clearanceM: number } {
+    const moonPose = this.getBodyWorldPose('moon');
+    const rel = this.camera.position.clone().sub(moonPose.pos);
+    const local = rel.applyQuaternion(moonPose.quaternion.clone().invert());
+    const len = local.length();
+    if (len < 1e-9) {
+      return { latDeg: 20.1, lonDeg: 30.5, clearanceM: 50000 };
+    }
+    const latDeg = THREE.MathUtils.radToDeg(Math.asin(Math.max(-1, Math.min(1, local.y / len))));
+    const lonDeg = THREE.MathUtils.radToDeg(Math.atan2(-local.z, local.x));
+
+    const datumM = 1737400;
+    const moonNode = this.bodyNodes.get('moon');
+    // 场景单位 → 米：物理观察下 satMesh 被缩放，取 mesh 世界有效半径
+    const sceneRadius =
+      moonNode && moonNode.mesh ? moonNode.displayRadius * moonNode.mesh.scale.x : moonNode?.displayRadius ?? 0.368;
+    const metersPerScene = sceneRadius > 0 ? datumM / sceneRadius : datumM / 0.368;
+    const groundElevM = TerrainHeightProvider.getInstance().getHeightMeters('moon', latDeg, lonDeg);
+    const clearanceM = (len - sceneRadius) * metersPerScene - groundElevM;
+    return { latDeg, lonDeg, clearanceM };
   }
 
   public pauseLanding(): void {
@@ -1729,22 +1783,25 @@ export class SolarEngine {
       this.skyboxMesh.position.copy(this.camera.position);
     }
 
-    // 批次 R5：着陆控制器生命周期驱动 (50km 轨道 -> 1.7m 月表人眼视高)
+    // 着陆控制器生命周期驱动（R5 建立，P2 重写下降段）
     // P1 修复：仅在本控制器刚刚完成"升空返轨"(ASCENDING -> ORBIT 边沿)时才收回 SURFACE_LOOK；
     // 书签恢复等外部进入的地表观察不被空闲的着陆状态机逐帧抢占 (用户保有控制权)
     const landingState = this.landingController.getState();
-    if (landingState === 'DESCENDING' || landingState === 'ASCENDING') {
+    if (landingState === 'PREPARING' || landingState === 'DESCENDING' || landingState === 'ASCENDING') {
       this.landingController.update(deltaSec, (s) => this.setTimeScale(s));
-      const traj = this.landingController.evaluateTrajectory();
-      this.cameraController.executeCommand({
-        type: 'enterSurfaceLook',
-        bodyId: 'moon',
-        lat: traj.lat,
-        lon: traj.lon,
-        eyeHeightM: traj.altitudeAGLM,
-        initialYawDeg: traj.cameraYawDeg,
-        initialPitchDeg: traj.cameraPitchDeg,
-      });
+      if (landingState !== 'PREPARING') {
+        const traj = this.landingController.evaluateTrajectory();
+        // P2：用户接管后 cameraYaw/Pitch 为 null —— 只推进位移，不覆盖视线
+        this.cameraController.executeCommand({
+          type: 'enterSurfaceLook',
+          bodyId: 'moon',
+          lat: traj.lat,
+          lon: traj.lon,
+          eyeHeightM: traj.altitudeAGLM,
+          ...(traj.cameraYawDeg != null ? { initialYawDeg: traj.cameraYawDeg } : {}),
+          ...(traj.cameraPitchDeg != null ? { initialPitchDeg: traj.cameraPitchDeg } : {}),
+        });
+      }
     } else if (
       landingState === 'ORBIT' &&
       this.prevLandingState === 'ASCENDING' &&
@@ -2244,7 +2301,7 @@ export class SolarEngine {
       surfaceStation,
       observationMode: this.observationMode,
       quality: 'analytic-approximation',
-      sourceVersion: '2026.09-P1-V3',
+      sourceVersion: '2026.09-P2-DTM', // P2 起站点高程来自真实 NAC DTM
       viewCameraMode: this.viewCameraMode,
       vehicleId: this.currentVehicleId,
       layers: {

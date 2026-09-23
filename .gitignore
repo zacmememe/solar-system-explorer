@@ -44,6 +44,9 @@ coverage/
 *.key
 .npmrc
 
+# 原始外部数据缓存（P2 起重打包产物入 public/data/dem/，原始整幅/行段缓存不入库）
+/data/
+
 # Local backups and generated review bundles
 /.backup-*/
 /.hud-backup-*/

@@ -212,8 +212,8 @@ async function runP1Verification() {
       'P1-WEB-02 SURFACE_LOOK 站点描述符为真实数据 (非零 body-fixed 向量/单位法线/谷底高程/眼高区分)',
       stationVecOk &&
         normalOk &&
-        station.heightM < -2000 &&
-        station.heightM > -2600 &&
+        station.heightM < -1400 && // P2 起真实 DTM 站点值 ≈ −1690.9 m（原高斯 −2500 断言已废止）
+        station.heightM > -2000 &&
         station.eyeHeightM === 1.7 &&
         station.datum === 'MOON_PA453',
       {

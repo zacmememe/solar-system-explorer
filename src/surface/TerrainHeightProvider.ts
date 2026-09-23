@@ -1,47 +1,31 @@
 /**
  * 地表高程与碰撞提供者 TerrainHeightProvider
- * 遵循批次 R5 规范：
- * 1. 统一管理天体地表高程模型，首发实现月球 Taurus–Littrow 陶拉斯—利特罗山谷高程场；
- * 2. 真实标定北断块山 (North Massif)、南断块山 (South Massif)、雕刻丘 (Sculptured Hills) 与平原谷底；
- * 3. 边界采用余弦光顺平滑过渡裙边 (Blend Skirt)，杜绝网格边界与基准球撕裂；
- * 4. 渲染几何网格、碰撞检测、相机视高 (AGL) 与 HUD 仪表 100% 消费同一套高程计算核心。
+ * 批次演进：
+ * - R5：解析高斯场示意地形（P2 起已删除，历史见 git；不得称为真实地形）；
+ * - P2：统一入口改为真实栅格 DEM 后端（LROC NAC DTM APOLLO17，5 m/px，pack-dem 打包）。
+ *   渲染几何网格、碰撞检测、相机视高 (AGL) 与 HUD 仪表 100% 消费同一套采样核心；
+ *   窗外显式回退 datum-sphere（基准球 0 高程），不再以解析山体伪装真实地貌。
  */
 
 import * as THREE from 'three';
 import type { BodyId } from '../contracts/body';
+import { RasterTerrainSource, type TerrainHeightSample } from './RasterTerrainSource';
 
 export interface TerrainProfile {
   bodyId: BodyId;
   referenceRadiusKm: number;
   hasLocalDTM: boolean;
-  valleyBounds?: {
-    latMin: number;
-    latMax: number;
-    lonMin: number;
-    lonMax: number;
-  };
+  demAdmissionState?: string;
 }
 
 export class TerrainHeightProvider {
   private static instance: TerrainHeightProvider | null = null;
 
-  // 月球基准球半径 (km)
+  // 月球基准球半径 (km / m) —— 与 NAC DTM APOLLO17 垂直基准（球体 1737.4 km）一致
   public static readonly MOON_DATUM_RADIUS_KM = 1737.4;
   public static readonly MOON_DATUM_RADIUS_M = 1737400.0;
 
-  // 陶拉斯—利特罗山谷中心经纬度 (Apollo 17 区域)
-  public static readonly TAURUS_LITTROW_CENTER = {
-    lat: 20.35,
-    lon: 30.78,
-  };
-
-  // 山谷 DTM 覆盖边界
-  public static readonly TAURUS_LITTROW_BOUNDS = {
-    latMin: 19.85,
-    latMax: 20.85,
-    lonMin: 30.15,
-    lonMax: 31.45,
-  };
+  private raster: RasterTerrainSource = RasterTerrainSource.getInstance();
 
   public static getInstance(): TerrainHeightProvider {
     if (!this.instance) {
@@ -51,80 +35,38 @@ export class TerrainHeightProvider {
   }
 
   /**
-   * 获取指定经纬度处相对于基准球的高程（单位：米）
-   * 基于 NASA LROC NAC DTM Apollo 17 地形剖面标定：
-   * - 谷底平原 (Valley Floor): 约 -2500m ~ -2600m
-   * - 北断块山 (North Massif, 20.48°N, 30.68°E): 顶峰相对谷底抬升约 2100m (海拔约 -400m ~ -500m)
-   * - 南断块山 (South Massif, 20.15°N, 30.60°E): 顶峰相对谷底抬升约 2250m (海拔约 -250m ~ -350m)
-   * - 雕刻丘 (Sculptured Hills, 20.42°N, 30.95°E): 丘陵起伏相对谷底抬升约 1200m
-   * - 外部边界平滑融合回 0m 偏置
+   * 指定经纬度相对基准球的高程（单位：米）。
+   * 窗内返回真实 DEM 双线性值；窗外/未装载/NoData 返回 0（基准球）——
+   * 调用方需区分两者时应使用 getHeightSample 获取 fidelity/溯源。
    */
   public getHeightMeters(bodyId: BodyId, lat: number, lon: number): number {
-    if (bodyId !== 'moon') {
-      return 0; // 其他天体基准球面为 0 高程偏置
-    }
-
-    const bounds = TerrainHeightProvider.TAURUS_LITTROW_BOUNDS;
-    if (
-      lat < bounds.latMin ||
-      lat > bounds.latMax ||
-      lon < bounds.lonMin ||
-      lon > bounds.lonMax
-    ) {
-      return 0;
-    }
-
-    // 计算到边界的归一化渐变衰减权重 (余弦平滑过渡裙边，导数在边缘为 0)
-    const dLat = Math.min(lat - bounds.latMin, bounds.latMax - lat) / (0.18);
-    const dLon = Math.min(lon - bounds.lonMin, bounds.lonMax - lon) / (0.22);
-    const edgeWeight = Math.max(0, Math.min(1, Math.min(dLat, dLon)));
-    const blendFactor = 0.5 * (1 - Math.cos(edgeWeight * Math.PI));
-
-    // 谷底平原基础标高 (-2500m)
-    const baseFloorElev = -2500.0;
-
-    // 1. 北断块山地形高斯椭球峰体 (North Massif)
-    const dNorthLat = (lat - 20.48) / 0.12;
-    const dNorthLon = (lon - 30.68) / 0.16;
-    const northDistSq = dNorthLat * dNorthLat + dNorthLon * dNorthLon;
-    const northMassif = 2100.0 * Math.exp(-northDistSq * 1.6);
-
-    // 2. 南断块山地形高斯椭球峰体 (South Massif)
-    const dSouthLat = (lat - 20.15) / 0.14;
-    const dSouthLon = (lon - 30.60) / 0.18;
-    const southDistSq = dSouthLat * dSouthLat + dSouthLon * dSouthLon;
-    const southMassif = 2250.0 * Math.exp(-southDistSq * 1.5);
-
-    // 3. 雕刻丘 (Sculptured Hills)
-    const dEastLat = (lat - 20.42) / 0.11;
-    const dEastLon = (lon - 30.95) / 0.15;
-    const eastDistSq = dEastLat * dEastLat + dEastLon * dEastLon;
-    const sculpturedHills = 1200.0 * Math.exp(-eastDistSq * 1.8);
-
-    // 4. 谷底微地形与次级平原起伏 (Wessex Rift 与浅色覆盖层 Light Mantle)
-    const lightMantleLat = (lat - 20.25) / 0.08;
-    const lightMantleLon = (lon - 30.70) / 0.10;
-    const lightMantleDistSq = lightMantleLat * lightMantleLat + lightMantleLon * lightMantleLon;
-    const lightMantle = 120.0 * Math.exp(-lightMantleDistSq * 2.0);
-
-    // 5. 局部浅陨坑微起伏 (如 Camelot, Shorty)
-    const ripple =
-      35.0 * Math.sin(lat * 80.0) * Math.cos(lon * 75.0) +
-      18.0 * Math.cos(lat * 160.0 + lon * 140.0);
-
-    const localElevation = baseFloorElev + northMassif + southMassif + sculpturedHills + lightMantle + ripple;
-
-    // 经裙边融合：在边界平滑收敛为 0，与全球参考球缝合
-    return localElevation * blendFactor;
+    if (bodyId !== 'moon') return 0; // 其他天体暂无本地 DTM
+    return this.raster.sampleHeight(lat, lon).heightM;
   }
 
-  /**
-   * 将高程（米）折算为场景单位渲染半径
-   * @param bodyId 天体 ID
-   * @param lat 纬度
-   * @param lon 经度
-   * @param baseRadius 场景基准渲染半径 (如月球 0.36815)
-   */
+  /** 带溯源的高程采样：measured-dem（真实 DTM）或 datum-sphere（基准球回退） */
+  public getHeightSample(bodyId: BodyId, lat: number, lon: number): TerrainHeightSample {
+    if (bodyId !== 'moon') {
+      return { valid: true, heightM: 0, fidelity: 'datum-sphere', sourceId: null };
+    }
+    const s = this.raster.sampleHeight(lat, lon);
+    if (s.valid) return s;
+    // 窗外/NoData：显式回退基准球（不是隐式 0 米平原——fidelity 标注 datum-sphere）
+    if (s.reason === 'outside' || s.reason === 'nodata') {
+      return { valid: true, heightM: 0, fidelity: 'datum-sphere', sourceId: null };
+    }
+    return s; // not-loaded
+  }
+
+  public get isRasterReady(): boolean {
+    return this.raster.isReady;
+  }
+
+  public get rasterAdmissionState(): string {
+    return this.raster.terrainAdmissionState;
+  }
+
+  /** 将高程（米）折算为场景单位渲染半径 */
   public getSceneSurfaceRadius(
     bodyId: BodyId,
     lat: number,
@@ -149,16 +91,11 @@ export class TerrainHeightProvider {
     bodyWorldPos: THREE.Vector3,
     baseRadius: number
   ): number {
-    // 计算相机相对天体中心的世界矢量
     const relVec = new THREE.Vector3().subVectors(cameraPos, bodyWorldPos);
     const dist = relVec.length();
     if (dist < 1e-6) return 0;
 
-    // 解算当前地面投射点的经纬度
-    // 采用与 SurfaceTileScheme 一致的球面坐标基：
-    // dir.x = cosLat * cosLon
-    // dir.y = sinLat
-    // dir.z = -cosLat * sinLon
+    // 与渲染约定一致的球面坐标基：+X=0°经, +Y=北极, −Z=90°E
     const dir = relVec.clone().normalize();
     const lat = THREE.MathUtils.radToDeg(Math.asin(Math.max(-1, Math.min(1, dir.y))));
     const lon = THREE.MathUtils.radToDeg(Math.atan2(-dir.z, dir.x));
@@ -175,7 +112,7 @@ export class TerrainHeightProvider {
   }
 
   /**
-   * 计算相机相对基准球海平面的海拔高度 (MSL - Mean Surface Level, 单位：米)
+   * 计算相机相对基准球海平面的海拔高度 (MSL, 单位：米)
    */
   public getAltitudeMSL(
     bodyId: BodyId,
@@ -193,7 +130,7 @@ export class TerrainHeightProvider {
   }
 
   /**
-   * 计算机位下方的地表倾角与法线向量 (带山地坡度校正)
+   * 计算机位下方的地表倾角与法线向量 (按真实 DEM 梯度)
    */
   public getSurfaceNormal(
     bodyId: BodyId,
@@ -201,7 +138,7 @@ export class TerrainHeightProvider {
     lon: number,
     baseRadius: number
   ): THREE.Vector3 {
-    const eps = 0.001; // 约 30 米采样跨距
+    const eps = 0.00005; // 约 1.5 米采样跨距（接近 5m 像元的亚像元梯度）
     const pCenter = this.latLonToVector3(bodyId, lat, lon, baseRadius);
     const pNorth = this.latLonToVector3(bodyId, lat + eps, lon, baseRadius);
     const pEast = this.latLonToVector3(bodyId, lat, lon + eps, baseRadius);
@@ -213,7 +150,7 @@ export class TerrainHeightProvider {
   }
 
   /**
-   * 经纬度转局部笛卡尔坐标
+   * 经纬度转局部笛卡尔坐标（+X=0°经, +Y=北极, −Z=90°E 渲染约定）
    */
   public latLonToVector3(
     bodyId: BodyId,
@@ -233,48 +170,48 @@ export class TerrainHeightProvider {
   }
 
   /**
-   * 构建 Taurus–Littrow 山谷高精 3D 浮雕网格
-   * 该网格直接生成在月球局部坐标系球面之上，无缝结合全球球体
+   * 构建真实 DTM 地表网格（P2：由 RasterTerrainSource 的 DEM 窗口驱动）。
+   * 必须在栅格装载完成后调用；返回 null 表示数据未就绪（调用方不得伪造地形）。
+   * 几何覆盖 DEM 窗口全部范围；UV 与正射 ortho.u16 网格一一对应（v=0 = 北）。
    */
-  public buildTaurusLittrowGeometry(baseRadius: number): THREE.BufferGeometry {
-    const bounds = TerrainHeightProvider.TAURUS_LITTROW_BOUNDS;
-    const segsLat = 96;
-    const segsLon = 128;
+  public buildDemWindowGeometry(baseRadius: number, maxSegments = 400): THREE.BufferGeometry | null {
+    if (!this.raster.isReady) return null;
+    const bounds = this.raster.windowBounds;
+    if (!bounds) return null;
+
+    const segsLat = maxSegments;
+    const segsLon = maxSegments;
+    const dLat = (bounds.latMax - bounds.latMin) / segsLat;
+    const dLon = (bounds.lonMax - bounds.lonMin) / segsLon;
 
     const positions: number[] = [];
-    const normals: number[] = [];
     const uvs: number[] = [];
     const indices: number[] = [];
 
     for (let i = 0; i <= segsLat; i++) {
-      const uLat = i / segsLat;
-      const lat = bounds.latMin + uLat * (bounds.latMax - bounds.latMin);
+      const lat = bounds.latMin + i * dLat; // 南 → 北
+      const v = 1 - i / segsLat; // v=1 = 南（ortho 行末），v=0 = 北（ortho 行 0）
 
       for (let j = 0; j <= segsLon; j++) {
-        const uLon = j / segsLon;
-        const lon = bounds.lonMin + uLon * (bounds.lonMax - bounds.lonMin);
+        const lon = bounds.lonMin + j * dLon;
+        const u = j / segsLon;
 
         const pos = this.latLonToVector3('moon', lat, lon, baseRadius);
-        const norm = this.getSurfaceNormal('moon', lat, lon, baseRadius);
-
         positions.push(pos.x, pos.y, pos.z);
-        normals.push(norm.x, norm.y, norm.z);
-        uvs.push(uLon, uLat);
+        uvs.push(u, v);
       }
     }
 
     const rowStride = segsLon + 1;
     for (let i = 0; i < segsLat; i++) {
       for (let j = 0; j < segsLon; j++) {
-        const a = i * rowStride + j;
-        const b = (i + 1) * rowStride + j;
+        const a = i * rowStride + j; // (lat_i, lon_j) 偏南
+        const b = (i + 1) * rowStride + j; // 偏北
         const c = (i + 1) * rowStride + (j + 1);
         const d = i * rowStride + (j + 1);
 
-        // 外向绕序 (P1 修正)：网格面法线必须背离天体中心 (径向向外)，
-        // 否则 FrontSide 渲染会在地表视角剔除全部可见面。
-        // 推导：lat 增加方向 × lon 增加方向 的叉积指向球面外侧，
-        // 故三角形顶点顺序取 (a, d, b) / (b, d, c)。
+        // 外向绕序 (P1 勘误结论)：lat 增 × lon 增 叉积指向球面外侧，
+        // FrontSide 只画外向面；DoubleSide 不是绕序修复。
         indices.push(a, d, b);
         indices.push(b, d, c);
       }
@@ -282,11 +219,9 @@ export class TerrainHeightProvider {
 
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     geo.setIndex(indices);
     geo.computeVertexNormals();
-
     return geo;
   }
 }

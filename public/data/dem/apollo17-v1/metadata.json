@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 2,
+  "admissionState": "requires-source-and-registration-review",
+  "fidelityClaim": "measured-dem",
+  "sourceUrl": "https://pds.lroc.im-ldi.com/data/LRO-L-LROC-5-RDR-V1.0/LROLRC_2001/DATA/SDP/NAC_DTM/APOLLO17/NAC_DTM_APOLLO17.TIF",
+  "fetchedViaUrl": "https://pds.mcp.nasa.gov/data/store/img/lunar_reconnaissance_orbiter/pds4/lroc/lro-l-lroc-5-rdr/LROLRC_2001/DATA/SDP/NAC_DTM/APOLLO17/NAC_DTM_APOLLO17.TIF",
+  "sourceLabelUrl": "https://pds.lroc.im-ldi.com/data/LRO-L-LROC-5-RDR-V1.0/LROLRC_2001/DATA/SDP/NAC_DTM/APOLLO17/NAC_DTM_APOLLO17.LBL",
+  "sourceReadmeUrl": "https://pds.lroc.im-ldi.com/data/LRO-L-LROC-5-RDR-V1.0/LROLRC_2001/DATA/SDP/NAC_DTM/APOLLO17/NAC_DTM_APOLLO17_README.TXT",
+  "sourceFile": "NAC_DTM_APOLLO17.TIF",
+  "sourceFileSha256": "3f7b5bb5a5c2ca62a0227e9e9444cf354048d038fe624a49a08d9e13d473392e",
+  "orthoSourceFileSha256": "17fb31003f5cbcb72ae7f2355dc6907b9286eae5bd7f4b53560c2b9c87fe450a",
+  "sourceVersion": "P1.9 (PDS3 PRODUCT_VERSION_ID v1.9, PRODUCT_CREATION_TIME 2020-10-13)",
+  "licenseNote": "NASA LRO LROC PDS 公共数据 LRO-L-LROC-5-RDR-V1.0，Arizona State University 制作",
+  "verticalDatum": "参考球体半径 1737400 m (LBL a=b=c)；与 LOLA 拟合 RMS 1.77 m；SOCET SET 报告精度 2.55 m",
+  "nativeSpacingMeters": 5,
+  "width": 1200,
+  "height": 1200,
+  "projection": {
+    "type": "EQUIRECTANGULAR",
+    "coordinateSystem": "PLANETOCENTRIC",
+    "positiveLongitude": "EAST",
+    "referenceRadiusM": 1737400,
+    "centerLatitudeDeg": 20,
+    "centerLongitudeDeg": 180,
+    "note": "yM 自赤道起算：xM=R·cos(20°)·(lon−180°)·rad，yM=R·lat·rad（GeoTIFF ModelTiepoint/PixelScale 反解核实）"
+  },
+  "pixelCornerAffine": {
+    "rule": "图面米(列角,行角) = (x0 + col·dx, y0 + row·dy)",
+    "x0": -4276879.9999999,
+    "y0": 645989.99999999,
+    "dx": 4.9999999999999,
+    "dy": -4.9999999999999
+  },
+  "sampleCenterRule": "像元中心 = pixelCornerAffine(col+0.5, row+0.5)，再按 projection 公式转经纬",
+  "window": {
+    "colStart": 4382,
+    "rowStart": 5181,
+    "width": 1200,
+    "height": 1200
+  },
+  "sourceStrip0": 93471,
+  "sourceRowBytes": 39940,
+  "windowFirstSampleCenter": {
+    "latDeg": 20.44901013003357,
+    "lonDeg": 30.674751543907007
+  },
+  "sourceNoDataValue": -3.4028226550889045e+38,
+  "format": "float32-le",
+  "units": "metres above sphere radius 1737400 m",
+  "noData": "NaN",
+  "validSampleCount": 1440000,
+  "minimumHeightM": -2712.222900390625,
+  "maximumHeightM": -878.156982421875,
+  "ortho": {
+    "file": "ortho.u16",
+    "format": "uint16-le I/F",
+    "sourceUrl": "https://pds.lroc.im-ldi.com/data/LRO-L-LROC-5-RDR-V1.0/LROLRC_2001/DATA/SDP/NAC_DTM/APOLLO17/NAC_DTM_APOLLO17_MOSAIC_5M.IMG",
+    "fetchedViaUrl": "https://pds.mcp.nasa.gov/data/store/img/lunar_reconnaissance_orbiter/pds4/lroc/lro-l-lroc-5-rdr/LROLRC_2001/DATA/SDP/NAC_DTM/APOLLO17/NAC_DTM_APOLLO17_MOSAIC_5M.IMG",
+    "sampleType": "LSB_INTEGER",
+    "sameGridAsDem": true,
+    "note": "README: 正射不含 scale/offset 地理标签；网格与 DEM 对齐（LBL 与尺寸核实）"
+  },
+  "heightSha256": "b5017e3528de52baa9fb4738bb02fe6f2b3d16231b0884b5cf36f5e97f1b1c68",
+  "validSha256": "26214137c25aa6ad9bdb6a81976afb0cdbd22b76902a3ee2f707655f1f80a700",
+  "orthoSha256": "fdcea23e7712b4a2748c9c252661c87165379e08ecee808a5595724d12cc76a7",
+  "warning": "No reprojection or vertical datum conversion was performed. Native sampling is not vertical accuracy. 2026-09-24: 网关大块 Range 拼装被证实内容漂移，本包由整文件单流下载后本地裁窗生成。"
+}
