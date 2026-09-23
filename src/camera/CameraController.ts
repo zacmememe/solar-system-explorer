@@ -12,6 +12,7 @@ import * as THREE from 'three';
 import type { BodyId } from '../contracts/body';
 import type { CameraCommand, CameraMode, CameraStateSnapshot, CameraAnchor, CameraLookTarget } from '../contracts/camera';
 import { BODIES, getNavDisplayRadius } from '../astronomy/bodies';
+import { TerrainHeightProvider } from '../surface/TerrainHeightProvider';
 
 export interface CameraControllerOptions {
   camera: THREE.PerspectiveCamera;
@@ -27,6 +28,10 @@ export class CameraController {
   private targetBodyId: BodyId = 'earth';
   private selectedBodyId: BodyId = 'earth';
   private sourceBodyId: BodyId | null = 'earth';
+
+  // 地面原地环顾姿态 (SURFACE_LOOK 模式)
+  private surfaceYawDeg: number = 225.0; // 默认朝向西南偏南 (正对月面看地球方向)
+  private surfacePitchDeg: number = 12.0; // 默认轻微平视山谷地平线
   private latestGetBodyPos?: (id: BodyId) => {
     pos: THREE.Vector3;
     radius: number;
@@ -84,7 +89,11 @@ export class CameraController {
       mode: this.mode,
       anchor: this.anchor,
       lookTarget: this.lookTarget,
-      targetBodyId: this.anchor.kind === 'body' ? this.anchor.bodyId : this.targetBodyId,
+      surfaceOrientation: {
+        yawDeg: this.surfaceYawDeg,
+        pitchDeg: this.surfacePitchDeg,
+      },
+      targetBodyId: this.anchor.kind === 'body' || this.anchor.kind === 'surface' ? this.anchor.bodyId : this.targetBodyId,
       selectedBodyId: this.selectedBodyId,
       sourceBodyId: this.sourceBodyId,
       transitionProgress: this.transitionProgress,
@@ -147,6 +156,20 @@ export class CameraController {
         if (this.isTransitioning) {
           this.cancelFlight();
         }
+        if (this.mode === 'SURFACE_LOOK') {
+          // 地表第一人称视线环顾：水平拖拽转动 yaw (360°)，垂直拖拽调整 pitch (±85°)
+          this.surfaceYawDeg = THREE.MathUtils.euclideanModulo(
+            this.surfaceYawDeg - command.deltaTheta * (180 / Math.PI),
+            360
+          );
+          this.surfacePitchDeg = Math.max(
+            -85,
+            Math.min(85, this.surfacePitchDeg - command.deltaPhi * (180 / Math.PI))
+          );
+          this.lookTarget = { kind: 'center' }; // 用户手动环顾时解除特定天体视线锁定
+          this.updateCameraTransform();
+          break;
+        }
         this.spherical.theta -= command.deltaTheta;
         this.spherical.phi = Math.max(0.01, Math.min(Math.PI - 0.01, this.spherical.phi - command.deltaPhi));
         this.spherical.makeSafe();
@@ -157,6 +180,9 @@ export class CameraController {
         if (this.isTransitioning) {
           this.cancelFlight();
         }
+        if (this.mode === 'SURFACE_LOOK') {
+          break; // 地面人眼停驻状态下不响应宏观对数 Dolly
+        }
         this.applyLogDollyInput(command.logDelta);
         this.updateCameraTransform();
         break;
@@ -165,10 +191,56 @@ export class CameraController {
         if (this.isTransitioning) {
           this.cancelFlight();
         }
+        if (this.mode === 'SURFACE_LOOK') {
+          break;
+        }
         // 兼容旧 zoom 命令：将绝对距离转为等效相对 logDelta，避免突跳触底
         this.applyLogDollyInput(command.deltaDist / Math.max(1.0, this.spherical.radius));
         this.updateCameraTransform();
         break;
+
+      case 'enterSurfaceLook': {
+        if (this.isTransitioning) {
+          this.cancelFlight();
+        }
+        this.mode = 'SURFACE_LOOK';
+        this.anchor = {
+          kind: 'surface',
+          bodyId: command.bodyId,
+          lat: command.lat,
+          lon: command.lon,
+          eyeHeightM: command.eyeHeightM ?? 1.7,
+        };
+        this.targetBodyId = command.bodyId;
+        this.selectedBodyId = command.bodyId;
+        if (command.initialYawDeg !== undefined) {
+          this.surfaceYawDeg = command.initialYawDeg;
+        }
+        if (command.initialPitchDeg !== undefined) {
+          this.surfacePitchDeg = command.initialPitchDeg;
+        }
+        this.lookTarget = { kind: 'center' };
+        this.updateCameraTransform();
+        break;
+      }
+
+      case 'setSurfaceLook': {
+        if (this.mode === 'SURFACE_LOOK') {
+          this.surfaceYawDeg = THREE.MathUtils.euclideanModulo(command.yawDeg, 360);
+          this.surfacePitchDeg = Math.max(-85, Math.min(85, command.pitchDeg));
+          this.lookTarget = { kind: 'center' };
+          this.updateCameraTransform();
+        }
+        break;
+      }
+
+      case 'lookAtSkyTarget': {
+        if (this.mode === 'SURFACE_LOOK') {
+          this.lookTarget = { kind: 'body', bodyId: command.targetBodyId };
+          this.updateCameraTransform();
+        }
+        break;
+      }
 
       case 'overview': {
         const dur = this.reduceMotion ? 0.15 : 2.5;
@@ -517,6 +589,15 @@ export class CameraController {
         framingRadius: this.framingRadius,
       }));
 
+    if (this.mode === 'SURFACE_LOOK' && this.anchor.kind === 'surface') {
+      const targetInfo = getPos(this.anchor.bodyId);
+      this.targetPosition.copy(targetInfo.pos);
+      this.surfaceRadius = targetInfo.surfaceRadius ?? targetInfo.radius;
+      this.framingRadius = targetInfo.framingRadius ?? targetInfo.radius;
+      this.updateCameraTransform();
+      return;
+    }
+
     if (this.isTransitioning) {
       this.transitionProgress += deltaSec / this.transitionDurationSec;
       if (this.transitionProgress >= 1.0) {
@@ -573,6 +654,11 @@ export class CameraController {
         this.collisionClearance = Math.max(0.01, this.surfaceRadius * 0.02);
         this.minDistance = Math.max(0.1, this.surfaceRadius + this.collisionClearance);
         this.maxDistance = this.framingRadius * 100;
+      } else if (this.anchor.kind === 'surface') {
+        const targetInfo = getPos(this.anchor.bodyId);
+        this.targetPosition.copy(targetInfo.pos);
+        this.surfaceRadius = targetInfo.surfaceRadius ?? targetInfo.radius;
+        this.framingRadius = targetInfo.framingRadius ?? targetInfo.radius;
       } else {
         this.targetPosition.set(this.anchor.pivotScene[0], this.anchor.pivotScene[1], this.anchor.pivotScene[2]);
         this.surfaceRadius = 0;
@@ -615,6 +701,67 @@ export class CameraController {
    * 唯一相机写入者！支持 lookTarget 视线朝向解耦
    */
   private updateCameraTransform(): void {
+    if (this.mode === 'SURFACE_LOOK' && this.anchor.kind === 'surface') {
+      const heightProvider = TerrainHeightProvider.getInstance();
+      const localSurfacePt = heightProvider.latLonToVector3(
+        this.anchor.bodyId,
+        this.anchor.lat,
+        this.anchor.lon,
+        this.surfaceRadius
+      );
+
+      // 计算地表局部正交天顶/切线基向量 (u: 天顶 Up, e: 正东 East, n: 正北 North)
+      const latRad = THREE.MathUtils.degToRad(this.anchor.lat);
+      const lonRad = THREE.MathUtils.degToRad(this.anchor.lon);
+      const cosLat = Math.cos(latRad);
+      const u = new THREE.Vector3(
+        cosLat * Math.cos(lonRad),
+        Math.sin(latRad),
+        -cosLat * Math.sin(lonRad)
+      ).normalize();
+      const e = new THREE.Vector3(-Math.sin(lonRad), 0, -Math.cos(lonRad)).normalize();
+      const n = new THREE.Vector3().crossVectors(u, e).normalize();
+
+      // 人眼视高转换为场景距离单位
+      const datumM = this.anchor.bodyId === 'moon' ? TerrainHeightProvider.MOON_DATUM_RADIUS_M : 6371000.0;
+      const eyeHeightScene = (this.anchor.eyeHeightM || 1.7) * (this.surfaceRadius / datumM);
+
+      const eyeWorldPos = this.targetPosition.clone().add(localSurfacePt).addScaledVector(u, eyeHeightScene);
+      this.camera.position.copy(eyeWorldPos);
+
+      // 观察朝向判断
+      if (this.lookTarget.kind === 'body' && this.latestGetBodyPos) {
+        const skyTargetPos = this.latestGetBodyPos(this.lookTarget.bodyId).pos;
+        this.camera.up.copy(u);
+        this.camera.lookAt(skyTargetPos);
+      } else {
+        const yawRad = THREE.MathUtils.degToRad(this.surfaceYawDeg);
+        const pitchRad = THREE.MathUtils.degToRad(this.surfacePitchDeg);
+
+        // 视线水平投影向量
+        const forward = new THREE.Vector3()
+          .addScaledVector(n, Math.cos(yawRad))
+          .addScaledVector(e, Math.sin(yawRad))
+          .normalize();
+
+        // 视线全空间向量
+        const lookDir = new THREE.Vector3()
+          .addScaledVector(forward, Math.cos(pitchRad))
+          .addScaledVector(u, Math.sin(pitchRad))
+          .normalize();
+
+        this.camera.up.copy(u);
+        this.camera.lookAt(eyeWorldPos.clone().add(lookDir));
+      }
+
+      // 地面观察时近裁剪面极致贴近 (0.1毫米级)，防月面土壤裁剪穿透
+      if (Math.abs(this.camera.near - 1e-4) > 1e-6) {
+        this.camera.near = 1e-4;
+        this.camera.updateProjectionMatrix();
+      }
+      return;
+    }
+
     const offset = new THREE.Vector3().setFromSpherical(this.spherical);
     this.camera.position.copy(this.targetPosition).add(offset);
 

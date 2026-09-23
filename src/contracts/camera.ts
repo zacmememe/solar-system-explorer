@@ -6,11 +6,12 @@
 
 import type { BodyId } from './body';
 
-export type CameraMode = 'OVERVIEW' | 'ORBIT_TARGET' | 'TRANSITION';
+export type CameraMode = 'OVERVIEW' | 'ORBIT_TARGET' | 'TRANSITION' | 'SURFACE_LOOK';
 
 export type CameraAnchor =
   | { kind: 'body'; bodyId: BodyId }
-  | { kind: 'free'; pivotScene: [number, number, number] };
+  | { kind: 'free'; pivotScene: [number, number, number] }
+  | { kind: 'surface'; bodyId: BodyId; lat: number; lon: number; eyeHeightM: number };
 
 export type CameraLookTarget =
   | { kind: 'center' }
@@ -21,6 +22,10 @@ export interface CameraStateSnapshot {
   mode: CameraMode;
   anchor?: CameraAnchor;
   lookTarget?: CameraLookTarget;
+  surfaceOrientation?: {
+    yawDeg: number;
+    pitchDeg: number;
+  };
   targetBodyId: BodyId | null;
   selectedBodyId: BodyId | null;
   sourceBodyId?: BodyId | null;
@@ -60,5 +65,24 @@ export type CameraCommand =
       lon: number;
       altitude?: number;
       durationSec?: number;
+    }
+  | {
+      type: 'enterSurfaceLook';
+      bodyId: BodyId;
+      lat: number;
+      lon: number;
+      eyeHeightM?: number;
+      initialYawDeg?: number;
+      initialPitchDeg?: number;
+    }
+  | {
+      type: 'setSurfaceLook';
+      yawDeg: number;
+      pitchDeg: number;
+    }
+  | {
+      type: 'lookAtSkyTarget';
+      targetBodyId: BodyId;
     };
+
 

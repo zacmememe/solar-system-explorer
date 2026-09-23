@@ -63,6 +63,9 @@ import {
 } from '../astronomy/MoonTextures';
 import { soundEffects } from '../audio/SoundEffects';
 import { VehicleLoader } from '../vehicles/VehicleLoader';
+import { LandingController } from '../surface/LandingController';
+import type { LandingTelemetry } from '../contracts/landing';
+import { TerrainHeightProvider } from '../surface/TerrainHeightProvider';
 import productionAssetsData from '../../sources/production-assets.json';
 
 /**
@@ -202,6 +205,11 @@ export class SolarEngine {
   private vehicleLoadGeneration: number = 0;
   private viewCameraMode: ViewCameraMode = 'PLANET_OBSERVE';
   private prevIsTransitioning: boolean = false;
+
+  // 批次 R5：着陆控制器与月表 3D 浮雕网格
+  private landingController: LandingController = new LandingController('taurus-littrow');
+  private lunarValleyMesh?: THREE.Mesh;
+  private moonMesh?: THREE.Mesh;
 
   // 动画与时钟
   private isRunning: boolean = true;
@@ -687,6 +695,32 @@ export class SolarEngine {
       satPoleFrame.add(satMesh);
       this.pickableMeshes.push(satMesh);
 
+      if (satId === 'moon') {
+        this.moonMesh = satMesh;
+        // 异步载入真实 NASA LROC 月球正射反照率贴图
+        new THREE.TextureLoader().load('/assets/textures/moon/lroc_color_2k.jpg', (tex) => {
+          tex.colorSpace = THREE.SRGBColorSpace;
+          satMat.map = tex;
+          satMat.needsUpdate = true;
+        });
+
+        // 挂载 Taurus–Littrow 高精 3D 浮雕地形网格 (Apollo 17 区域)
+        const heightProvider = TerrainHeightProvider.getInstance();
+        const valleyGeo = heightProvider.buildTaurusLittrowGeometry(satRadius);
+        const valleyMat = new THREE.MeshStandardMaterial({
+          color: 0x94a3b8,
+          roughness: 0.95,
+          metalness: 0.05,
+          side: THREE.DoubleSide,
+        });
+        const valleyMesh = new THREE.Mesh(valleyGeo, valleyMat);
+        valleyMesh.name = 'taurus-littrow-terrain';
+        valleyMesh.receiveShadow = true;
+        valleyMesh.castShadow = true;
+        satMesh.add(valleyMesh);
+        this.lunarValleyMesh = valleyMesh;
+      }
+
       // 卫星局部公转轨道线（优雅微弱半透明环，直观呈现多星系同心轨道分布）
       let satOrbitLine: THREE.LineLoop | undefined;
       if (satData.orbitSemiMajorAxisKm > 0) {
@@ -1132,6 +1166,11 @@ export class SolarEngine {
     }
 
     if (this.hasDragged) {
+      // 批次 R5 铁律：下降过程中用户拖拽立即打断进入 HOLD 状态，相机停驻并保留控制
+      if (this.landingController.getState() === 'DESCENDING') {
+        this.landingController.holdDescent();
+      }
+
       const deltaTheta = dx * 0.005;
       const deltaPhi = dy * 0.005;
       this.cameraController.executeCommand({ type: 'orbit', deltaPhi, deltaTheta });
@@ -1172,6 +1211,9 @@ export class SolarEngine {
     const normalizedPx = normalizeWheelDelta(e.deltaY, e.deltaMode, viewportHeight, 16);
     // 连续对数缩放增益：每次 100px 滚轮刻度约改变目标间距 14%
     const logDelta = normalizedPx * 0.0014;
+    if (this.landingController.getState() === 'DESCENDING') {
+      this.landingController.holdDescent();
+    }
     this.cameraController.executeCommand({ type: 'zoomInput', logDelta });
     this.emitSnapshot();
   };
@@ -1236,6 +1278,9 @@ export class SolarEngine {
     } else if (cmd.type === 'select') {
       soundEffects.playClick();
       this.updateOrbitsVisibility(cmd.bodyId);
+      if (this.callbacks.onSelectBody) {
+        this.callbacks.onSelectBody(cmd.bodyId);
+      }
     }
     this.cameraController.executeCommand(cmd);
     this.emitSnapshot();
@@ -1251,6 +1296,72 @@ export class SolarEngine {
 
   public setTimeScale(scale: number): void {
     this.timeScale = scale;
+  }
+
+  public getTimeScale(): number {
+    return this.timeScale;
+  }
+
+  /**
+   * 启动月球 Taurus–Littrow 陶拉斯—利特罗山谷真实降落序列 (批次 R5)
+   */
+  public startLunarLanding(): void {
+    // 1. 确保聚焦月球并切入物理比例模式
+    this.cameraController.executeCommand({ type: 'select', bodyId: 'moon' });
+    if (this.callbacks.onSelectBody) {
+      this.callbacks.onSelectBody('moon');
+    }
+    this.setPresentationPolicy('PHYSICAL_OBSERVATION');
+    soundEffects.playWarp();
+
+    // 2. 启动降落状态机
+    this.landingController.startDescent(
+      () => this.timeScale,
+      (scale) => this.setTimeScale(scale)
+    );
+  }
+
+  public pauseLanding(): void {
+    this.landingController.holdDescent();
+  }
+
+  public resumeLanding(): void {
+    this.landingController.resumeDescent();
+  }
+
+  public returnToLunarOrbit(): void {
+    this.landingController.returnToOrbit();
+  }
+
+  public lookAtEarthFromMoon(): void {
+    this.cameraController.executeCommand({
+      type: 'lookAtSkyTarget',
+      targetBodyId: 'earth',
+    });
+  }
+
+  public resetMoonSurfaceLook(): void {
+    this.cameraController.executeCommand({
+      type: 'setSurfaceLook',
+      yawDeg: 225.0,
+      pitchDeg: 12.0,
+    });
+  }
+
+  public getLandingController(): LandingController {
+    return this.landingController;
+  }
+
+  public getLandingTelemetry(): LandingTelemetry {
+    return this.landingController.getTelemetry();
+  }
+
+  public getMoonMesh(): THREE.Mesh | undefined {
+    return this.moonMesh;
+  }
+
+  public getLunarValleyMesh(): THREE.Mesh | undefined {
+    return this.lunarValleyMesh;
   }
 
   public setShowClouds(show: boolean): void {
@@ -1808,6 +1919,28 @@ export class SolarEngine {
     // 4. 星空背景天球跟随相机移动（保持无尽远景感）
     if (this.skyboxMesh) {
       this.skyboxMesh.position.copy(this.camera.position);
+    }
+
+    // 批次 R5：着陆控制器生命周期驱动 (50km 轨道 -> 1.7m 月表人眼视高)
+    const landingState = this.landingController.getState();
+    if (landingState === 'DESCENDING' || landingState === 'ASCENDING') {
+      this.landingController.update(deltaSec, (s) => this.setTimeScale(s));
+      const traj = this.landingController.evaluateTrajectory();
+      this.cameraController.executeCommand({
+        type: 'enterSurfaceLook',
+        bodyId: 'moon',
+        lat: traj.lat,
+        lon: traj.lon,
+        eyeHeightM: traj.altitudeAGLM,
+        initialYawDeg: traj.cameraYawDeg,
+        initialPitchDeg: traj.cameraPitchDeg,
+      });
+    } else if (landingState === 'ORBIT' && this.cameraController.getSnapshot().mode === 'SURFACE_LOOK') {
+      this.cameraController.executeCommand({
+        type: 'flyTo',
+        bodyId: 'moon',
+        durationSec: 1.5,
+      });
     }
 
     // 5. 更新单一相机控制器

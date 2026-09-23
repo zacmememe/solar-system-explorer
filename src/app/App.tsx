@@ -9,6 +9,7 @@ import { HangarModal } from '../vehicles/HangarModal';
 import { PostcardModal } from '../vehicles/PostcardModal';
 import { BookmarkModal } from './BookmarkModal';
 import { MissionHUD } from './hud/MissionHUD';
+import { LunarLandingHUD } from './LunarLandingHUD';
 import { createHudStore } from './hud/store';
 import './app.css';
 import type { BookmarkItem } from '../contracts/bookmark';
@@ -110,12 +111,14 @@ export const App: React.FC = () => {
       });
 
       engineRef.current = engine;
+      (window as any).__solarEngine = engine;
       engine.setTimeScale(50.0);
 
       return () => {
         hudStore.publish(null);
         engine.dispose();
         engineRef.current = null;
+        (window as any).__solarEngine = null;
       };
     } catch (err: any) {
       console.error('Failed to initialize SolarEngine:', err);
@@ -643,6 +646,12 @@ export const App: React.FC = () => {
         <p style={{ lineHeight: 1.7 }}>{engineError}</p>
         <p style={{ lineHeight: 1.7 }}>需要支持 WebGL2 的浏览器与图形环境。这里不会以空白画面或模拟读数冒充成功。</p>
       </div>}
+
+      {/* 批次 R5：月球着陆与地表停驻遥测仪表 HUD */}
+      <LunarLandingHUD
+        engine={engineRef.current}
+        activeBodyId={selectedBodyId}
+      />
 
       {/* 航天器机库全屏模态窗口 */}
       {showHangar && (
