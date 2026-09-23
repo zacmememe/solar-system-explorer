@@ -88,7 +88,7 @@ describe('P2 下降参考曲线 (descentCurve)', () => {
     expect(mid.commandedClearanceRateMps).toBeCloseTo((midP.clearanceM - midM.clearanceM) / (2 * h), 3);
   });
 
-  it('对跖路径无航点时拒绝；非法腿拒绝', () => {
+  it('对跖路径无航点时拒绝；非法腿拒绝（P3b-B：基准高可为负，低于 −半径才非法）', () => {
     const leg = {
       from: { latDeg: 0, lonDeg: 0, clearanceM: 1000 },
       to: { latDeg: 0, lonDeg: 179.9995, clearanceM: 1.7 },
@@ -96,8 +96,17 @@ describe('P2 下降参考曲线 (descentCurve)', () => {
       radiusM: 1737400,
     };
     expect(() => sampleDescent(leg, 1)).toThrow(/Antipodal/);
+    // 低于基准面的着陆点（如 Taurus–Littrow −1690m）合法——不再拒绝
+    const belowDatum = {
+      from: { latDeg: 0, lonDeg: 0, clearanceM: 1000 },
+      to: { latDeg: 1, lonDeg: 1, clearanceM: -1689 },
+      durationSec: 10,
+      radiusM: 1737400,
+    };
+    expect(() => sampleDescent(belowDatum, 1)).not.toThrow();
+    // 几何半径非正（净空 ≤ −半径）仍非法
     const bad = {
-      from: { latDeg: 0, lonDeg: 0, clearanceM: -5 },
+      from: { latDeg: 0, lonDeg: 0, clearanceM: -2000000 },
       to: { latDeg: 1, lonDeg: 1, clearanceM: 1.7 },
       durationSec: 10,
       radiusM: 1737400,

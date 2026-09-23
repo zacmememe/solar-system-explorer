@@ -1,62 +1,58 @@
 /**
  * 着陆控制器与下降状态机 LandingController
- * 批次规范：R5 建立，P2 按 Pro 交接重写下降段：
+ * 批次规范：R5 建立，P2 按 Pro 交接重写下降段，P3b-B 按 Pro 复审再重构：
  * 1. ORBIT → PREPARING → DESCENDING → HOLD ⇄ SURFACE_LOOK → ASCENDING → ORBIT；
- * 2. PREPARING 门槛：真实 DTM 数据装载且站点采样为 measured-dem 才放行，
- *    用户改选后过期准备不自动发起（cancelPreparation 显式收回）；
- * 3. 下降起点来自当前机位（body-fixed 地面投射点 + 当前净空），
- *    超远机位先构造连续接近段，不瞬移到固定 50km 点；
- * 4. 路径为短大圆 + smootherstep 参考曲线（src/world-support/descentCurve.ts），
- *    速度用曲线真实导数（commanded 口径），HUD 明确语义；
- * 5. 交互铁律：用户拖拽 → HOLD 冻结位移、保留视线；resume 只继续位移，
- *    不重设 yaw/pitch（userInterrupted 置位后导引朝向不再覆盖用户转头）；
- * 6. 天文时钟协同：下降自动 1x，返轨恢复（用户期间手动改过则不覆盖）。
+ * 2. PREPARING 门槛：资源/比例/光照/同帧姿态捕获由引擎准备流水线驱动，
+ *    completePreparation(pose) 后才开始下降（控制器不自行 auto-begin）；
+ * 3. P3b-B：单一连续腿（无 接近段/主段 拼接零速停顿），高度一律用基准面高
+ *    datum 规划（跨 DTM 窗口边界无基准跳变）；时长按落差对数伸缩（12..55s）；
+ * 4. 路径为短大圆 + smootherstep 参考曲线；AGL = H − elev 为报告量非规划量；
+ * 5. 姿态：控制器只输出路线切向航向 + 名义地平线俯仰（HUD 用）；权威姿态
+ *    由引擎用实际 FOV 的地平线投影四元数 + 角速率受限收敛计算（含滚转）；
+ * 6. 交互铁律：用户拖拽 → HOLD 冻结位移、保留视线；恢复导引由引擎按当前
+ *    姿态重新收敛（requestLandingReguide），不做开环倒放；
+ * 7. 返轨：从当前实际位姿重规划直上爬升（Pro §8.5），不倒放主腿；
+ * 8. 天文时钟协同：下降自动 1x，返轨恢复（用户期间手动改过则不覆盖）。
  */
 
 import type { LandingSite, LandingState, LandingTelemetry } from '../contracts/landing';
 import { LANDING_SITES } from '../contracts/landing';
 import { TerrainHeightProvider } from './TerrainHeightProvider';
-import { sampleDescent, smootherstep, latLonDirection as latLonDir, type DescentLeg } from '../world-support/descentCurve';
+import { sampleDescent, smootherstep, smootherstepDerivative, latLonDirection as latLonDir, horizonDip, pitchForHorizonElevation, type DescentLeg } from '../world-support/descentCurve';
 
 export type TelemetryListener = (telemetry: LandingTelemetry) => void;
 
 export interface DescentStartPose {
   latDeg: number;
   lonDeg: number;
+  /** 当前机位相对基准球的净空（米）——P3b-B 起一律为 datum 口径 */
   clearanceM: number;
-  /** P3b-A：同帧捕获的起始视线（站点局部基 yaw/pitch，来自实际 q0 提取）。
-   * 提供时下降导引从该姿态连续混合到导引目标（首帧=用户当前视角，无 SNAP）。 */
-  yaw0Deg?: number;
-  pitch0Deg?: number;
 }
 
 export class LandingController {
   private state: LandingState = 'ORBIT';
   private site: LandingSite = LANDING_SITES['taurus-littrow'];
 
-  // 参考曲线腿：接近段（超远机位）+ 主下降段
+  // 参考曲线腿：P3b-B 单一连续腿（接近+主下降合并，无段边界零速停顿）
   private legs: DescentLeg[] = [];
   private legIndex = 0;
   private elapsedSec = 0;
-  private ascendSec = 0; // ASCENDING 反向播放的剩余时长
+  private ascendSec: number = 0; // ASCENDING 剩余时长
+  private ascendTotalSec: number = 18.0;
+  /** P3b-B：返轨起点（returnToOrbit 时从当前实际轨迹位姿捕获，重规划基准） */
+  private ascendFrom: { latDeg: number; lonDeg: number; datumM: number } | null = null;
+  /** P3b-B：路线切向航向最后稳定值（接近落点退化时保持，返轨/接地沿用） */
+  private lastTangentHeadingDeg: number = 225;
 
   private readonly ORBIT_ALTITUDE_M = 50000.0; // 近月下降段上限
   private readonly SURFACE_EYE_HEIGHT_M = 1.7; // 默认人眼视高（可调）
-  private readonly MAIN_DESCENT_SEC = 42.0;
-  private readonly APPROACH_SEC = 8.0;
-  private readonly ASCEND_SEC = 18.0;
 
   private targetLat: number;
   private targetLon: number;
 
-  // 地面默认视线（仅导引段使用；用户接管后不再覆盖）
+  // 地面默认视线（仅 SURFACE_LOOK 导出用；用户接管后引擎不再覆盖）
   private surfaceYawDeg = 225.0;
   private surfacePitchDeg = 12.0;
-
-  // P3b-A：同帧捕获的起始视线与混合时长（首帧=用户真实视角，~5°/s 常态角速率）
-  private startYaw0Deg = 225.0;
-  private startPitch0Deg = 12.0;
-  private readonly ORIENT_BLEND_SEC = 12.0;
 
   // 用户交互状态
   private userInterrupted = false;
@@ -169,34 +165,26 @@ export class LandingController {
     if (dotStart < -0.99995) {
       throw new RangeError('antipodal descent start: route requires explicit off-sphere waypoints (P3b-B)');
     }
-    // P3b-A：移除 400km 起点截断——首帧位置必须等于用户当前真实机位；
-    // 接近段时长按距离对数延长，保证远处起步的推进速率不失控（节奏细化归 P3b-B）。
-    const startClearance = Math.max(from.clearanceM, this.SURFACE_EYE_HEIGHT_M);
-    const approachSec = startClearance > this.ORBIT_ALTITUDE_M * 1.1
-      ? this.APPROACH_SEC * Math.max(1, Math.log10(startClearance / this.ORBIT_ALTITUDE_M) + 1)
-      : 0;
+    // P3b-B（Pro §4.2/B1）：单一连续腿替代 接近段+主段 两段拼片——段边界不再各自零速
+    // 停顿；总时长按起点净空对数伸缩（~50s 预算，低空起步自然裁短）。
+    // 高度一律用基准面高程（datum）规划，跨 DTM 窗口边界无基准跳变；终端段由
+    // 引擎按 AGL 权重混合（§3.4）。
+    const startDatumM = Math.max(from.clearanceM, this.site.elevationDatumOffsetM + this.SURFACE_EYE_HEIGHT_M);
+    const endDatumM = this.site.elevationDatumOffsetM + this.SURFACE_EYE_HEIGHT_M;
+    const totalSec = Math.max(
+      12,
+      Math.min(55, 10 + 11 * Math.log10(Math.max(10, startDatumM - endDatumM) / 100))
+    );
     const radiusM = this.site.datumRadiusKm * 1000;
 
-    this.legs = [];
-    if (approachSec > 0) {
-      // 超远机位：先同点连续降到近月下降段上限（接近段，不做瞬移）
-      this.legs.push({
-        from: { latDeg: from.latDeg, lonDeg: from.lonDeg, clearanceM: startClearance },
-        to: { latDeg: from.latDeg, lonDeg: from.lonDeg, clearanceM: this.ORBIT_ALTITUDE_M },
-        durationSec: approachSec,
-        radiusM,
-      });
-    }
-    this.legs.push({
-      from: { latDeg: from.latDeg, lonDeg: from.lonDeg, clearanceM: Math.min(startClearance, this.ORBIT_ALTITUDE_M) },
-      to: { latDeg: this.targetLat, lonDeg: this.targetLon, clearanceM: this.SURFACE_EYE_HEIGHT_M },
-      durationSec: this.MAIN_DESCENT_SEC,
+    this.legs = [{
+      from: { latDeg: from.latDeg, lonDeg: from.lonDeg, clearanceM: startDatumM },
+      to: { latDeg: this.targetLat, lonDeg: this.targetLon, clearanceM: endDatumM },
+      durationSec: totalSec,
       radiusM,
-    });
-
-    // P3b-A：起始视线（来自同帧 q0 提取）。导引从此姿态连续混合到目标（见 evaluateTrajectory）。
-    this.startYaw0Deg = from.yaw0Deg ?? this.surfaceYawDeg;
-    this.startPitch0Deg = Math.max(-85, Math.min(85, from.pitch0Deg ?? this.surfacePitchDeg));
+    }];
+    // P3b-B：起始姿态不再走 yaw/pitch 混合——引擎持有同帧捕获的完整 q0
+    //（含滚转），以地平线投影目标 + 角速率受限收敛（见 SolarEngine）。
 
     this.legIndex = 0;
     this.elapsedSec = 0;
@@ -231,8 +219,14 @@ export class LandingController {
 
   public returnToOrbit(): void {
     if (this.state === 'SURFACE_LOOK' || this.state === 'HOLD' || this.state === 'DESCENDING') {
+      // P3b-B（Pro §8.5）：返轨从当前实际位姿重规划——不再把半路返轨当作已到
+      // 落点后倒放完整主腿。当前位置水平不动，垂直爬升到轨道高度。
+      const traj = this.evaluateTrajectory();
+      this.ascendFrom = { latDeg: traj.lat, lonDeg: traj.lon, datumM: traj.altitudeMSLM };
+      const climbM = Math.max(1000, this.ORBIT_ALTITUDE_M - this.ascendFrom.datumM);
+      this.ascendTotalSec = Math.max(6, Math.min(18, 4 + 7 * Math.log10(climbM / 100)));
+      this.ascendSec = this.ascendTotalSec;
       this.state = 'ASCENDING';
-      this.ascendSec = this.ASCEND_SEC;
       this.notifyTelemetry();
     }
   }
@@ -293,20 +287,23 @@ export class LandingController {
   }
 
   /**
-   * 当前轨迹点（body-fixed 地面点 + 净空 + 导引朝向）。
-   * cameraYawDeg/cameraPitchDeg 为 null 表示用户已接管视线——引擎只推进位移。
+   * 当前轨迹点（body-fixed 地面点 + 基准面高 + 切向航向）。
+   * P3b-B 语义：规划量一律是基准面高 H（datumAltitudeM = altitudeMSLM），
+   * altitudeAGLM = H − elev(lat,lon) 为报告量而非规划量；相机姿态由引擎用
+   * 地平线投影 + 实际 FOV 计算四元数，控制器只提供名义导引（HUD 显示用）。
+   * cameraYawDeg/cameraPitchDeg 为 null 表示用户已接管视线。
    */
   public evaluateTrajectory(): {
     lat: number;
     lon: number;
+    /** 相机相对基准球高度 H（米）＝ MSL：位置规划量 */
+    datumAltitudeM: number;
     altitudeAGLM: number;
     altitudeMSLM: number;
+    /** 路线切向航向（站点局部基，顺时针自北）：姿态导引的偏航目标 */
+    tangentHeadingDeg: number;
     cameraPitchDeg: number | null;
     cameraYawDeg: number | null;
-    /** P3b-A:?????????(??? q0??????? slerp;null=?????) */
-    guideYawDeg: number | null;
-    guidePitchDeg: number | null;
-    guideBlend: number | null;
     commandedClearanceRateMps: number;
     commandedTangentialSpeedMps: number;
   } {
@@ -315,40 +312,46 @@ export class LandingController {
       return {
         lat: this.targetLat,
         lon: this.targetLon,
+        datumAltitudeM: elevM + this.SURFACE_EYE_HEIGHT_M,
         altitudeAGLM: this.SURFACE_EYE_HEIGHT_M,
         altitudeMSLM: elevM + this.SURFACE_EYE_HEIGHT_M,
+        tangentHeadingDeg: this.lastTangentHeadingDeg,
         cameraPitchDeg: this.surfacePitchDeg,
         cameraYawDeg: this.surfaceYawDeg,
-        guideYawDeg: this.surfaceYawDeg,
-        guidePitchDeg: this.surfacePitchDeg,
-        guideBlend: 1,
         commandedClearanceRateMps: 0,
         commandedTangentialSpeedMps: 0,
       };
     }
 
     if (this.state === 'ASCENDING') {
-      // 反向播放主下降腿（净空从眼高回到下降段起点上限）
-      const main = this.legs[this.legs.length - 1];
-      const total = Math.max(this.ASCEND_SEC, this.legs.reduce((s, l) => s + l.durationSec, 0) * 0.4);
-      const t = Math.max(0, Math.min(1, this.ascendSec / total));
-      const lat = main ? main.from.latDeg + (main.to.latDeg - main.from.latDeg) * t : this.targetLat;
-      const lon = main ? main.from.lonDeg + (main.to.lonDeg - main.from.lonDeg) * t : this.targetLon;
-      const clearance = main
-        ? main.from.clearanceM + (main.to.clearanceM - main.from.clearanceM) * t
-        : this.ORBIT_ALTITUDE_M;
-      const elevM = this.heightProvider.getHeightMeters('moon', lat, lon);
+      // P3b-B（Pro §8.5）：从捕获的当前位姿直上爬升（水平不动）到轨道高度。
+      // 不再倒放主腿——半路返轨的起点就是当前实际位置。
+      const from =
+        this.ascendFrom ??
+        (() => {
+          const elevM = this.heightProvider.getHeightMeters('moon', this.targetLat, this.targetLon);
+          return {
+            latDeg: this.targetLat,
+            lonDeg: this.targetLon,
+            datumM: elevM + this.SURFACE_EYE_HEIGHT_M,
+          };
+        })();
+      const total = Math.max(1, this.ascendTotalSec);
+      const t = Math.max(0, Math.min(1, 1 - this.ascendSec / total));
+      const s = smootherstep(t);
+      const H = from.datumM + (this.ORBIT_ALTITUDE_M - from.datumM) * s;
+      const elevM = this.heightProvider.getHeightMeters('moon', from.latDeg, from.lonDeg);
+      const rate = ((this.ORBIT_ALTITUDE_M - from.datumM) * smootherstepDerivative(t)) / total;
       return {
-        lat,
-        lon,
-        altitudeAGLM: clearance,
-        altitudeMSLM: elevM + clearance,
-        cameraPitchDeg: this.userInterrupted ? null : -20,
-        cameraYawDeg: this.userInterrupted ? null : this.surfaceYawDeg,
-        guideYawDeg: this.userInterrupted ? null : this.surfaceYawDeg,
-        guidePitchDeg: this.userInterrupted ? null : -20,
-        guideBlend: this.userInterrupted ? null : 1,
-        commandedClearanceRateMps: (main ? main.to.clearanceM - main.from.clearanceM : this.ORBIT_ALTITUDE_M) / total,
+        lat: from.latDeg,
+        lon: from.lonDeg,
+        datumAltitudeM: H,
+        altitudeAGLM: H - elevM,
+        altitudeMSLM: H,
+        tangentHeadingDeg: this.lastTangentHeadingDeg,
+        cameraPitchDeg: this.userInterrupted ? null : this.nominalHorizonPitchDeg(H),
+        cameraYawDeg: this.userInterrupted ? null : this.lastTangentHeadingDeg,
+        commandedClearanceRateMps: rate,
         commandedTangentialSpeedMps: 0,
       };
     }
@@ -359,13 +362,12 @@ export class LandingController {
       return {
         lat: this.targetLat,
         lon: this.targetLon,
+        datumAltitudeM: this.ORBIT_ALTITUDE_M,
         altitudeAGLM: this.ORBIT_ALTITUDE_M,
         altitudeMSLM: this.ORBIT_ALTITUDE_M,
+        tangentHeadingDeg: this.lastTangentHeadingDeg,
         cameraPitchDeg: this.userInterrupted ? null : this.surfacePitchDeg,
         cameraYawDeg: this.userInterrupted ? null : this.surfaceYawDeg,
-        guideYawDeg: this.userInterrupted ? null : this.surfaceYawDeg,
-        guidePitchDeg: this.userInterrupted ? null : this.surfacePitchDeg,
-        guideBlend: this.userInterrupted ? null : 1,
         commandedClearanceRateMps: 0,
         commandedTangentialSpeedMps: 0,
       };
@@ -373,39 +375,53 @@ export class LandingController {
 
     const s = sampleDescent(leg, this.elapsedSec);
     const elevM = this.heightProvider.getHeightMeters('moon', s.latDeg, s.lonDeg);
-    // P3-T1：导引朝向按"全部腿合并的全局进度"参数化（接近段+主段共用一条曲线）。
-    // P3b-A：从同帧捕获的起始视线 (yaw0/pitch0) 连续混合到导引目标——首帧严格等于
-    // 用户当前真实视角（无 SNAP）；smootherstep 混合同时抑制 pow(0.7) 在 t=0 的无界导数
-    // （w~t³ × t^-0.3 → 0），角速率约 (57°+45°)/12s ≈ 8.5°/s 上限内。
-    const totalDur = this.legs.reduce((acc, l) => acc + l.durationSec, 0);
-    let prefixDur = 0;
-    for (let i = 0; i < this.legIndex; i++) prefixDur += this.legs[i].durationSec;
-    const legElapsed = s.progress * leg.durationSec;
-    const globalT = totalDur > 0 ? Math.min(1, (prefixDur + legElapsed) / totalDur) : 1;
-    const blend = smootherstep(Math.min(1, (prefixDur + legElapsed) / this.ORIENT_BLEND_SEC));
-    // 导引目标：高空俯瞰 → 接地前抬头看地平线（P3b-B 将替换为地平线投影导引）。
-    const guidePitch = -45 + (this.surfacePitchDeg + 45) * Math.pow(globalT, 0.7);
-    const guideYaw = 180 + (this.surfaceYawDeg - 180) * globalT;
-    // 偏航走最短弧（±180° 内），不做跨零绕远
-    let dYaw = ((guideYaw - this.startYaw0Deg + 540) % 360) - 180;
-    if (dYaw === -180) dYaw = 180;
+    const H = s.clearanceM;
+    const headingDeg = this.updateTangentHeading(s.latDeg, s.lonDeg);
     return {
       lat: s.latDeg,
       lon: s.lonDeg,
-      altitudeAGLM: s.clearanceM,
-      altitudeMSLM: elevM + s.clearanceM,
-      cameraPitchDeg: this.userInterrupted
-        ? null
-        : this.startPitch0Deg + (guidePitch - this.startPitch0Deg) * blend,
-      cameraYawDeg: this.userInterrupted
-        ? null
-        : this.startYaw0Deg + dYaw * blend,
-      guideYawDeg: this.userInterrupted ? null : guideYaw,
-      guidePitchDeg: this.userInterrupted ? null : guidePitch,
-      guideBlend: this.userInterrupted ? null : blend,
+      datumAltitudeM: H,
+      altitudeAGLM: H - elevM,
+      altitudeMSLM: H,
+      tangentHeadingDeg: headingDeg,
+      cameraPitchDeg: this.userInterrupted ? null : this.nominalHorizonPitchDeg(H),
+      cameraYawDeg: this.userInterrupted ? null : headingDeg,
       commandedClearanceRateMps: s.commandedClearanceRateMps,
       commandedTangentialSpeedMps: s.commandedTangentialSpeedMps,
     };
+  }
+
+  /**
+   * P3b-B：路线切向航向（大圆初始方位角，站点局部基顺时针自北）。
+   * 与 CameraController 的 yaw 约定一致（atan2(f·e, f·n)）；接近落点时
+   * 方位角退化，保持最后稳定值。有评估副作用（更新 lastTangentHeadingDeg），
+   * 仅供 evaluateTrajectory 调用。
+   */
+  private updateTangentHeading(latDeg: number, lonDeg: number): number {
+    const φ1 = (latDeg * Math.PI) / 180;
+    const φ2 = (this.targetLat * Math.PI) / 180;
+    const Δλ = ((this.targetLon - lonDeg + 540) % 360) * (Math.PI / 180) - Math.PI;
+    const sep = Math.acos(
+      Math.max(-1, Math.min(1, this.dotOf(latDeg, lonDeg, this.targetLat, this.targetLon)))
+    );
+    if (sep > 1e-6) {
+      const bearing =
+        Math.atan2(
+          Math.sin(Δλ) * Math.cos(φ2),
+          Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ)
+        ) *
+        (180 / Math.PI);
+      this.lastTangentHeadingDeg = ((bearing % 360) + 360) % 360;
+    }
+    return this.lastTangentHeadingDeg;
+  }
+
+  /** P3b-B：名义导引俯仰（HUD 显示用；引擎用实际 FOV 计算权威四元数） */
+  private nominalHorizonPitchDeg(datumAltitudeM: number): number {
+    const radiusM = this.site.datumRadiusKm * 1000;
+    const dip = horizonDip(radiusM, Math.max(0, datumAltitudeM));
+    const pitch = pitchForHorizonElevation(-dip, (45 * Math.PI) / 180, 0.32);
+    return Math.max(-89, Math.min(89, (pitch * 180) / Math.PI));
   }
 
   public getTelemetry(): LandingTelemetry {

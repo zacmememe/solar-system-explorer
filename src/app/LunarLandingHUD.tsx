@@ -336,7 +336,7 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine }) => {
               </span>
             )}
             {state === 'DESCENDING' && '💡 提示：按住鼠标拖拽画面可随时暂停位移进行悬停检查。'}
-            {state === 'HOLD' && '⏸ 当前已进入悬停保持模式，位移已停驻，可自由拖拽环顾周围山谷。'}
+            {state === 'HOLD' && '⏸ 悬停保持：位移已停驻，可自由拖拽环顾山谷；需要时可点"恢复导引视线"平滑转回地平线构图。'}
             {state === 'SURFACE_LOOK' && '👀 位于陶拉斯—利特罗谷底 1.7m 人眼视高，可 360° 原地转头与仰望天空。'}
           </div>
 
@@ -409,6 +409,20 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine }) => {
                   }}
                 >
                   ▶ 继续降落 (RESUME)
+                </button>
+                <button
+                  data-testid="landing-btn-reguide"
+                  onClick={() => engine.requestLandingReguide()}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: 8,
+                    border: '1px solid rgba(148, 163, 184, 0.4)',
+                    background: 'rgba(148, 163, 184, 0.12)',
+                    color: '#e2e8f0',
+                    cursor: 'pointer',
+                  }}
+                >
+                  🎯 恢复导引视线（位移保持悬停）
                 </button>
                 <button
                   data-testid="landing-btn-return-hold"

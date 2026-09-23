@@ -68,7 +68,14 @@ import { soundEffects } from '../audio/SoundEffects';
 import { VehicleLoader } from '../vehicles/VehicleLoader';
 import { LandingController } from '../surface/LandingController';
 import { LANDING_SITES, type LandingTelemetry, type LandingAvailability } from '../contracts/landing';
-import { latLonDirection, slerpShortestQuat } from '../world-support/descentCurve';
+import {
+  latLonDirection,
+  stepOrientationQuat,
+  quatAngle,
+  horizonDip,
+  pitchForHorizonElevation,
+  smootherstep,
+} from '../world-support/descentCurve';
 import { TerrainHeightProvider } from '../surface/TerrainHeightProvider';
 import { RasterTerrainSource } from '../surface/RasterTerrainSource';
 import productionAssetsData from '../../sources/production-assets.json';
@@ -210,8 +217,14 @@ export class SolarEngine {
   } | null = null;
   /** 最近一次准备阶段为光照做出的模拟时刻调整（HUD 如实提示；null=未调整） */
   private lastLandingLightingAdjustHours: number | null = null;
-  /** P3b-A：同帧捕获的起始四元数（含滚转；下降导引 slerp 的 q0） */
+  /** P3b-A：同帧捕获的起始四元数（含滚转；验收核对用——导引当前值见 landingGuidedQuat） */
   private landingStartQuat: THREE.Quaternion | null = null;
+  // P3b-B：速率受限的姿态导引（Pro §5）——从捕获 q0 出发逐帧向地平线投影目标收敛，
+  // 用户打断后失效（保留用户视线），requestLandingReguide() 从当前姿态重新收敛
+  private landingGuidedQuat: THREE.Quaternion | null = null;
+  private landingGuideActive = false;
+  /** DESCENDING 起点 userInputRevision 基线（B3：任何视角输入立即打断进 HOLD） */
+  private landingUserRevAtDescend = 0;
 
   // 批次 R5：着陆控制器与月表 3D 浮雕网格
   private landingController: LandingController = new LandingController('taurus-littrow');
@@ -1570,10 +1583,14 @@ export class SolarEngine {
       if (!hp.isRasterReady || hp.getHeightSample('moon', site.centerLat, site.centerLon).fidelity !== 'measured-dem') {
         return;
       }
-      // 同帧完整起点：位置（地面投射+净空）+ 姿态（q0 四元数 + 起点 yaw/pitch 提取）
+      // 同帧完整起点：位置（地面投射 + 基准面净空 H）+ 姿态 q0 四元数（含滚转）。
+      // P3b-B：clearance 一律 datum 口径（不扣地面高程）——规划无 DTM 窗口基准跳变；
+      // 姿态导引在引擎侧以角速率受限收敛（见 animate DESCENDING 分支），不再传 yaw/pitch。
       const groundPose = this.computeMoonGroundPose();
-      const orientation = this.extractMoonSurfaceOrientation(groundPose.latDeg, groundPose.lonDeg);
       this.landingStartQuat = this.camera.quaternion.clone();
+      this.landingGuidedQuat = this.camera.quaternion.clone();
+      this.landingGuideActive = true;
+      this.landingUserRevAtDescend = this.cameraController.getUserInputRevision();
       try {
         this.landingPrep = null;
         this.landingController.completePreparation(
@@ -1583,8 +1600,6 @@ export class SolarEngine {
             latDeg: groundPose.latDeg,
             lonDeg: groundPose.lonDeg,
             clearanceM: Math.max(2, groundPose.clearanceM),
-            yaw0Deg: orientation.yawDeg,
-            pitch0Deg: orientation.pitchDeg,
           }
         );
       } catch (err) {
@@ -1690,7 +1705,11 @@ export class SolarEngine {
     this.updateEphemerisPoses(0);
   }
 
-  /** 当前相机在月面 body-fixed 系下的地面投射与净空（用于下降起点连续） */
+  /**
+   * 当前相机在月面 body-fixed 系下的地面投射与净空（用于下降起点连续）。
+   * P3b-B：clearanceM 为基准面净空 H =（镜头到月心距离 − 基准球半径），不扣地面
+   * 高程——单腿以 datum 规划，跨 DTM 窗口边界无基准跳变（Pro §3.4）。
+   */
   private computeMoonGroundPose(): { latDeg: number; lonDeg: number; clearanceM: number } {
     const moonPose = this.getBodyWorldPose('moon');
     const rel = this.camera.position.clone().sub(moonPose.pos);
@@ -1708,9 +1727,8 @@ export class SolarEngine {
     const sceneRadius =
       moonNode && moonNode.mesh ? moonNode.displayRadius * moonNode.mesh.scale.x : moonNode?.displayRadius ?? 0.368;
     const metersPerScene = sceneRadius > 0 ? datumM / sceneRadius : datumM / 0.368;
-    const groundElevM = TerrainHeightProvider.getInstance().getHeightMeters('moon', latDeg, lonDeg);
-    const clearanceM = (len - sceneRadius) * metersPerScene - groundElevM;
-    return { latDeg, lonDeg, clearanceM };
+    const datumClearanceM = (len - sceneRadius) * metersPerScene;
+    return { latDeg, lonDeg, clearanceM: datumClearanceM };
   }
 
   public pauseLanding(): void {
@@ -1721,8 +1739,83 @@ export class SolarEngine {
     this.landingController.resumeDescent();
   }
 
+  /** P3b-B（Pro §8.2）：恢复导引视线——从用户当前画面以角速率受限方式重新收敛（无 SNAP） */
+  public requestLandingReguide(): void {
+    const st = this.landingController.getState();
+    if (st !== 'HOLD' && st !== 'DESCENDING') return;
+    this.landingGuidedQuat = this.camera.quaternion.clone();
+    this.landingGuideActive = true;
+    this.landingUserRevAtDescend = this.cameraController.getUserInputRevision();
+  }
+
   public returnToLunarOrbit(): void {
+    // P3b-B（Pro §8.5）：升空导引从当前实际画面出发（速率受限收敛），不倒放
+    this.landingGuidedQuat = this.camera.quaternion.clone();
+    this.landingGuideActive = true;
     this.landingController.returnToOrbit();
+  }
+
+  /**
+   * P3b-B：单帧下降/升空画面（Pro §3.4/§5）。
+   * 位置：基准高 H 连续——相机相对基准球高度恒为规划值，眼高按局部高程与站点
+   * 高程加权（w=smoothstep 于站点上空 500m..3km 频带），跨 DTM 窗口边界无基准跳变。
+   * 姿态：地平线投影目标（δ 俯角钉在画面 u=0.32 行，实际 FOV）+ 角速率受限收敛
+   * （4–10°/s 比例律），替代 12s 开环混合——任何起点姿态无 SNAP 接入。
+   * positionFrozen=true（HOLD 恢复导引）：轨迹冻结，仅姿态收敛，收敛完自动停发。
+   */
+  private applyLandingFrame(deltaSec: number, positionFrozen: boolean): void {
+    const traj = this.landingController.evaluateTrajectory();
+    const site = LANDING_SITES['taurus-littrow'];
+    const hp = TerrainHeightProvider.getInstance();
+
+    const elevHere = hp.getHeightMeters('moon', traj.lat, traj.lon);
+    const band = traj.datumAltitudeM - site.elevationDatumOffsetM;
+    const w = smootherstep(Math.max(0, Math.min(1, (band - 500) / 2500)));
+    const eyeHeightM = Math.max(
+      0.5,
+      (1 - w) * (traj.datumAltitudeM - elevHere) + w * (traj.datumAltitudeM - site.elevationDatumOffsetM)
+    );
+
+    let orientationQuat: [number, number, number, number] | undefined;
+    if (this.landingGuideActive && this.landingGuidedQuat) {
+      const radiusM = site.datumRadiusKm * 1000;
+      const dip = horizonDip(radiusM, Math.max(0, traj.datumAltitudeM));
+      const pitchGoalDeg = THREE.MathUtils.clamp(
+        THREE.MathUtils.radToDeg(
+          pitchForHorizonElevation(-dip, THREE.MathUtils.degToRad(this.camera.fov), 0.32)
+        ),
+        -85,
+        85
+      );
+      const qTarget = this.buildSurfaceLookQuaternion(traj.lat, traj.lon, traj.tangentHeadingDeg, pitchGoalDeg);
+      const cur: [number, number, number, number] = [
+        this.landingGuidedQuat.x,
+        this.landingGuidedQuat.y,
+        this.landingGuidedQuat.z,
+        this.landingGuidedQuat.w,
+      ];
+      const tgt: [number, number, number, number] = [qTarget.x, qTarget.y, qTarget.z, qTarget.w];
+      const remaining = quatAngle(cur, tgt);
+      const rate = Math.max(
+        THREE.MathUtils.degToRad(4),
+        Math.min(THREE.MathUtils.degToRad(10), remaining / 2)
+      );
+      const stepped = stepOrientationQuat(cur, tgt, deltaSec, rate);
+      this.landingGuidedQuat.set(stepped[0], stepped[1], stepped[2], stepped[3]);
+      orientationQuat = stepped;
+      if (positionFrozen && quatAngle(stepped, tgt) < THREE.MathUtils.degToRad(0.05)) {
+        this.landingGuideActive = false; // HOLD 导引收敛完成：停发命令，相机交还用户
+      }
+    }
+
+    this.cameraController.executeCommand({
+      type: 'enterSurfaceLook',
+      bodyId: 'moon',
+      lat: traj.lat,
+      lon: traj.lon,
+      eyeHeightM,
+      ...(orientationQuat ? { orientationQuat } : {}),
+    });
   }
 
   public lookAtEarthFromMoon(): void {
@@ -2112,40 +2205,48 @@ export class SolarEngine {
       this.skyboxMesh.position.copy(this.camera.position);
     }
 
-    // 着陆控制器生命周期驱动（R5 建立，P2 重写下降段）
+    // 着陆控制器生命周期驱动（R5 建立，P2 重写下降段，P3b-B 单腿连续轨迹 + 地平线投影姿态）
     // P1 修复：仅在本控制器刚刚完成"升空返轨"(ASCENDING -> ORBIT 边沿)时才收回 SURFACE_LOOK；
     // 书签恢复等外部进入的地表观察不被空闲的着陆状态机逐帧抢占 (用户保有控制权)
     const landingState = this.landingController.getState();
+    const userRev = this.cameraController.getUserInputRevision();
     if (landingState === 'PREPARING' || landingState === 'DESCENDING' || landingState === 'ASCENDING') {
       this.landingController.update(deltaSec, (s) => this.setTimeScale(s));
       if (landingState === 'PREPARING') {
         // P3b-A：准备流水线（策略过渡 → 光照选时 → 同帧捕获），帧驱动无定时器
         this.stepLandingPreparation();
-      } else {
-        const traj = this.landingController.evaluateTrajectory();
-        // P3b-A：完整姿态导引——q0(捕获帧) → 导引目标按控制器混合权重 slerp（含滚转）。
-        // 轨道相机 up=世界Y、yaw/pitch 重建用局部 up，滚转不同——yaw/pitch 模型无法
-        // 表达任意起始姿态，必须走四元数（Pro §5.3）。
-        let orientationQuat: [number, number, number, number] | undefined;
-        if (traj.guideBlend != null && traj.guideYawDeg != null && traj.guidePitchDeg != null && this.landingStartQuat) {
-          const qTarget = this.buildSurfaceLookQuaternion(traj.lat, traj.lon, traj.guideYawDeg, traj.guidePitchDeg);
-          orientationQuat = slerpShortestQuat(
-            [this.landingStartQuat.x, this.landingStartQuat.y, this.landingStartQuat.z, this.landingStartQuat.w],
-            [qTarget.x, qTarget.y, qTarget.z, qTarget.w],
-            traj.guideBlend
-          );
+      } else if (landingState === 'DESCENDING') {
+        // B3（Pro §8.3）：任何用户视角输入立即打断进 HOLD——以 userInputRevision
+        // 为权威（拖拽/滚轮已各自兜底，此处覆盖其余输入路径）
+        if (this.prevLandingState !== 'DESCENDING') {
+          this.landingUserRevAtDescend = userRev;
+        } else if (userRev !== this.landingUserRevAtDescend) {
+          this.landingGuideActive = false;
+          this.landingController.holdDescent();
+        } else {
+          this.applyLandingFrame(deltaSec, false);
         }
-        // P2：用户接管后 cameraYaw/Pitch 为 null —— 只推进位移，不覆盖视线
-        this.cameraController.executeCommand({
-          type: 'enterSurfaceLook',
-          bodyId: 'moon',
-          lat: traj.lat,
-          lon: traj.lon,
-          eyeHeightM: traj.altitudeAGLM,
-          ...(traj.cameraYawDeg != null ? { initialYawDeg: traj.cameraYawDeg } : {}),
-          ...(traj.cameraPitchDeg != null ? { initialPitchDeg: traj.cameraPitchDeg } : {}),
-          ...(orientationQuat ? { orientationQuat } : {}),
-        });
+      } else if (landingState === 'ASCENDING') {
+        // 升空同样可被用户打断视线（不冻结爬升，只交出姿态）
+        if (this.prevLandingState !== 'ASCENDING') {
+          this.landingUserRevAtDescend = userRev;
+        } else if (userRev !== this.landingUserRevAtDescend) {
+          this.landingGuideActive = false;
+        }
+        this.applyLandingFrame(deltaSec, false);
+      }
+    } else if (landingState === 'HOLD') {
+      // B3：悬停时相机在冻结锚点上自由环顾——把实际视线同步进遥测（HUD 如实显示）
+      const holdTraj = this.landingController.evaluateTrajectory();
+      const holdOrientation = this.extractMoonSurfaceOrientation(holdTraj.lat, holdTraj.lon);
+      this.landingController.setSurfaceOrientation(holdOrientation.yawDeg, holdOrientation.pitchDeg);
+      // 用户按"恢复导引视线"后仅收敛姿态，收敛完成或用户再次转头即停（不与用户争抢相机）
+      if (this.landingGuideActive && this.landingGuidedQuat) {
+        if (userRev !== this.landingUserRevAtDescend) {
+          this.landingGuideActive = false;
+        } else {
+          this.applyLandingFrame(deltaSec, true);
+        }
       }
     } else if (
       landingState === 'ORBIT' &&
@@ -2158,6 +2259,19 @@ export class SolarEngine {
         durationSec: 1.5,
       });
     }
+    if (landingState === 'SURFACE_LOOK' && this.prevLandingState === 'DESCENDING') {
+      // B2（Pro §5.5）：接地边沿——从最终画面提取实际视线写入姿态基。
+      // 不回填默认 225°/12°：SURFACE_LOOK 渲染基与下降末帧视线一致，无 SNAP。
+      const site = LANDING_SITES['taurus-littrow'];
+      const orientation = this.extractMoonSurfaceOrientation(site.centerLat, site.centerLon);
+      this.landingController.setSurfaceOrientation(orientation.yawDeg, orientation.pitchDeg);
+      this.cameraController.executeCommand({
+        type: 'setSurfaceLook',
+        yawDeg: orientation.yawDeg,
+        pitchDeg: orientation.pitchDeg,
+      });
+      this.landingGuideActive = false;
+    }
     this.prevLandingState = landingState;
     if (landingState !== 'PREPARING' && this.landingPrep) {
       // 准备被取消（HUD 取消按钮等）或已开始下降：清理引擎侧准备上下文，
@@ -2166,6 +2280,8 @@ export class SolarEngine {
     }
     if (landingState === 'ORBIT') {
       this.landingStartQuat = null; // 任务结束/取消：起始四元数失效
+      this.landingGuidedQuat = null;
+      this.landingGuideActive = false;
     }
 
     // 5. 更新单一相机控制器

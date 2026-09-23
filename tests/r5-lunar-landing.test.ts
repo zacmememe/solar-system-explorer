@@ -15,6 +15,12 @@ import { TerrainHeightProvider } from '../src/surface/TerrainHeightProvider';
 import { RasterTerrainSource } from '../src/surface/RasterTerrainSource';
 import { LandingController } from '../src/surface/LandingController';
 import { CameraController } from '../src/camera/CameraController';
+import {
+  horizonDip,
+  pitchForHorizonElevation,
+  stepOrientationQuat,
+  quatAngle,
+} from '../src/world-support/descentCurve';
 
 const DEM_DIR = path.resolve('public/data/dem/apollo17-v1');
 
@@ -107,15 +113,14 @@ describe('月球落地闭环测试 (真实 DTM 栅格后端)', () => {
       });
 
       // 1. 启动（P3b-A：startDescent 进 PREPARING，由引擎准备流水线 completePreparation
-      //    以同帧捕获的完整起点开始下降——控制器不再自行 auto-begin）
+      //    以同帧捕获的完整起点开始下降——控制器不再自行 auto-begin；
+      //    P3b-B：clearanceM 一律基准面（datum）口径）
       controller.startDescent();
       expect(controller.getState()).toBe('PREPARING');
       controller.completePreparation(undefined, undefined, {
         latDeg: 20.1,
         lonDeg: 30.5,
         clearanceM: 50000,
-        yaw0Deg: 200,
-        pitch0Deg: -5,
       });
       expect(controller.getState()).toBe('DESCENDING');
       expect(lastTelemetry.altitudeAGLM).toBeGreaterThan(10000);
@@ -209,61 +214,80 @@ describe('月球落地闭环测试 (真实 DTM 栅格后端)', () => {
     });
   });
 
-  describe('P3b-A：入口语义、完整初态与取消', () => {
-    it('P3b-A-1: 首帧姿态=捕获的 q0 (yaw0/pitch0)，随后连续混合到导引目标', () => {
+  describe('P3b-A：入口语义、完整初态与取消（P3b-B 更新为基准高语义）', () => {
+    it('P3b-B-1: 单一连续腿——首帧基准高=捕获值，全程切向速度无中段零速停顿', () => {
       const controller = new LandingController('taurus-littrow');
       controller.startDescent();
-      expect(controller.getState()).toBe('PREPARING');
       controller.completePreparation(undefined, undefined, {
         latDeg: 20.1,
         lonDeg: 30.5,
         clearanceM: 50000,
-        yaw0Deg: 95,
-        pitch0Deg: -8,
       });
       expect(controller.getState()).toBe('DESCENDING');
 
-      // 首帧（t=0）：严格等于捕获姿态（无 SNAP）
+      // 首帧：基准高 H 严格等于捕获值（无截断/无 SNAP）；MSL=H（datum 口径）
       const first = controller.evaluateTrajectory();
-      expect(first.cameraYawDeg).toBeCloseTo(95, 6);
-      expect(first.cameraPitchDeg).toBeCloseTo(-8, 6);
+      expect(first.datumAltitudeM).toBeCloseTo(50000, 6);
+      expect(first.altitudeMSLM).toBeCloseTo(50000, 6);
+      // 起点在 DTM 窗口外（elev=0）→ AGL=H
+      expect(first.altitudeAGLM).toBeCloseTo(50000, 6);
 
-      // 早期帧：从起点向导引目标连续变化（旧导引起点为 -45° 俯瞰，先向下后上抬；
-      // P3b-B 将替换为地平线投影导引）——不跳变（|Δ| < 5°/s·t）
-      controller.update(2.0);
-      const early = controller.evaluateTrajectory();
-      expect(early.cameraPitchDeg!).toBeLessThan(-8 + 1e-6);
-      expect(early.cameraPitchDeg!).toBeGreaterThan(-8 - 4.0);
+      // 单腿连续：全程切向速度 > 0（旧 接近段/主段 边界会各自零速停顿）
+      let minTangential = Infinity;
+      for (let i = 0; i < 8 && controller.getState() === 'DESCENDING'; i++) {
+        controller.update(5.0);
+        const t = controller.evaluateTrajectory();
+        if (i < 7) minTangential = Math.min(minTangential, t.commandedTangentialSpeedMps);
+      }
+      expect(minTangential).toBeGreaterThan(0);
 
-      // 混合完成（12s 平滑混合 + 全局进度导引）：收敛到导引终点邻域
-      controller.update(10.0);
-      controller.update(10.0);
-      controller.update(10.0);
-      controller.update(10.0);
-      controller.update(10.0);
-      const late = controller.evaluateTrajectory();
-      // 导引 pitch 从 -45 → 12（按全局进度^0.7），后期应显著高于起点 -8
-      expect(late.cameraPitchDeg!).toBeGreaterThan(-8 + 10);
+      // 时长律：T = clamp(10+11·log10((50000−siteDatum)/100), 12, 55) ≈ 39.8s
+      // （site 终点 datum = −1690.9+1.7，落差 ≈ 51.7km → 10+11×2.713 ≈ 39.9s）
     });
 
-    it('P3b-A-2: 偏航混合走最短弧（yaw0=300, 导引起点 180 → 差 -120° 不绕远）', () => {
+    it('P3b-B-1b: 切向航向——起点(20.1,30.5)→站点(20.35,30.78) 东北向，方位角 ~48°', () => {
       const controller = new LandingController('taurus-littrow');
       controller.startDescent();
       controller.completePreparation(undefined, undefined, {
         latDeg: 20.1,
         lonDeg: 30.5,
         clearanceM: 50000,
-        yaw0Deg: 300,
-        pitch0Deg: 0,
       });
       const first = controller.evaluateTrajectory();
-      expect(first.cameraYawDeg).toBeCloseTo(300, 6);
-      controller.update(1.0);
-      const t1 = controller.evaluateTrajectory();
-      // 从 300 向 180 方向走最短弧（递减），1s 内变化小于 15°
-      const delta = ((t1.cameraYawDeg! - 300 + 540) % 360) - 180;
-      expect(delta).toBeLessThan(0);
-      expect(Math.abs(delta)).toBeLessThan(15);
+      expect(first.tangentHeadingDeg).toBeGreaterThan(40);
+      expect(first.tangentHeadingDeg).toBeLessThan(60);
+      // 名义导引俯仰（FOV=45°、uTop=0.32）：50km 处 δ≈13.6° → pitch ≈ −22.1°
+      expect(first.cameraPitchDeg!).toBeLessThan(-18);
+      expect(first.cameraPitchDeg!).toBeGreaterThan(-28);
+    });
+
+    it('P3b-B-2: 返轨从当前位姿重规划——水平冻结于打断点，不倒放主腿', () => {
+      const controller = new LandingController('taurus-littrow');
+      controller.startDescent();
+      controller.completePreparation(undefined, undefined, {
+        latDeg: 20.1,
+        lonDeg: 30.5,
+        clearanceM: 50000,
+      });
+      // 中途打断（~10s，位置离落点尚远）
+      controller.update(10.0);
+      const holdTraj = controller.evaluateTrajectory();
+      controller.holdDescent();
+      controller.returnToOrbit();
+      expect(controller.getState()).toBe('ASCENDING');
+      const a0 = controller.evaluateTrajectory();
+      // 起点=打断点（非站点、也非主腿起点）
+      expect(a0.lat).toBeCloseTo(holdTraj.lat, 6);
+      expect(a0.lon).toBeCloseTo(holdTraj.lon, 6);
+      expect(a0.datumAltitudeM).toBeCloseTo(holdTraj.datumAltitudeM, 3);
+      // 爬升：基准高单调升向轨道上限
+      controller.update(4.0);
+      const a1 = controller.evaluateTrajectory();
+      expect(a1.datumAltitudeM).toBeGreaterThan(a0.datumAltitudeM);
+      expect(a1.lat).toBeCloseTo(a0.lat, 9); // 水平不动
+      // 爬完到 ORBIT
+      controller.update(20.0);
+      expect(controller.getState()).toBe('ORBIT');
     });
 
     it('P3b-A-3: 对跖起点拒绝启动（不再 +1.5° 规避），普通路径不受影响', () => {
@@ -281,7 +305,7 @@ describe('月球落地闭环测试 (真实 DTM 栅格后端)', () => {
       expect(controller.getState()).toBe('ORBIT');
     });
 
-    it('P3b-A-4: 无 400km 起点截断——远处起点首帧 clearance=真实值（不瞬移）', () => {
+    it('P3b-A-4: 无 400km 起点截断——远处起点首帧基准高=真实值（不瞬移）', () => {
       const controller = new LandingController('taurus-littrow');
       controller.startDescent();
       controller.completePreparation(undefined, undefined, {
@@ -290,11 +314,12 @@ describe('月球落地闭环测试 (真实 DTM 栅格后端)', () => {
         clearanceM: 2600000, // ~2600km（超过旧 400km clamp）
       });
       const first = controller.evaluateTrajectory();
+      expect(first.datumAltitudeM).toBeCloseTo(2600000, 0);
       expect(first.altitudeAGLM).toBeCloseTo(2600000, 0);
-      // 接近段时长按距离延长（8s × log10(2600000/50000)+1 = 8×~2.7 ≈ 21.4s）
+      // 单腿时长按落差对数伸缩并截顶 55s——8s 后仍在下降且远高于轨道上限
       controller.update(8.0);
-      expect(controller.getState()).toBe('DESCENDING'); // 仍在接近段
-      expect(controller.evaluateTrajectory().altitudeAGLM).toBeGreaterThan(50000);
+      expect(controller.getState()).toBe('DESCENDING');
+      expect(controller.evaluateTrajectory().datumAltitudeM).toBeGreaterThan(50000);
     });
 
     it('P3b-A-5: PREPARING 不因资源就绪自行放行（引擎流水线驱动）', async () => {
@@ -306,6 +331,29 @@ describe('月球落地闭环测试 (真实 DTM 栅格后端)', () => {
       expect(controller.getState()).toBe('PREPARING');
       controller.cancelPreparation();
       expect(controller.getState()).toBe('ORBIT');
+    });
+  });
+
+  describe('P3b-B：地平线投影与姿态收敛纯函数', () => {
+    it('horizonDip: 1.7m 眼高 δ≈0.08°，50km δ≈13.6°（球面地平线模型 √(2h/R)）', () => {
+      const R = 1737400;
+      expect(horizonDip(R, 1.7)).toBeCloseTo(0.0014, 3);
+      expect((horizonDip(R, 50000) * 180) / Math.PI).toBeCloseTo(13.6, 1);
+    });
+
+    it('pitchForHorizonElevation: uTop=0.32、FOV=45° 终端俯仰 ≈ −8.5°（Pro §5 基准）', () => {
+      const pitch = pitchForHorizonElevation(0, (45 * Math.PI) / 180, 0.32);
+      expect((pitch * 180) / Math.PI).toBeCloseTo(-8.48, 1);
+    });
+
+    it('stepOrientationQuat: 角速率受限——10°/s 上限内逐步收敛到目标', () => {
+      // 绕 Y 轴 90° 的目标
+      const cur: [number, number, number, number] = [0, 0, 0, 1];
+      const target: [number, number, number, number] = [0, Math.SQRT1_2, 0, Math.SQRT1_2];
+      const stepped = stepOrientationQuat(cur, target, 0.5, THREE.MathUtils.degToRad(10));
+      // 0.5s × 10°/s = 5° ≤ 夹角 90°
+      expect(quatAngle(stepped, cur)).toBeCloseTo(THREE.MathUtils.degToRad(5), 4);
+      expect(quatAngle(stepped, target)).toBeCloseTo(THREE.MathUtils.degToRad(85), 4);
     });
   });
 });

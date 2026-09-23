@@ -10,7 +10,8 @@
 export interface GeoClearancePose {
   latDeg: number;
   lonDeg: number;
-  clearanceM: number; // 相对地面净空（非 MSL）
+  /** P3b-B：相对基准球的净空 H（datum 口径，可为负——低于基准面的着陆点合法） */
+  clearanceM: number;
 }
 
 export interface DescentLeg {
@@ -71,6 +72,61 @@ export function slerpShortestQuat(
   return [A[0] * wa + B[0] * wb, A[1] * wa + B[1] * wb, A[2] * wa + B[2] * wb, A[3] * wa + B[3] * wb];
 }
 
+/** 两四元数夹角（弧度，2·acos|dot|，归一化后计算） */
+export function quatAngle(
+  a: [number, number, number, number],
+  b: [number, number, number, number]
+): number {
+  const la = Math.hypot(a[0], a[1], a[2], a[3]);
+  const lb = Math.hypot(b[0], b[1], b[2], b[3]);
+  const d = (a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]) / (la * lb);
+  return 2 * Math.acos(Math.min(1, Math.max(0, Math.abs(d))));
+}
+
+/**
+ * P3b-B：视线角速率受限的朝向收敛（每帧调用，纯函数）。
+ * 只限制角速度，不限制角加速度——整体时间律由参考曲线的 smootherstep 保证。
+ */
+export function stepOrientationQuat(
+  current: [number, number, number, number],
+  target: [number, number, number, number],
+  dtSec: number,
+  maxRateRadSec: number
+): [number, number, number, number] {
+  if (!(dtSec >= 0) || !(maxRateRadSec > 0)) throw new RangeError('Invalid orientation step');
+  const d = quatAngle(current, target);
+  if (d < 1e-10) return current;
+  return slerpShortestQuat(current, target, Math.min(1, (maxRateRadSec * dtSec) / d));
+}
+
+/**
+ * P3b-B：球面地平线俯角 δ = atan2(√(h(2R+h)), R)（Pro 参考 §5）。
+ * atan2 形式在近地处比 acos(R/(R+h)) 数值更稳。h 为相对基准球高度（米）。
+ */
+export function horizonDip(radiusM: number, datumHeightM: number): number {
+  if (!(radiusM > 0) || !Number.isFinite(datumHeightM)) throw new RangeError('Invalid horizon dip input');
+  if (datumHeightM < 0) throw new RangeError('horizonDip requires nonnegative datum height');
+  return Math.atan2(Math.sqrt(datumHeightM * (2 * radiusM + datumHeightM)), radiusM);
+}
+
+/**
+ * P3b-B：地平线投影俯仰——把地平线（角高度 e_h，抬头为正）钉在画面 uTop 行
+ * （u=0 为画面顶）所需的相机俯仰（抬头为正）：
+ * pitch = e_h − atan((1−2u)·tan(vFov/2))。
+ * 只控制中央列的地平线位置，非全局构图规则。
+ */
+export function pitchForHorizonElevation(
+  horizonElevationRad: number,
+  vFovRad: number,
+  uTop: number
+): number {
+  if (!Number.isFinite(horizonElevationRad) || !(vFovRad > 0) || !(vFovRad < Math.PI)) {
+    throw new RangeError('Invalid horizon pitch input');
+  }
+  if (uTop < 0 || uTop > 1) throw new RangeError('uTop outside viewport');
+  return horizonElevationRad - Math.atan((1 - 2 * uTop) * Math.tan(vFovRad / 2));
+}
+
 type V3 = readonly [number, number, number];
 const dot = (a: V3, b: V3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const unit = (v: V3): V3 => {
@@ -109,7 +165,15 @@ function greatCircle(a: V3, b: V3, t: number): V3 {
 /** 采样下降路径。输入必须为当前机位起点（body-fixed）；输出不含 yaw/pitch——用户视线由用户保有。 */
 export function sampleDescent(leg: DescentLeg, elapsedSec: number): DescentSample {
   const nums = [leg.from.latDeg, leg.from.lonDeg, leg.from.clearanceM, leg.to.latDeg, leg.to.lonDeg, leg.to.clearanceM, leg.durationSec, leg.radiusM, elapsedSec];
-  if (!nums.every(Number.isFinite) || leg.from.clearanceM <= 0 || leg.to.clearanceM <= 0 || leg.durationSec <= 0 || leg.radiusM <= 0) {
+  // P3b-B：clearance 为基准面高（datum）——负值合法（低于基准面的站点），
+  // 仅要求几何半径 (radiusM + clearanceM) 为正
+  if (
+    !nums.every(Number.isFinite) ||
+    leg.radiusM + leg.from.clearanceM <= 0 ||
+    leg.radiusM + leg.to.clearanceM <= 0 ||
+    leg.durationSec <= 0 ||
+    leg.radiusM <= 0
+  ) {
     throw new RangeError('Invalid descent leg');
   }
   const t = Math.max(0, Math.min(1, elapsedSec / leg.durationSec));
