@@ -23,29 +23,6 @@ const gm = JSON.parse(readFileSync(path.join(GALE_DTM, 'metadata.json'), 'utf-8'
 const vl = JSON.parse(readFileSync(path.join(VIC_L1, 'metadata.json'), 'utf-8'));
 const gl = JSON.parse(readFileSync(path.join(GALE_L1, 'metadata.json'), 'utf-8'));
 
-/** 与 JezeroTerrainSource.sampleHeight 逐行同式的镜像复算（CLAT0 局部球 3396190） */
-function mirrorDtmSample(m: typeof vm, dir: string, latDeg: number, lonDeg: number): { valid: boolean; heightM: number } {
-  const hBuf = readFileSync(path.join(dir, 'height.f32'));
-  const h = new Float32Array(hBuf.buffer.slice(hBuf.byteOffset, hBuf.byteOffset + hBuf.length));
-  const v = new Uint8Array(readFileSync(path.join(dir, 'valid.u8')));
-  const mPerDeg = (m.projection.referenceRadiusM * Math.PI) / 180;
-  const cosLat = Math.cos((m.site.centerLat * Math.PI) / 180);
-  const fx = ((lonDeg - m.site.centerLon) * mPerDeg * cosLat + m.windowSizeM[0] / 2) / m.stepMeters;
-  const fy = ((m.site.centerLat - latDeg) * mPerDeg + m.windowSizeM[1] / 2) / m.stepMeters;
-  const c0 = Math.floor(fx), r0 = Math.floor(fy);
-  if (c0 < 0 || r0 < 0 || c0 >= m.width - 1 || r0 >= m.height - 1) return { valid: false, heightM: 0 };
-  const tx = fx - c0, ty = fy - r0;
-  const W = m.width;
-  const ok = (r: number, c: number) => v[r * W + c] === 1;
-  if (!ok(r0, c0) || !ok(r0, c0 + 1) || !ok(r0 + 1, c0) || !ok(r0 + 1, c0 + 1)) return { valid: false, heightM: 0 };
-  const hh = (r: number, c: number) => h[r * W + c];
-  return {
-    valid: true,
-    heightM: hh(r0, c0) * (1 - tx) * (1 - ty) + hh(r0, c0 + 1) * tx * (1 - ty) +
-      hh(r0 + 1, c0) * (1 - tx) * ty + hh(r0 + 1, c0 + 1) * tx * ty,
-  };
-}
-
 /** 与 MolaRegionalSource.sampleHeight 逐行同式（像素中心=colStart+j，南带 X.5 起点） */
 function mirrorL1Sample(m: typeof vl, dir: string, latDeg: number, lonDeg: number): number | null {
   const buf = readFileSync(path.join(dir, 'height.i16'));

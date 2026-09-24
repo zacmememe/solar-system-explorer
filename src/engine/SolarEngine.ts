@@ -2742,6 +2742,14 @@ export class SolarEngine {
     }
   }
 
+  /** 环境光基线三态（观察/伴飞/教学光）——updateLightingState 与火星尘雾补偿共用 */
+  private ambientBaselineIntensity(): number {
+    if (this.viewCameraMode === 'PLANET_OBSERVE') {
+      return this.teachingLight ? 0.75 : 0.22;
+    }
+    return 0.35;
+  }
+
   private updateLightingState(): void {
     const isObserving = this.viewCameraMode === 'PLANET_OBSERVE';
     if (isObserving) {
@@ -2959,6 +2967,13 @@ export class SolarEngine {
     const target = marsGround ? 1 : 0;
     this.dustSkyMix += (target - this.dustSkyMix) * Math.min(1, deltaSec * 1.6);
     const mix = this.dustSkyMix;
+
+    // S5-6b：地表环境光补偿（展示层，物理依据=尘雾天空的间接漫射光）。火星有
+    // 大气散射，逆光/背光面由亮黄褐天空获得可观间接照明——Gale 触地逆光构图下
+    // 岩塔背光面曾呈死黑（ambient 0.22×暗反照率在 ACES 下≈0）。随尘雾混入把
+    // 环境光升至基线+0.20；月面无大气保持纯直射对比不受影响。每帧重算基线，
+    // 教学光/伴飞模式切换后自动重对齐
+    this.ambientLight.intensity = this.ambientBaselineIntensity() + 0.2 * mix;
 
     if (this.skyboxMesh) {
       const mat = this.skyboxMesh.material as THREE.MeshBasicMaterial;

@@ -2,7 +2,7 @@
 
 仓库：[zacmememe/solar-system-explorer](https://github.com/zacmememe/solar-system-explorer)。
 
-使用 React、TypeScript、Three.js 和 Vite 构建的浏览器太阳系探索项目。包含行星与卫星观察、镜头转场、时间控制、航天器展示、书签和探索明信片。
+使用 React、TypeScript、Three.js 和 Vite 构建的浏览器太阳系探索项目。包含行星与卫星观察、镜头转场、时间控制、航天器展示、书签和探索明信片，以及六个站点的真实地形着陆闭环（月面陶拉斯—利特罗/哈德利月溪/静海基地，火星耶泽罗/维多利亚/盖尔）——着陆与地表观察消费真实 DTM（NAC 2–5m / HiRISE 2m）与 LOLA/MOLA 区域地形，遥测标注高程溯源与准入状态。
 
 本项目采用适合探索的展示比例和简化轨道模型；画面不代表精确星历或统一真实比例。观测来源贴图与程序生成示意应分别标明，资产出处见 `sources/production-assets.json`。
 
