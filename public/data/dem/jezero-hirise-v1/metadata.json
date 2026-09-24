@@ -1,0 +1,68 @@
+{
+ "schemaVersion": 2,
+ "admissionState": "requires-source-and-registration-review",
+ "fidelityClaim": "measured-dem",
+ "sourceUrl": "https://uahirise.org/PDS/DTM/ESP/ORB_045900_045999/ESP_045994_1985_ESP_046060_1985/DTEEC_045994_1985_046060_1985_U01.IMG",
+ "orthoSourceUrl": "https://uahirise.org/PDS/DTM/ESP/ORB_045900_045999/ESP_045994_1985_ESP_046060_1985/ESP_045994_1985_RED_A_01_ORTHO.JP2",
+ "orthoSourceLblUrl": "https://uahirise.org/PDS/DTM/ESP/ORB_045900_045999/ESP_045994_1985_ESP_046060_1985/ESP_045994_1985_RED_A_01_ORTHO.LBL",
+ "sourceVersion": "MRO-M-HIRISE-5-DTM-V1.0 PRODUCT_VERSION_ID 1 (attached PDS3 label, 2017-07-27)",
+ "licenseNote": "NASA MRO HiRISE PDS 公共数据（University of Arizona / USGS-Astrogeology 制作）",
+ "verticalDatum": "Mars 2000 areoid（Smith et al. 2001），米；PC_REAL float32",
+ "nativeSpacingMeters": 1.0096633268711,
+ "width": 2000,
+ "height": 2750,
+ "windowSizeM": [
+  4000,
+  5500
+ ],
+ "stepMeters": 2,
+ "projection": {
+  "type": "EQUIRECTANGULAR",
+  "coordinateSystem": "PLANETOCENTRIC",
+  "positiveLongitude": "EAST",
+  "referenceRadiusM": 3394839.8133163,
+  "centerLatitudeDeg": 15,
+  "centerLongitudeDeg": 77.44,
+  "note": "源像元映射（标签反解核实）：lat=(LINE_OFF−line)/RES，lon=CL+(sample−SAMPLE_OFF)/(RES·cos15°)，LINE_OFFSET=1088495.5/SAMPLE_OFFSET=3210.5/RES=58684.049 px/deg；打包网格为站点局部米制（经度按站点纬度 cos 收缩），首像素中心=窗口边界内缩半步"
+ },
+ "site": {
+  "centerLat": 18.45145,
+  "centerLon": 77.43657,
+  "elevationM": -2561.6,
+  "slopeDeg": 0.19,
+  "distToPerseveranceM": 894
+ },
+ "minimumHeightM": -2616.6,
+ "maximumHeightM": -2423.8,
+ "heightSha256": "d4562052f39feb07728f74714af004a0a8be0cdf58565568faee9c3554457984",
+ "validSha256": "0ffbeae0a7e5e2658fe0f485bb1005750dcd9137ad3599b050124ff1cca62935",
+ "orthoSha256": "a2bc5ddd87280c7d6c3695b97e356643c73c05430564cf9051c7d586823f11c3",
+ "orthoEncoding": {
+  "format": "jpeg-gray",
+  "stepMeters": 1,
+  "ifScale": 0.0002267694487077,
+  "ifOffset": 0.0519947235533183
+ },
+ "anchors": [
+  {
+   "name": "站点",
+   "lat": 18.45145,
+   "lon": 77.43657,
+   "hM": -2561.6
+  },
+  {
+   "name": "站点东 2km",
+   "lat": 18.45145,
+   "lon": 77.47215392079228,
+   "hM": -2574.3
+  },
+  {
+   "name": "站点北 2km",
+   "lat": 18.48520462918064,
+   "lon": 77.43657,
+   "hM": -2537.4
+  }
+ ],
+ "missingDataNote": "有效掩码 0 格无效（窗内实测 0.000%）；源 DTM 全图缺失率 ~24%（陡坡/暗区立体空洞）",
+ "crosscheckNote": "本轮交叉验证：标签反解映射双向闭合 + 锚点值与公开 Jezero 坑底高程(~−2600m)量级一致；独立跨产品校验（MOLA）未做——admission 保持 requires-review"
+}
