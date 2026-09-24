@@ -122,13 +122,18 @@ export class LolaRegionalSource {
   }
 
   /**
-   * L1 区域网格：覆盖整个裁窗（无孔——L1 是该区域唯一有效不透明表面，
-   * Pro 260924 方向），高程=LOLA，UV=全球等距圆柱（2K 全球图直接可用，
-   * WAC collar 纹理以同一 UV 裁剪交换换装）。
-   * decimate：网格抽取（1=原生 2152×1025；2=1076×513 …）。原生 220 万顶点
-   * 过重，默认 2（~55 万顶点，中景 237m/px 已足）。
+   * L1 区域网格：覆盖裁窗、在 DTM 高精窗处挖孔（P3-T5b 修正——无孔平板会在
+   * 眼高附近水平切过谷底：LOLA 谷底插值比 DTM 高 ~0.9m，触地后呈"水面穿模"
+   * 黑色截切体+脚下看到的是 2K 模糊面而非 5m DTM，用户反馈 2026-09-24）。
+   * 孔=window+margin（略大于裙圈内缘，保证被裙圈覆盖）。高程=LOLA，
+   * UV=全球等距圆柱（2K 全球图直接可用，WAC collar 纹理以同一 UV 裁剪交换换装）。
+   * decimate：网格抽取（1=原生 2152×1025；2=1076×513 …）。
    */
-  public buildRegionalGeometry(baseRadius: number, decimate = 2): THREE.BufferGeometry | null {
+  public buildRegionalGeometry(
+    baseRadius: number,
+    decimate = 2,
+    holeBounds?: { latMin: number; latMax: number; lonMin: number; lonMax: number }
+  ): THREE.BufferGeometry | null {
     if (!this.meta || !this.dNs) return null;
     const m = this.meta;
     const step = Math.max(1, Math.floor(decimate));
@@ -138,15 +143,15 @@ export class LolaRegionalSource {
     const positions = new Float32Array(cols * rows * 3);
     const uvs = new Float32Array(cols * rows * 2);
     const scale = baseRadius / m.projection.referenceRadiusM;
+    const latAt = (j: number) => 90 - (m.window.rowStart + j * step + 0.5) / ppd;
+    const lonAt = (i: number) => (m.window.colStart + i * step + 0.5 - 23039.5) / ppd + 180;
     let p = 0, u = 0;
     for (let j = 0; j < rows; j++) {
-      const rIdx = j * step;
-      const lat = 90 - (m.window.rowStart + rIdx + 0.5) / ppd;
+      const lat = latAt(j);
       const latRad = THREE.MathUtils.degToRad(lat);
       for (let i = 0; i < cols; i++) {
-        const cIdx = i * step;
-        const lon = (m.window.colStart + cIdx + 0.5 - 23039.5) / ppd + 180;
-        const hM = this.dNs[rIdx * m.width + cIdx] * m.encoding.scaleMetersPerDn;
+        const lon = lonAt(i);
+        const hM = this.dNs[j * step * m.width + i * step] * m.encoding.scaleMetersPerDn;
         const rr = baseRadius + hM * scale;
         const lonRad = THREE.MathUtils.degToRad(lon);
         const cosLat = Math.cos(latRad);
@@ -164,6 +169,14 @@ export class LolaRegionalSource {
         const b = a + 1;
         const c = a + cols;
         const d = c + 1;
+        if (holeBounds) {
+          const lats = [latAt(j), latAt(j + 1)];
+          const longs = [lonAt(i), lonAt(i + 1)];
+          // 四角全在孔内才剔除：孔缘三角形保留，边缘锯齿被窗缘裙圈覆盖
+          const allIn = lats.every((la) => la > holeBounds.latMin && la < holeBounds.latMax) &&
+            longs.every((lo) => lo > holeBounds.lonMin && lo < holeBounds.lonMax);
+          if (allIn) continue;
+        }
         indices.push(a, c, b);
         indices.push(b, c, d);
       }
@@ -171,6 +184,87 @@ export class LolaRegionalSource {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+    return geo;
+  }
+
+  /**
+   * 窗缘裙圈（P3-T5b）：内缘 = DTM 窗口边缘（NAC 高程，与 DTM 网格同源连续），
+   * 外缘 = 窗口+rimDeg（LOLA 高程，压过 L1 挖孔锯齿边），高程 smoothstep 混合。
+   * UV=全球等距圆柱；材质建议克隆 lolaMaterial 并加 polygonOffset（细级胜出）。
+   */
+  public buildWindowRimSkirt(
+    baseRadius: number,
+    windowBounds: { latMin: number; latMax: number; lonMin: number; lonMax: number },
+    nacHeightAt: (latDeg: number, lonDeg: number) => number,
+    rimDeg = 0.15,
+    rings = 10,
+    edgeSegs = 96
+  ): THREE.BufferGeometry | null {
+    if (!this.meta) return null;
+    const wb = windowBounds;
+    const ob = {
+      latMin: wb.latMin - rimDeg, latMax: wb.latMax + rimDeg,
+      lonMin: wb.lonMin - rimDeg, lonMax: wb.lonMax + rimDeg,
+    };
+    const perimeter = 4 * edgeSegs;
+    const innerAt = (k: number): { lat: number; lon: number } => {
+      const s = k % perimeter;
+      const e = s / edgeSegs;
+      if (e < 1) return { lat: wb.latMin, lon: wb.lonMin + (e % 1) * (wb.lonMax - wb.lonMin) };
+      if (e < 2) return { lat: wb.latMin + (e % 1) * (wb.latMax - wb.latMin), lon: wb.lonMax };
+      if (e < 3) return { lat: wb.latMax, lon: wb.lonMax - (e % 1) * (wb.lonMax - wb.lonMin) };
+      return { lat: wb.latMax - (e % 1) * (wb.latMax - wb.latMin), lon: wb.lonMin };
+    };
+    const outerAt = (k: number): { lat: number; lon: number } => {
+      const s = k % perimeter;
+      const e = s / edgeSegs;
+      if (e < 1) return { lat: ob.latMin, lon: ob.lonMin + (e % 1) * (ob.lonMax - ob.lonMin) };
+      if (e < 2) return { lat: ob.latMin + (e % 1) * (ob.latMax - ob.latMin), lon: ob.lonMax };
+      if (e < 3) return { lat: ob.latMax, lon: ob.lonMax - (e % 1) * (ob.lonMax - ob.lonMin) };
+      return { lat: ob.latMax - (e % 1) * (ob.latMax - ob.latMin), lon: ob.lonMin };
+    };
+    const positions: number[] = [];
+    const uvs: number[] = [];
+    const indices: number[] = [];
+    const scale = baseRadius / this.meta.projection.referenceRadiusM;
+    for (let r = 0; r <= rings; r++) {
+      const tR = r / rings;
+      const w = tR * tR * (3 - 2 * tR); // 0=内缘(NAC) → 1=外缘(LOLA)
+      for (let k = 0; k < perimeter; k++) {
+        const a = innerAt(k);
+        const b = outerAt(k);
+        const lat = a.lat + (b.lat - a.lat) * tR;
+        const lon = a.lon + (b.lon - a.lon) * tR;
+        const nacH = nacHeightAt(a.lat, a.lon);
+        const lolaH = this.sampleHeight(
+          Math.max(this.windowBounds!.latMin, Math.min(this.windowBounds!.latMax, b.lat)),
+          Math.max(this.windowBounds!.lonMin, Math.min(this.windowBounds!.lonMax, b.lon))
+        )?.heightM ?? nacH;
+        const hM = nacH * (1 - w) + lolaH * w;
+        const rr = baseRadius + hM * scale;
+        const latRad = THREE.MathUtils.degToRad(lat);
+        const lonRad = THREE.MathUtils.degToRad(lon);
+        const cosLat = Math.cos(latRad);
+        positions.push(rr * cosLat * Math.cos(lonRad), rr * Math.sin(latRad), -rr * cosLat * Math.sin(lonRad));
+        uvs.push((lon + 180) / 360, (lat + 90) / 180);
+      }
+    }
+    for (let r = 0; r < rings; r++) {
+      for (let k = 0; k < perimeter; k++) {
+        const kNext = (k + 1) % perimeter;
+        const a = r * perimeter + k;
+        const d = r * perimeter + kNext;
+        const b = (r + 1) * perimeter + k;
+        const c = (r + 1) * perimeter + kNext;
+        indices.push(a, d, b);
+        indices.push(b, d, c);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     geo.setIndex(indices);
     geo.computeVertexNormals();
     return geo;

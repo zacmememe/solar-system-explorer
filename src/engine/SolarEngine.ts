@@ -235,6 +235,7 @@ export class SolarEngine {
   private lunarValleyMaterial?: THREE.MeshStandardMaterial;
   private moonHoleCapMesh?: THREE.Mesh;
   private lolaMaterial?: THREE.MeshStandardMaterial;
+  private lolaMaterials: THREE.MeshStandardMaterial[] = [];
   private lolaWacTexture?: THREE.Texture;
   private moonMesh?: THREE.Mesh;
   // P3b-C：WAC EMP 区域反照率层（中远景影像；DTM 装载后创建，SSE 门控显隐）
@@ -805,7 +806,17 @@ export class SolarEngine {
               satMesh.geometry.dispose();
               satMesh.geometry = holed.geometry;
               if (lolaReady) {
-                const lolaGeo = lola.buildRegionalGeometry(satRadius, 2);
+                const nacWindow = rasterSource.windowBounds;
+                // P3-T5b：L1 在 DTM 高精窗处挖孔（无孔平板在眼高切过谷底——
+                // "水面穿模"，用户反馈 2026-09-24 触地后左前黑色立方体+脚下
+                // 模糊 2K 面即此根因）；窗缘裙圈（NAC 内缘→LOLA 外缘）填缝
+                const lolaHole = nacWindow
+                  ? {
+                      latMin: nacWindow.latMin - 0.12, latMax: nacWindow.latMax + 0.12,
+                      lonMin: nacWindow.lonMin - 0.12, lonMax: nacWindow.lonMax + 0.12,
+                    }
+                  : undefined;
+                const lolaGeo = lola.buildRegionalGeometry(satRadius, 2, lolaHole);
                 if (lolaGeo) {
                   const lolaMat = new THREE.MeshStandardMaterial({
                     color: 0xffffff,
@@ -813,13 +824,16 @@ export class SolarEngine {
                     metalness: 0.05,
                   });
                   this.lolaMaterial = lolaMat;
+                  this.lolaMaterials = [lolaMat];
                   // L1 网格 UV=全球等距圆柱：2K 全球图直接可用，WAC 就绪后经
                   // collarTexture（同一 UV 裁剪变换）在 SSE 门控开启时换装
                   new THREE.TextureLoader().load('/assets/textures/moon/lroc_color_2k.jpg', (tex) => {
-                    if (lolaMat.map) return; // WAC 已先行换装则保持
                     tex.colorSpace = THREE.SRGBColorSpace;
-                    lolaMat.map = tex;
-                    lolaMat.needsUpdate = true;
+                    for (const mat of this.lolaMaterials) {
+                      if (mat.map) continue; // WAC 已先行换装则保持
+                      mat.map = tex;
+                      mat.needsUpdate = true;
+                    }
                   });
                   const lolaMesh = new THREE.Mesh(lolaGeo, lolaMat);
                   lolaMesh.name = 'lola-l1-regional-terrain';
@@ -829,6 +843,25 @@ export class SolarEngine {
                     const skirtMesh = new THREE.Mesh(skirtGeo, lolaMat); // 同材质：换装一次覆盖两网格
                     skirtMesh.name = 'lola-l1-boundary-skirt';
                     satMesh.add(skirtMesh);
+                  }
+                  if (nacWindow) {
+                    const nacHeightAt = (lat: number, lon: number): number => {
+                      const cl = Math.max(nacWindow.latMin, Math.min(nacWindow.latMax, lat));
+                      const co = Math.max(nacWindow.lonMin, Math.min(nacWindow.lonMax, lon));
+                      return rasterSource.sampleHeight(cl, co).heightM;
+                    };
+                    const rimGeo = lola.buildWindowRimSkirt(satRadius, nacWindow, nacHeightAt, 0.15);
+                    if (rimGeo) {
+                      // 裙圈是窗缘细级：polygonOffset 压过 L1 挖孔锯齿边（LOD 排序）
+                      const rimMat = lolaMat.clone();
+                      rimMat.polygonOffset = true;
+                      rimMat.polygonOffsetFactor = -1;
+                      rimMat.polygonOffsetUnits = -1;
+                      this.lolaMaterials.push(rimMat);
+                      const rimMesh = new THREE.Mesh(rimGeo, rimMat);
+                      rimMesh.name = 'lola-l1-window-rim';
+                      satMesh.add(rimMesh);
+                    }
                   }
                   this.collarMaterial = lolaMat; // WAC 换装目标沿用既有字段语义
                 } else {
@@ -2459,14 +2492,13 @@ export class SolarEngine {
 
       // P3-T5：L1 影像换装——SSE 门控开启且 WAC 纹理就绪时，L1 表面由 2K 全球图
       // 换装 WAC 实测反照率（同一不透明表面上换图，非叠加层；只升不降）
-      if (
-        this.lolaMaterial &&
-        this.lolaWacTexture &&
-        this.regionalAlbedo.gateOpen &&
-        this.lolaMaterial.map !== this.lolaWacTexture
-      ) {
-        this.lolaMaterial.map = this.lolaWacTexture;
-        this.lolaMaterial.needsUpdate = true;
+      if (this.lolaWacTexture && this.regionalAlbedo.gateOpen) {
+        for (const mat of this.lolaMaterials) {
+          if (mat.map !== this.lolaWacTexture) {
+            mat.map = this.lolaWacTexture;
+            mat.needsUpdate = true;
+          }
+        }
       }
     }
 
@@ -2497,6 +2529,18 @@ export class SolarEngine {
         const opacity = terrainRevealOpacity(blockPx);
         this.lunarValleyMaterial.transparent = opacity < 1;
         this.lunarValleyMaterial.opacity = opacity;
+
+        // P3-T5b：L1 同律渐显——按网格纹元屏幕张角（decimate 2 × 236.9m ≈ 474m）
+        // 0.35→1.3px smoothstep（~1470km 起、~395km 全显，先于 WAC 门控 361km）。
+        // 远距隐藏消除亚像素走样"星星点点"（用户反馈 2026-09-24：目标区域提前
+        // 点亮）；孔下盖板兜底，隐藏期间不露星空。
+        const lolaCellM = (LolaRegionalSource.getInstance().metaReady?.nativeSpacingMeters ?? 236.901) * 2;
+        const cellPx = projectedTexelPx(lolaCellM, focalPixelsPx(this.drawingBufferSizeTmp.y, THREE.MathUtils.degToRad(this.camera.fov)), siteDistM);
+        const l1Opacity = terrainRevealOpacity(cellPx, 0.35, 1.3);
+        for (const mat of this.lolaMaterials) {
+          mat.transparent = l1Opacity < 1;
+          mat.opacity = l1Opacity;
+        }
       }
     }
 

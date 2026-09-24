@@ -81,11 +81,11 @@ export function imageryLayerGate(input: ImageryLayerGateInput): ImageryLayerGate
 export const TERRAIN_REVEAL_MIN_PX = 8;
 export const TERRAIN_REVEAL_FULL_PX = 36;
 
-export function terrainRevealOpacity(blockPx: number): number {
-  if (!Number.isFinite(blockPx) || blockPx <= 0) return 0;
+export function terrainRevealOpacity(blockPx: number, minPx = TERRAIN_REVEAL_MIN_PX, fullPx = TERRAIN_REVEAL_FULL_PX): number {
+  if (!Number.isFinite(blockPx) || blockPx <= 0 || fullPx <= minPx) return 0;
   const s = Math.min(
     1,
-    Math.max(0, (blockPx - TERRAIN_REVEAL_MIN_PX) / (TERRAIN_REVEAL_FULL_PX - TERRAIN_REVEAL_MIN_PX))
+    Math.max(0, (blockPx - minPx) / (fullPx - minPx))
   );
   return s * s * (3 - 2 * s);
 }
