@@ -25,9 +25,33 @@ async function main() {
     (window as any).__solarEngine.executeCameraCommand({ type: 'flyTo', bodyId: 'moon', durationSec: 0.8 });
   });
   await page.waitForFunction(() => {
+    const s = (window as any).__solarEngine.cameraController.getSnapshot();
+    return !s.isTransitioning;
+  }, { timeout: 30000, polling: 300 });
+
+  // S5-3：月面双站后按相机半球解析——本探针回归 taurus，先飞至其站顶再判定
+  await page.evaluate(`(() => {
+    const e = window.__solarEngine;
+    const THREE = window.THREE;
+    const pose = e.getBodyWorldPose('moon');
+    const dir = new THREE.Vector3(
+      Math.cos(20.2108 * Math.PI / 180) * Math.cos(30.7997 * Math.PI / 180),
+      Math.sin(20.2108 * Math.PI / 180),
+      -Math.cos(20.2108 * Math.PI / 180) * Math.sin(30.7997 * Math.PI / 180)
+    ).applyQuaternion(pose.quaternion).normalize();
+    const target = pose.pos.clone().addScaledVector(dir, pose.surfaceRadius * 2.9);
+    e.executeCameraCommand({ type: 'flyTo', bodyId: 'moon', durationSec: 1.4, targetPos: [target.x, target.y, target.z], exact: true });
+  })()`);
+  await page.waitForFunction(() => {
+    const s = (window as any).__solarEngine.cameraController.getSnapshot();
+    return !s.isTransitioning;
+  }, { timeout: 30000, polling: 300 });
+  await page.waitForFunction(() => {
     const a = (window as any).__solarEngine.getLandingAvailability();
     return a.action === 'land' || a.action === 'travel-to-site';
   }, { timeout: 30000, polling: 300 });
+  const siteCheck = await page.evaluate(() => (window as any).__solarEngine.getLandingAvailability().siteId);
+  if (siteCheck !== 'taurus-littrow') throw new Error(`站点解析非 taurus: ${siteCheck}`);
 
   // 落区若在背面先前往
   const pre = await page.evaluate(() => (window as any).__solarEngine.getLandingAvailability());
@@ -58,7 +82,7 @@ async function main() {
 
   const tele = await page.evaluate(() => {
     const t = (window as any).__solarEngine.getLandingTelemetry();
-    return { state: t.state, agl: t.altitudeAGLM, lat: t.currentLat, lon: t.currentLon, terrain: t.terrain?.fidelity };
+    return { state: t.state, site: t.site.id, agl: t.altitudeAGLM, lat: t.currentLat, lon: t.currentLon, terrain: t.terrain?.fidelity, sourceId: t.terrain?.sourceId };
   });
   console.log('[telemetry]', JSON.stringify(tele));
 

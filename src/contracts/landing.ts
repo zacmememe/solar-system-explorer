@@ -135,6 +135,31 @@ export const LANDING_SITES: Record<string, LandingSite> = {
     // 谷底中心相对干净——与阿波罗 17 实照的谷底景象一致）
     rockField: { count: 500, radiusM: 1200, sizeMaxM: 2.5, slopeWeight: 0.55 },
   },
+  /**
+   * S5-3：月面第二站（Apollo 15，哈德利月溪）。高程字段取自 apollo15-v1 包实测
+   * （2m/px NAC DTM，3×6km 窗 100% 有效；MCP 远程字节校验 3/3、LOLA 交叉差
+   * −0.7/−1.3/−1.4m，2026-09-24）。站心为着陆点北 141m 的平坦点（坡度 1.12°，
+   * 着陆点本身 3.40°——同 taurus 站的谷底平坦点准则）。
+   */
+  'hadley-rille': {
+    id: 'hadley-rille',
+    bodyId: 'moon',
+    name: '哈德利月溪',
+    nameEn: 'Hadley Rille',
+    subtitle: '哈德利月溪 · 真实 DTM 降落',
+    description:
+      '亚平宁山北麓的月海平原，西侧蜿蜒着深逾两百米的熔岩通道哈德利月溪，阿波罗 15 号曾在此着陆并驾漫游车考察月溪边缘与斯旺山前坡。',
+    provenance: 'NASA LROC NAC DTM APOLLO15 v1.9 (2 m/px, PDS LRO-L-LROC-5-RDR-V1.0)',
+    centerLat: 26.135698,
+    centerLon: 3.630127,
+    datumRadiusKm: 1737.4,
+    elevationDatumOffsetM: -1921.7, // 站心平坦点双线性值
+    elevationRangeM: [-2218.3, -1875.6], // 3×6km 窗实测范围
+    lookTargetBodyId: 'earth',
+    descentEnabled: true,
+    // 山前平原碎石场：月溪陡坎崩积 + 斯旺山坡面碎屑，坡度偏好中等
+    rockField: { count: 400, radiusM: 1000, sizeMaxM: 2, slopeWeight: 0.4 },
+  },
   'jezero': {
     id: 'jezero',
     bodyId: 'mars',

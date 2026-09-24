@@ -1,0 +1,43 @@
+{
+ "state": "admitted-2026-09-24-3point-remote-crosscheck",
+ "evidence": {
+  "points": [
+   {
+    "name": "着陆点",
+    "lat": 26.1324,
+    "lon": 3.6338,
+    "remoteM": -1924.779,
+    "localM": -1924.779,
+    "byteIdentical": true,
+    "source": "NASA PDS MCP gateway ranged fetch（独立解码路径，与本地裁窗逐位一致）"
+   },
+   {
+    "name": "着陆点西 1.5km",
+    "lat": 26.1324,
+    "lon": 0,
+    "remoteM": -1902.342,
+    "localM": -1902.342,
+    "byteIdentical": true,
+    "source": "NASA PDS MCP gateway ranged fetch（独立解码路径，与本地裁窗逐位一致）"
+   },
+   {
+    "name": "着陆点北 2km",
+    "lat": 26.1324,
+    "lon": 0,
+    "remoteM": -1923.064,
+    "localM": -1923.064,
+    "byteIdentical": true,
+    "source": "NASA PDS MCP gateway ranged fetch（独立解码路径，与本地裁窗逐位一致）"
+   }
+  ],
+  "windowGrid": null,
+  "heightSha256": "fa333fd0ce3c455797e9147d6acfbb174700d9315c52443205876df4e52ef079",
+  "validSha256": "92ad18e677bbcb95862ec60f899f373455b00ca2fd3be4e7de7c1d114ed24b31",
+  "lolaCrosscheckNote": "LOLA LDEM_128 独立交叉：三锚点差 −0.7/−1.3/−1.4m（lola-l1-hadley-v1 crosscheckNacDtm；README 拟合 RMS 1.74m 量级）",
+  "visualRegistrationScreenshots": [
+   "s53-hadley-touchdown.png",
+   "s53-hadley-west-rille.png"
+  ],
+  "note": "三点 MCP 网关 Range 远程字节取回与本地裁窗逐位一致；GeoTIFF tiepoint↔LBL 四角互核 ~1m；LOLA 跨产品差 ≤1.4m；S5-3 实机下降流探针目视配准（触地碎石/亚平宁山前地平线/月溪方向）见截图；遥测 sourceId=NAC_DTM_APOLLO15。"
+ }
+}

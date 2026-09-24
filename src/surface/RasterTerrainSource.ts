@@ -39,6 +39,7 @@ interface DemMeta {
   admissionState: string;
   fidelityClaim: string;
   sourceUrl: string;
+  sourceFile?: string; // S5-3：溯源标签派生（多站点 NAC_DTM_*）
   sourceVersion: string;
   licenseNote: string;
   verticalDatum: string;
@@ -87,6 +88,8 @@ export class RasterTerrainSource {
   private admissionState = 'not-loaded';
   private loadPromise: Promise<void> | null = null;
   private loadError: string | null = null;
+  // S5-3：溯源标签按实例数据源派生（多站点：NAC_DTM_APOLLO17 / NAC_DTM_APOLLO15…）
+  private sourceTag = 'NAC_DTM_APOLLO17';
   private orthoTexture: THREE.DataTexture | null = null;
 
   /** 窗口地理边界（像元中心口径） */
@@ -115,7 +118,7 @@ export class RasterTerrainSource {
   public get provenance(): RasterProvenance | null {
     if (!this.meta) return null;
     return {
-      sourceId: 'NAC_DTM_APOLLO17',
+      sourceId: this.sourceTag,
       sourceVersion: this.meta.sourceVersion,
       sourceUrl: this.meta.sourceUrl,
       admissionState: this.terrainAdmissionState,
@@ -164,6 +167,7 @@ export class RasterTerrainSource {
     this.validMask = new Uint8Array(validBuf);
     this.orthoU16 = new Uint16Array(orthoBuf);
     this.admissionState = meta.admissionState;
+    this.sourceTag = meta.sourceFile?.replace(/\.[A-Za-z0-9]+$/, '') ?? this.sourceTag;
     const tl = this.windowPixelToLatLon(0, 0);
     const br = this.windowPixelToLatLon(meta.width - 1, meta.height - 1);
     this.boundsCache = {
@@ -217,6 +221,7 @@ export class RasterTerrainSource {
     this.validMask = new Uint8Array(validBuf);
     this.orthoU16 = new Uint16Array(orthoBuf);
     this.admissionState = meta.admissionState;
+    this.sourceTag = meta.sourceFile?.replace(/\.[A-Za-z0-9]+$/, '') ?? this.sourceTag;
 
     // 窗口地理边界（首/末像元中心）
     const tl = this.windowPixelToLatLon(0, 0);
@@ -280,14 +285,14 @@ export class RasterTerrainSource {
       return { valid: false, heightM: 0, fidelity: null, sourceId: null, reason: 'not-loaded' };
     }
     if (!Number.isFinite(latDeg) || !Number.isFinite(lonDeg)) {
-      return { valid: false, heightM: 0, fidelity: null, sourceId: 'NAC_DTM_APOLLO17', reason: 'outside' };
+      return { valid: false, heightM: 0, fidelity: null, sourceId: this.sourceTag, reason: 'outside' };
     }
     const m = this.meta;
     const src = this.latLonToSourcePixel(latDeg, lonDeg);
     const wc = src.col - m.window.colStart;
     const wr = src.row - m.window.rowStart;
     if (wc < 0 || wr < 0 || wc > m.width - 1 || wr > m.height - 1) {
-      return { valid: false, heightM: 0, fidelity: null, sourceId: 'NAC_DTM_APOLLO17', reason: 'outside' };
+      return { valid: false, heightM: 0, fidelity: null, sourceId: this.sourceTag, reason: 'outside' };
     }
     const x0 = Math.min(m.width - 2, Math.floor(wc));
     const y0 = Math.min(m.height - 2, Math.floor(wr));
@@ -305,11 +310,11 @@ export class RasterTerrainSource {
       const idx = yy * m.width + xx;
       const v = this.heights[idx];
       if (!Number.isFinite(v) || this.validMask[idx] === 0) {
-        return { valid: false, heightM: 0, fidelity: null, sourceId: 'NAC_DTM_APOLLO17', reason: 'nodata' };
+        return { valid: false, heightM: 0, fidelity: null, sourceId: this.sourceTag, reason: 'nodata' };
       }
       h += w * v;
     }
-    return { valid: true, heightM: h, fidelity: 'measured-dem', sourceId: 'NAC_DTM_APOLLO17' };
+    return { valid: true, heightM: h, fidelity: 'measured-dem', sourceId: this.sourceTag };
   }
 
   /** 正射 I/F 纹理（8-bit 归一化灰度，RGBA 灰阶复制；归一化分母记录于纹理 userData） */

@@ -139,6 +139,23 @@ interface BodyRenderNode {
   coronaMesh?: THREE.Mesh;
 }
 
+/** S5-3：月面站点表面栈（按站懒建；group 挂 satMesh，激活时切换可见性与挖孔球） */
+interface MoonSiteStack {
+  siteId: string;
+  group: THREE.Group;
+  raster: RasterTerrainSource;
+  lola: LolaRegionalSource;
+  holedGeometry: THREE.BufferGeometry | null;
+  valleyMesh?: THREE.Mesh;
+  valleyMaterial?: THREE.MeshStandardMaterial;
+  capMesh?: THREE.Mesh;
+  lolaMaterials: THREE.MeshStandardMaterial[];
+  rockFieldMaterial: THREE.MeshStandardMaterial | null;
+  collarMaterial: THREE.MeshStandardMaterial | null;
+  loadStarted: boolean;
+  built: boolean;
+}
+
 export class SolarEngine {
   private lastHudEmit = -Infinity;
   private hudSequence = 0;
@@ -242,15 +259,335 @@ export class SolarEngine {
     return this.landingController.getSite().bodyId;
   }
 
-  /** 相机目标天体 → 该天体首个可下降站点（descentEnabled !== false）；无则 null */
+  /** S5-3：月面站点资产地址（taurus 用单例默认；其他站显式 pack 目录） */
+  private static readonly MOON_SITE_ASSET_URLS: Record<string, { dem?: string; l1?: string }> = {
+    'taurus-littrow': {},
+    'hadley-rille': { dem: '/data/dem/apollo15-v1', l1: '/data/dem/lola-l1-hadley-v1' },
+  };
+
+  /**
+   * S5-3：幂等预取月面站点资产（DTM+L1）并懒建栈。默认站在引擎初始化时调用
+   * （保持原有行为）；其他站在可用性解析命中该站时触发。失败仅告警——栈保持
+   * 未建/隐藏，不伪造地形。
+   */
+  private ensureMoonSiteAssets(siteId: string): void {
+    const stack = this.moonSiteStacks.get(siteId);
+    if (!stack || stack.loadStarted) return;
+    stack.loadStarted = true;
+    const urls = SolarEngine.MOON_SITE_ASSET_URLS[siteId] ?? {};
+    Promise.all([
+      stack.raster.load(urls.dem),
+      stack.lola.load(urls.l1).catch(() => undefined), // L1 可选：失败回退两级栈
+    ])
+      .then(() => this.buildMoonSiteStack(stack))
+      .catch((err: unknown) => {
+        console.error(`[SolarEngine] 月面站点 ${siteId} DTM 装载失败，真实地表网格保持隐藏:`, err);
+      });
+  }
+
+  /**
+   * S5-3：按站构建月面表面栈（DTM 窗网格 + 碎石场 + LOLA L1/裙圈 + 挖孔球 +
+   * 孔底盖板[+ WAC EMP——仅 taurus 有该资产]）。构建期间临时把 provider 的激活
+   * 月面站切到本站（buildDemWindowGeometry/collar 按激活站路由），完毕后恢复。
+   */
+  private buildMoonSiteStack(stack: MoonSiteStack): void {
+    const satMesh = this.moonMesh;
+    const satRadius = this.moonBaseRadius;
+    if (!satMesh || stack.built || !stack.raster.isReady) return;
+    const site = LANDING_SITES[stack.siteId];
+    if (!site) return;
+    stack.built = true;
+    const heightProvider = TerrainHeightProvider.getInstance();
+    const rasterSource = stack.raster;
+    const lola = stack.lola;
+    const prevActiveSite = this.activeMoonSiteId;
+    heightProvider.setActiveMoonSite(stack.siteId);
+    try {
+      const valleyMat = new THREE.MeshStandardMaterial({
+        color: 0x94a3b8,
+        roughness: 0.95,
+        metalness: 0.05,
+        side: THREE.FrontSide,
+        // P3-T5：DTM 与 L1 同为实测地形（高差米级），近距叠显时以深度偏移
+        // 保证细级（5m）稳定胜出——LOD 层级排序，非掩盖缺陷
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -1,
+      });
+      stack.valleyMaterial = valleyMat;
+      const valleyMesh = new THREE.Mesh(new THREE.BufferGeometry(), valleyMat);
+      valleyMesh.name = `${stack.siteId}-terrain`;
+      valleyMesh.visible = false;
+      valleyMesh.receiveShadow = true;
+      valleyMesh.castShadow = true;
+      stack.group.add(valleyMesh);
+      stack.valleyMesh = valleyMesh;
+
+      const geo = heightProvider.buildDemWindowGeometry(satRadius);
+      const ortho = rasterSource.buildOrthoTexture();
+      if (geo && ortho) {
+        ortho.colorSpace = THREE.SRGBColorSpace; // I/F 影像产品按显示意图处理
+        valleyMat.map = ortho;
+        valleyMat.color.set(0xffffff);
+        valleyMat.needsUpdate = true;
+        valleyMesh.geometry.dispose();
+        valleyMesh.geometry = geo;
+        valleyMesh.visible = true;
+      } else {
+        console.error(`[SolarEngine] ${stack.siteId} DTM 已装载但网格构建失败`);
+      }
+
+      // S3a：程序碎石场（示意层——同 taurus 契约：确定性随机、贴实测 DTM、坡度偏好）
+      try {
+        const profile = site.rockField ?? { count: 400, radiusM: 1000, sizeMaxM: 2, slopeWeight: 0.3 };
+        const sample = (lat: number, lon: number) => {
+          const s = rasterSource.sampleHeight(lat, lon);
+          return s.valid ? { heightM: s.heightM } : null;
+        };
+        const placements = generateRockPlacements({
+          siteLat: site.centerLat,
+          siteLon: site.centerLon,
+          radiusM: profile.radiusM,
+          count: profile.count,
+          sizeMaxM: profile.sizeMaxM,
+          clearZoneM: 20,
+          maxSlopeDeg: 19,
+          slopeWeight: profile.slopeWeight,
+          sampleHeight: sample,
+          seed: 20260924,
+        });
+        const rockMat = new THREE.MeshStandardMaterial({ color: 0x9a9186, roughness: 1, metalness: 0 });
+        stack.rockFieldMaterial = rockMat;
+        // S4b 勘误：scaleM 是米——须乘 metricScale 折算网格局部单位再 compose
+        const rockMetricScale = satRadius / 1737400;
+        const byVariant: typeof placements[] = [[], [], []];
+        for (const p of placements) byVariant[p.variant].push(p);
+        byVariant.forEach((list, v) => {
+          if (!list.length) return;
+          const inst = new THREE.InstancedMesh(buildRockGeometry(20260924, v), rockMat, list.length);
+          const m = new THREE.Matrix4();
+          const q = new THREE.Quaternion();
+          const up = new THREE.Vector3(0, 1, 0);
+          list.forEach((p, i) => {
+            const pos = rockScenePosition(p.latDeg, p.lonDeg, p.heightM, satRadius);
+            pos.setLength(pos.length() + 0.5 * p.scaleM[1] * rockMetricScale); // 露出 75%
+            q.setFromAxisAngle(up, p.rotYRad);
+            m.compose(
+              pos,
+              q,
+              new THREE.Vector3(
+                p.scaleM[0] * rockMetricScale,
+                p.scaleM[1] * rockMetricScale,
+                p.scaleM[2] * rockMetricScale
+              )
+            );
+            inst.setMatrixAt(i, m);
+          });
+          inst.instanceMatrix.needsUpdate = true;
+          inst.name = 'procedural-rockfield';
+          inst.frustumCulled = false; // 实例跨数 km，包围球逐实例剔除不适用
+          stack.group.add(inst);
+        });
+      } catch (e) {
+        console.warn('[SolarEngine] 碎石场构建失败（不影响主链路）:', e);
+      }
+
+      // P3-T5：LOLA L1 中间层（结构同前；L1 不可用回退两级栈）
+      let lolaReady = false;
+      if (lola.isReady) lolaReady = true;
+      else console.warn(`[SolarEngine] ${stack.siteId} LOLA L1 不可用（回退两级栈）:`, lola.error);
+      const holed = heightProvider.buildHoledMoonSphereGeometry(
+        satRadius,
+        128,
+        64,
+        lolaReady ? lola.windowBounds ?? undefined : undefined
+      );
+      if (holed) {
+        stack.holedGeometry = holed.geometry;
+        if (stack.siteId === this.activeMoonSiteId) {
+          satMesh.geometry.dispose(); // 原始球仅默认站首次构建时释放
+          satMesh.geometry = holed.geometry;
+        }
+        if (lolaReady) {
+          const nacWindow = rasterSource.windowBounds;
+          // P3-T5b：L1 在 DTM 高精窗处挖孔；窗缘裙圈（NAC 内缘→LOLA 外缘）填缝
+          const lolaHole = nacWindow
+            ? {
+                latMin: nacWindow.latMin - 0.12, latMax: nacWindow.latMax + 0.12,
+                lonMin: nacWindow.lonMin - 0.12, lonMax: nacWindow.lonMax + 0.12,
+              }
+            : undefined;
+          const lolaGeo = lola.buildRegionalGeometry(satRadius, 2, lolaHole);
+          if (lolaGeo) {
+            const lolaMat = new THREE.MeshStandardMaterial({
+              color: 0xffffff,
+              roughness: 0.95,
+              metalness: 0.05,
+            });
+            stack.lolaMaterials = [lolaMat];
+            // L1 网格 UV=全球等距圆柱：2K 全球图直接可用（WAC 换装仅 taurus）
+            new THREE.TextureLoader().load('/assets/textures/moon/lroc_color_2k.jpg', (tex) => {
+              tex.colorSpace = THREE.SRGBColorSpace;
+              for (const mat of stack.lolaMaterials) {
+                if (mat.map) continue;
+                mat.map = tex;
+                mat.needsUpdate = true;
+              }
+            });
+            const lolaMesh = new THREE.Mesh(lolaGeo, lolaMat);
+            lolaMesh.name = 'lola-l1-regional-terrain';
+            stack.group.add(lolaMesh);
+            const skirtGeo = lola.buildBoundarySkirt(satRadius, holed.holeBounds);
+            if (skirtGeo) {
+              const skirtMesh = new THREE.Mesh(skirtGeo, lolaMat); // 同材质：换装一次覆盖两网格
+              skirtMesh.name = 'lola-l1-boundary-skirt';
+              stack.group.add(skirtMesh);
+            }
+            if (nacWindow) {
+              const nacHeightAt = (lat: number, lon: number): number => {
+                const cl = Math.max(nacWindow.latMin, Math.min(nacWindow.latMax, lat));
+                const co = Math.max(nacWindow.lonMin, Math.min(nacWindow.lonMax, lon));
+                return rasterSource.sampleHeight(cl, co).heightM;
+              };
+              const rimGeo = lola.buildWindowRimSkirt(satRadius, nacWindow, nacHeightAt, 0.15);
+              if (rimGeo) {
+                // 裙圈是窗缘细级：polygonOffset 压过 L1 挖孔锯齿边（LOD 排序）
+                const rimMat = lolaMat.clone();
+                rimMat.polygonOffset = true;
+                rimMat.polygonOffsetFactor = -1;
+                rimMat.polygonOffsetUnits = -1;
+                stack.lolaMaterials.push(rimMat);
+                const rimMesh = new THREE.Mesh(rimGeo, rimMat);
+                rimMesh.name = 'lola-l1-window-rim';
+                stack.group.add(rimMesh);
+              }
+            }
+            stack.collarMaterial = lolaMat; // WAC 换装目标沿用字段语义（taurus）
+          } else {
+            console.warn('[SolarEngine] L1 网格构建失败（保持两级栈）');
+            lolaReady = false;
+          }
+        }
+        if (!lolaReady) {
+          const collarGeo = heightProvider.buildCollarGeometry(satRadius, holed.holeBounds);
+          if (collarGeo) {
+            const collarMat = new THREE.MeshStandardMaterial({
+              color: 0xffffff,
+              roughness: 0.95,
+              metalness: 0.05,
+            });
+            stack.collarMaterial = collarMat;
+            new THREE.TextureLoader().load('/assets/textures/moon/lroc_color_2k.jpg', (tex) => {
+              if (collarMat.map) return;
+              tex.colorSpace = THREE.SRGBColorSpace;
+              collarMat.map = tex;
+              collarMat.needsUpdate = true;
+            });
+            const collarMesh = new THREE.Mesh(collarGeo, collarMat);
+            collarMesh.name = `${stack.siteId}-collar`;
+            collarMesh.receiveShadow = true;
+            stack.group.add(collarMesh);
+          }
+        }
+
+        // P3b-E：孔底盖板——兜底面与本体共享材质；半径压到本站 DTM 窗最低高程
+        // 以下留余量（taurus −4060.5m→−4200；hadley −2218.3m→−2350）
+        const capBelowM = stack.siteId === 'hadley-rille' ? 2350 : 4200;
+        const capMesh = new THREE.Mesh(
+          new THREE.SphereGeometry(satRadius * (1 - capBelowM / 1737400), 32, 24),
+          satMesh.material
+        );
+        capMesh.name = 'moon-hole-cap';
+        stack.capMesh = capMesh;
+        stack.group.add(capMesh);
+
+        // P3b-C/P3-T5：WAC EMP 区域反照率（仅 taurus 打包了该资产）
+        if (stack.siteId === 'taurus-littrow') {
+          this.regionalAlbedo = new RegionalAlbedoLayer(satRadius, holed.holeBounds, {
+            attachMesh: !lolaReady,
+          });
+          void this.regionalAlbedo.load().then(() => {
+            const layer = this.regionalAlbedo;
+            if (!layer || !layer.isReady) {
+              console.warn('[SolarEngine] WAC 区域反照率层不可用（全球图兜底）:', layer?.error);
+              return;
+            }
+            const collarTex = layer.attach(satMesh);
+            if (!collarTex) return;
+            if (lolaReady) {
+              this.lolaWacTexture = collarTex; // 门控开启时在 animate 内换装
+            } else if (stack.collarMaterial) {
+              stack.collarMaterial.map = collarTex;
+              stack.collarMaterial.needsUpdate = true;
+            }
+          });
+        }
+      }
+      if (stack.siteId === this.activeMoonSiteId) this.refreshActiveMoonStackRefs(stack);
+    } finally {
+      heightProvider.setActiveMoonSite(prevActiveSite);
+    }
+  }
+
+  /** S5-3：激活站引用刷新（animate 渐显门控/WAC 换装消费的引擎字段指向激活栈） */
+  private refreshActiveMoonStackRefs(stack: MoonSiteStack): void {
+    this.lunarValleyMesh = stack.valleyMesh;
+    this.lunarValleyMaterial = stack.valleyMaterial;
+    this.moonHoleCapMesh = stack.capMesh;
+    this.lolaMaterial = stack.lolaMaterials[0];
+    this.lolaMaterials = stack.lolaMaterials;
+    this.rockFieldMaterial = stack.rockFieldMaterial;
+  }
+
+  /**
+   * S5-3：激活月面站——切换 group 可见性与挖孔球几何（出站几何保留供再激活）、
+   * 刷新引擎激活引用、provider 查询路由改指本站栅格。站点资产未就绪时几何
+   * 暂保持原状，构建完成后由 buildMoonSiteStack 补装。
+   */
+  private activateMoonSite(siteId: string): void {
+    const stack = this.moonSiteStacks.get(siteId);
+    if (!stack || this.activeMoonSiteId === siteId) return;
+    this.activeMoonSiteId = siteId;
+    for (const s of this.moonSiteStacks.values()) {
+      s.group.visible = s.siteId === siteId;
+    }
+    if (this.moonMesh && stack.holedGeometry) {
+      this.moonMesh.geometry = stack.holedGeometry;
+    }
+    this.refreshActiveMoonStackRefs(stack);
+    TerrainHeightProvider.getInstance().setActiveMoonSite(siteId);
+  }
+
+  /**
+   * 相机目标天体 → 该天体可下降站点（descentEnabled !== false）；无则 null。
+   * S5-3：同天体多站时按相机星下点与站点方向点积取最近（点积排序同时给出
+   * 半球可见性与角距序——可见半球站优先，均在背面时取最近者走 travel-to-site）。
+   */
   private resolveLandingSiteForCamera(camSnap: CameraStateSnapshot): { bodyId: BodyId; site: LandingSite } | null {
     for (const id of [camSnap.targetBodyId, camSnap.selectedBodyId]) {
       if (!id) continue;
-      for (const site of Object.values(LANDING_SITES)) {
-        if (site.bodyId === id && site.descentEnabled !== false) {
-          return { bodyId: id, site };
+      const candidates = Object.values(LANDING_SITES).filter(
+        (s) => s.bodyId === id && s.descentEnabled !== false
+      );
+      if (!candidates.length) continue;
+      if (candidates.length === 1) return { bodyId: id, site: candidates[0] };
+      const pose = this.getBodyWorldPose(id);
+      const rel = this.camera.position
+        .clone()
+        .sub(pose.pos)
+        .applyQuaternion(pose.quaternion.clone().invert())
+        .normalize();
+      let best = candidates[0];
+      let bestDot = -Infinity;
+      for (const s of candidates) {
+        const d = latLonDirection(s.centerLat, s.centerLon);
+        const dot = rel.x * d[0] + rel.y * d[1] + rel.z * d[2];
+        if (dot > bestDot) {
+          bestDot = dot;
+          best = s;
         }
       }
+      return { bodyId: id, site: best };
     }
     return null;
   }
@@ -271,6 +608,12 @@ export class SolarEngine {
   private marsHaloMesh?: THREE.Mesh;
   private marsHoleCapMesh?: THREE.Mesh;
   private marsRockFieldMaterial: THREE.MeshStandardMaterial | null = null;
+  // S5-3：月面多站点栈——每站一组表面网格（DTM 窗/L1/裙边/盖板/碎石）挂各自的
+  // group；激活站持有挖孔球几何与 animate 消费引用。taurus-littrow 默认激活
+  // （单例栅格，行为同前）；其他站懒装载（可用性解析命中即预取）。
+  private moonSiteStacks = new Map<string, MoonSiteStack>();
+  private activeMoonSiteId = 'taurus-littrow';
+  private moonBaseRadius = 0.5;
   // S4c：火星尘色大气（示意层）——天空单色浸染（星图×尘色）+ 地表线性雾。
   // 非散射模拟：真实火星白昼天空亮黄褐且星不可见，此处为轻量近似，消除
   // "无大气天体般的纯黑星空 + 生硬地平线"观感；月面无大气保持纯黑星空=真实。
@@ -281,7 +624,6 @@ export class SolarEngine {
   private dustFog: THREE.Fog | null = null;
   // P3b-C：WAC EMP 区域反照率层（中远景影像；DTM 装载后创建，SSE 门控显隐）
   private regionalAlbedo: RegionalAlbedoLayer | null = null;
-  private collarMaterial: THREE.MeshStandardMaterial | null = null;
   private drawingBufferSizeTmp: THREE.Vector2 = new THREE.Vector2();
 
   // 动画与时钟
@@ -999,6 +1341,7 @@ export class SolarEngine {
 
       if (satId === 'moon') {
         this.moonMesh = satMesh;
+        this.moonBaseRadius = satRadius;
         // 异步载入真实 NASA LROC 月球正射反照率贴图
         new THREE.TextureLoader().load('/assets/textures/moon/lroc_color_2k.jpg', (tex) => {
           tex.colorSpace = THREE.SRGBColorSpace;
@@ -1006,257 +1349,31 @@ export class SolarEngine {
           satMat.needsUpdate = true;
         });
 
-        // 挂载真实 DTM 地表网格 (P2: LROC NAC DTM APOLLO17, 5 m/px, Taurus–Littrow 窗口)
-        // 数据装载完成前网格保持隐藏——不以占位几何伪造真实地形。
-        // FrontSide 单侧渲染 + 外向绕序 (P1 勘误结论)：DoubleSide 不是绕序修复，
-        // 且在 0.1m 米制近裁剪面下背面着色会使整屏输出纯黑（见 P1 交接文档）。
+        // S5-3：月面多站点栈注册（原 taurus 单站构建逻辑移至 buildMoonSiteStack；
+        // FrontSide 单侧渲染 + 外向绕序的 P1 勘误结论对两站同样适用）
         const heightProvider = TerrainHeightProvider.getInstance();
-        const rasterSource = RasterTerrainSource.getInstance();
-        const valleyMat = new THREE.MeshStandardMaterial({
-          color: 0x94a3b8,
-          roughness: 0.95,
-          metalness: 0.05,
-          side: THREE.FrontSide,
-          // P3-T5：DTM 与 L1 同为实测地形（高差米级），近距叠显时以深度偏移
-          // 保证细级（5m）稳定胜出——LOD 层级排序，非掩盖缺陷
-          polygonOffset: true,
-          polygonOffsetFactor: -1,
-          polygonOffsetUnits: -1,
-        });
-        this.lunarValleyMaterial = valleyMat;
-        const valleyMesh = new THREE.Mesh(new THREE.BufferGeometry(), valleyMat);
-        valleyMesh.name = 'taurus-littrow-terrain';
-        valleyMesh.visible = false;
-        valleyMesh.receiveShadow = true;
-        valleyMesh.castShadow = true;
-        satMesh.add(valleyMesh);
-        this.lunarValleyMesh = valleyMesh;
-        rasterSource
-          .load()
-          .then(async () => {
-            const geo = heightProvider.buildDemWindowGeometry(satRadius);
-            const ortho = rasterSource.buildOrthoTexture();
-            if (!geo || !ortho) {
-              console.error('[SolarEngine] DTM 已装载但网格构建失败');
-              return;
-            }
-            ortho.colorSpace = THREE.SRGBColorSpace; // I/F 影像产品按显示意图处理
-            valleyMat.map = ortho;
-            valleyMat.color.set(0xffffff);
-            valleyMat.needsUpdate = true;
-            valleyMesh.geometry.dispose();
-            valleyMesh.geometry = geo;
-            valleyMesh.visible = true;
-
-            // S3a：程序碎石场（示意层——尺度分布参考月面统计，位置为确定性随机
-            // 采样并贴合实测 DTM；不声称任何石块在历史准确位置。宏观地形与影像
-            // 均为实测，不因本层改变）。3 变体 InstancedMesh 共享材质，animate 内
-            // 按相机距离淡入（<6km 全显，>9km 隐藏）。
-            try {
-              const site = LANDING_SITES['taurus-littrow'];
-              const profile = site.rockField ?? { count: 400, radiusM: 1000, sizeMaxM: 2, slopeWeight: 0.3 };
-              const sample = (lat: number, lon: number) => {
-                const s = rasterSource.sampleHeight(lat, lon);
-                return s.valid ? { heightM: s.heightM } : null;
-              };
-              const placements = generateRockPlacements({
-                siteLat: site.centerLat,
-                siteLon: site.centerLon,
-                radiusM: profile.radiusM,
-                count: profile.count,
-                sizeMaxM: profile.sizeMaxM,
-                clearZoneM: 20,
-                maxSlopeDeg: 19,
-                slopeWeight: profile.slopeWeight,
-                sampleHeight: sample,
-                seed: 20260924,
-              });
-              const rockMat = new THREE.MeshStandardMaterial({
-                color: 0x9a9186,
-                roughness: 1,
-                metalness: 0,
-              });
-              this.rockFieldMaterial = rockMat;
-              // S4b 勘误：scaleM 是米——须乘 metricScale 折算网格局部单位再 compose。
-              // 此前直接把米数值当局部 scale，物理比例下碎石半径达天体级、相机
-              // 恒在石内被 FrontSide 剔除（月火同构 bug，实测 2026-09-24 火星探针）。
-              const rockMetricScale = satRadius / 1737400;
-              const byVariant: typeof placements[] = [[], [], []];
-              for (const p of placements) byVariant[p.variant].push(p);
-              byVariant.forEach((list, v) => {
-                if (!list.length) return;
-                const inst = new THREE.InstancedMesh(buildRockGeometry(20260924, v), rockMat, list.length);
-                const m = new THREE.Matrix4();
-                const q = new THREE.Quaternion();
-                const up = new THREE.Vector3(0, 1, 0);
-                list.forEach((p, i) => {
-                  const pos = rockScenePosition(p.latDeg, p.lonDeg, p.heightM, satRadius);
-                  pos.setLength(pos.length() + 0.5 * p.scaleM[1] * rockMetricScale); // 露出 75%（同火星）
-                  q.setFromAxisAngle(up, p.rotYRad);
-                  m.compose(
-                    pos,
-                    q,
-                    new THREE.Vector3(
-                      p.scaleM[0] * rockMetricScale,
-                      p.scaleM[1] * rockMetricScale,
-                      p.scaleM[2] * rockMetricScale
-                    )
-                  );
-                  inst.setMatrixAt(i, m);
-                });
-                inst.instanceMatrix.needsUpdate = true;
-                inst.name = 'procedural-rockfield';
-                inst.frustumCulled = false; // 实例跨 2.4km，包围球逐实例剔除不适用
-                satMesh.add(inst);
-              });
-            } catch (e) {
-              console.warn('[SolarEngine] 碎石场构建失败（不影响主链路）:', e);
-            }
-
-            // P3-T5：LOLA L1 中间层（236.9 m/px 真实区域地形）。就绪时球面孔扩大到
-            // L1 裁窗边界、L1 网格成为该区域唯一有效不透明表面（Pro 260924 方向：
-            // 单一表面 + 影像换装），退役抬升 WAC 环带与 NAC 窗口裙边；
-            // 不可用则回退两级栈（孔=DTM 窗 + NAC 裙边 + 抬升环带）。
-            const lola = LolaRegionalSource.getInstance();
-            let lolaReady = false;
-            try {
-              await lola.load();
-              lolaReady = lola.isReady;
-            } catch (e) {
-              console.warn('[SolarEngine] LOLA L1 不可用（回退两级栈）:', lola.error ?? e);
-            }
-            const holed = heightProvider.buildHoledMoonSphereGeometry(
-              satRadius,
-              128,
-              64,
-              lolaReady ? lola.windowBounds ?? undefined : undefined
-            );
-            if (holed) {
-              satMesh.geometry.dispose();
-              satMesh.geometry = holed.geometry;
-              if (lolaReady) {
-                const nacWindow = rasterSource.windowBounds;
-                // P3-T5b：L1 在 DTM 高精窗处挖孔（无孔平板在眼高切过谷底——
-                // "水面穿模"，用户反馈 2026-09-24 触地后左前黑色立方体+脚下
-                // 模糊 2K 面即此根因）；窗缘裙圈（NAC 内缘→LOLA 外缘）填缝
-                const lolaHole = nacWindow
-                  ? {
-                      latMin: nacWindow.latMin - 0.12, latMax: nacWindow.latMax + 0.12,
-                      lonMin: nacWindow.lonMin - 0.12, lonMax: nacWindow.lonMax + 0.12,
-                    }
-                  : undefined;
-                const lolaGeo = lola.buildRegionalGeometry(satRadius, 2, lolaHole);
-                if (lolaGeo) {
-                  const lolaMat = new THREE.MeshStandardMaterial({
-                    color: 0xffffff,
-                    roughness: 0.95,
-                    metalness: 0.05,
-                  });
-                  this.lolaMaterial = lolaMat;
-                  this.lolaMaterials = [lolaMat];
-                  // L1 网格 UV=全球等距圆柱：2K 全球图直接可用，WAC 就绪后经
-                  // collarTexture（同一 UV 裁剪变换）在 SSE 门控开启时换装
-                  new THREE.TextureLoader().load('/assets/textures/moon/lroc_color_2k.jpg', (tex) => {
-                    tex.colorSpace = THREE.SRGBColorSpace;
-                    for (const mat of this.lolaMaterials) {
-                      if (mat.map) continue; // WAC 已先行换装则保持
-                      mat.map = tex;
-                      mat.needsUpdate = true;
-                    }
-                  });
-                  const lolaMesh = new THREE.Mesh(lolaGeo, lolaMat);
-                  lolaMesh.name = 'lola-l1-regional-terrain';
-                  satMesh.add(lolaMesh);
-                  const skirtGeo = lola.buildBoundarySkirt(satRadius, holed.holeBounds);
-                  if (skirtGeo) {
-                    const skirtMesh = new THREE.Mesh(skirtGeo, lolaMat); // 同材质：换装一次覆盖两网格
-                    skirtMesh.name = 'lola-l1-boundary-skirt';
-                    satMesh.add(skirtMesh);
-                  }
-                  if (nacWindow) {
-                    const nacHeightAt = (lat: number, lon: number): number => {
-                      const cl = Math.max(nacWindow.latMin, Math.min(nacWindow.latMax, lat));
-                      const co = Math.max(nacWindow.lonMin, Math.min(nacWindow.lonMax, lon));
-                      return rasterSource.sampleHeight(cl, co).heightM;
-                    };
-                    const rimGeo = lola.buildWindowRimSkirt(satRadius, nacWindow, nacHeightAt, 0.15);
-                    if (rimGeo) {
-                      // 裙圈是窗缘细级：polygonOffset 压过 L1 挖孔锯齿边（LOD 排序）
-                      const rimMat = lolaMat.clone();
-                      rimMat.polygonOffset = true;
-                      rimMat.polygonOffsetFactor = -1;
-                      rimMat.polygonOffsetUnits = -1;
-                      this.lolaMaterials.push(rimMat);
-                      const rimMesh = new THREE.Mesh(rimGeo, rimMat);
-                      rimMesh.name = 'lola-l1-window-rim';
-                      satMesh.add(rimMesh);
-                    }
-                  }
-                  this.collarMaterial = lolaMat; // WAC 换装目标沿用既有字段语义
-                } else {
-                  console.warn('[SolarEngine] L1 网格构建失败（保持两级栈）');
-                  lolaReady = false;
-                }
-              }
-              if (!lolaReady) {
-                const collarGeo = heightProvider.buildCollarGeometry(satRadius, holed.holeBounds);
-                if (collarGeo) {
-                  const collarMat = new THREE.MeshStandardMaterial({
-                    color: 0xffffff,
-                    roughness: 0.95,
-                    metalness: 0.05,
-                  });
-                  this.collarMaterial = collarMat;
-                  new THREE.TextureLoader().load('/assets/textures/moon/lroc_color_2k.jpg', (tex) => {
-                    if (collarMat.map) return; // WAC 已先行换装则保持
-                    tex.colorSpace = THREE.SRGBColorSpace;
-                    collarMat.map = tex;
-                    collarMat.needsUpdate = true;
-                  });
-                  const collarMesh = new THREE.Mesh(collarGeo, collarMat);
-                  collarMesh.name = 'taurus-littrow-collar';
-                  collarMesh.receiveShadow = true;
-                  satMesh.add(collarMesh);
-                }
-              }
-
-              // P3b-E：孔底盖板——各级地形远距渐显期间透过挖孔看到的兜底面：
-              // 与本体共享材质，半径压到 L1 裁窗最低高程（−4060.5m）以下留余量
-              const capMesh = new THREE.Mesh(
-                new THREE.SphereGeometry(satRadius * (1 - 4200 / 1737400), 32, 24),
-                // 用月球网格"当前"材质（纹理/MoonMaterial 先后到达均正确）；
-                // 后续 MoonMaterial 换装时由 moonHoleCapMesh 同步跟随
-                satMesh.material
-              );
-              capMesh.name = 'moon-hole-cap';
-              this.moonHoleCapMesh = capMesh;
-              satMesh.add(capMesh);
-
-              // P3b-C/P3-T5：WAC EMP 区域反照率——L1 模式下不建抬升环带网格，
-              // 退化为纹理源 + SSE 门控，影像在门控开启时换装到 L1 材质
-              this.regionalAlbedo = new RegionalAlbedoLayer(satRadius, holed.holeBounds, {
-                attachMesh: !lolaReady,
-              });
-              void this.regionalAlbedo.load().then(() => {
-                const layer = this.regionalAlbedo;
-                if (!layer || !layer.isReady) {
-                  console.warn('[SolarEngine] WAC 区域反照率层不可用（全球图兜底）:', layer?.error);
-                  return;
-                }
-                const collarTex = layer.attach(satMesh);
-                if (!collarTex) return;
-                if (lolaReady) {
-                  this.lolaWacTexture = collarTex; // 门控开启时在 animate 内换装
-                } else if (this.collarMaterial) {
-                  this.collarMaterial.map = collarTex;
-                  this.collarMaterial.needsUpdate = true;
-                }
-              });
-            }
-          })
-          .catch((err: unknown) => {
-            console.error('[SolarEngine] DTM 装载失败，真实地表网格保持隐藏:', err);
-          });
+        for (const site of Object.values(LANDING_SITES)) {
+          if (site.bodyId !== 'moon') continue;
+          const isDefault = site.id === this.activeMoonSiteId;
+          const stack: MoonSiteStack = {
+            siteId: site.id,
+            group: new THREE.Group(),
+            raster: isDefault ? RasterTerrainSource.getInstance() : new RasterTerrainSource(),
+            lola: isDefault ? LolaRegionalSource.getInstance() : new LolaRegionalSource(),
+            holedGeometry: null,
+            lolaMaterials: [],
+            rockFieldMaterial: null,
+            collarMaterial: null,
+            loadStarted: false,
+            built: false,
+          };
+          stack.group.name = `moon-site-${site.id}`;
+          stack.group.visible = isDefault;
+          satMesh.add(stack.group);
+          this.moonSiteStacks.set(site.id, stack);
+          heightProvider.registerMoonRaster(site.id, stack.raster, isDefault);
+          if (isDefault) this.ensureMoonSiteAssets(site.id); // 默认站预载（原行为）
+        }
       }
 
       // S2（Pro 260924）：卫星公转轨道线随行星轨迹线一并移除（真实星环保留）
@@ -1882,7 +1999,9 @@ export class SolarEngine {
         return { action: 'wait', reason: 'assets-loading', detail: '正在装载耶泽罗真实 DTM 地形…', siteId: site.id };
       }
     } else {
-      const raster = RasterTerrainSource.getInstance();
+      // S5-3：月面多站——资产状态按解析站点路由；解析命中即幂等预取（懒装载触发点）
+      this.ensureMoonSiteAssets(site.id);
+      const raster = this.moonSiteStacks.get(site.id)?.raster ?? RasterTerrainSource.getInstance();
       if (raster.state === 'failed') {
         return { action: 'wait', reason: 'assets-error', detail: `DTM 装载失败：${raster.error ?? '未知原因'}`, siteId: site.id };
       }
@@ -1948,10 +2067,15 @@ export class SolarEngine {
     if (avail.action !== 'land') {
       return false; // 入口拒绝：世界状态保持不变（UI 也不应显示可执行入口）
     }
-    // S4c：解析目标站点并切换控制器（下降流泛化——月/火同链路）
+    // S4c：解析目标站点并切换控制器（下降流泛化——月/火同链路）；
+    // S5-3：月面多站——同步激活该站表面栈（挖孔球/group/查询路由切换）
     const resolved = this.resolveLandingSiteForCamera(this.cameraController.getSnapshot());
     if (!resolved || !this.landingController.switchSite(resolved.site.id)) {
       return false;
+    }
+    if (resolved.bodyId === 'moon') {
+      this.ensureMoonSiteAssets(resolved.site.id);
+      this.activateMoonSite(resolved.site.id);
     }
     const missionId = ++this.landingMissionId;
     // 旧流程的 select 命令在此触发相机目标切换→updateEphemerisPoses 物理分支以
@@ -2468,7 +2592,7 @@ export class SolarEngine {
           ? !!collar.material &&
             (collar.material as THREE.MeshStandardMaterial).map?.image?.width === layer.provenance?.width
           : null,
-      l1TerrainAttached: !!this.getMoonMesh()?.children.find((c) => c.name === 'lola-l1-regional-terrain'),
+      l1TerrainAttached: !!this.getMoonMesh()?.getObjectByName('lola-l1-regional-terrain'),
       wacStagedOnL1: !!this.lolaWacTexture,
     };
   }
@@ -2966,8 +3090,9 @@ export class SolarEngine {
       );
 
       // P3-T5：L1 影像换装——SSE 门控开启且 WAC 纹理就绪时，L1 表面由 2K 全球图
-      // 换装 WAC 实测反照率（同一不透明表面上换图，非叠加层；只升不降）
-      if (this.lolaWacTexture && this.regionalAlbedo.gateOpen) {
+      // 换装 WAC 实测反照率（同一不透明表面上换图，非叠加层；只升不降）。
+      // S5-3：WAC 资产仅 taurus 打包——非 taurus 激活站不得换装
+      if (this.lolaWacTexture && this.activeMoonSiteId === 'taurus-littrow' && this.regionalAlbedo.gateOpen) {
         for (const mat of this.lolaMaterials) {
           if (mat.map !== this.lolaWacTexture) {
             mat.map = this.lolaWacTexture;

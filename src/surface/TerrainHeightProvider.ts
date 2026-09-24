@@ -33,6 +33,26 @@ export class TerrainHeightProvider {
   private raster: RasterTerrainSource = RasterTerrainSource.getInstance();
   private jezero: JezeroTerrainSource = JezeroTerrainSource.getInstance();
 
+  // S5-3：月面多站点栅格注册表（siteId → RasterTerrainSource；默认站 taurus-littrow
+  // 即单例）。查询路由到激活站的栅格——窗外 fail-closed 语义不变。
+  private moonRasters: Map<string, RasterTerrainSource> = new Map([['taurus-littrow', this.raster]]);
+  private activeMoonSiteId = 'taurus-littrow';
+
+  /** S5-3：登记月面站点的栅格源（引擎建栈时调用；可同时设为激活站） */
+  public registerMoonRaster(siteId: string, raster: RasterTerrainSource, makeActive = false): void {
+    this.moonRasters.set(siteId, raster);
+    if (makeActive) this.activeMoonSiteId = siteId;
+  }
+
+  /** S5-3：切换激活月面站（高程查询/准入态/几何构建路由目标） */
+  public setActiveMoonSite(siteId: string): void {
+    if (this.moonRasters.has(siteId)) this.activeMoonSiteId = siteId;
+  }
+
+  private activeMoonRaster(): RasterTerrainSource {
+    return this.moonRasters.get(this.activeMoonSiteId) ?? this.raster;
+  }
+
   /** 天体的基准球半径（米）——高程→场景单位的换算分母 */
   private datumRadiusMFor(bodyId: BodyId): number {
     if (bodyId === 'moon') return TerrainHeightProvider.MOON_DATUM_RADIUS_M;
@@ -55,7 +75,7 @@ export class TerrainHeightProvider {
   public getHeightMeters(bodyId: BodyId, lat: number, lon: number): number {
     if (bodyId === 'mars') return this.jezero.sampleHeight(lat, lon).heightM; // S4b：Jezero 窗
     if (bodyId !== 'moon') return 0; // 其他天体暂无本地 DTM
-    return this.raster.sampleHeight(lat, lon).heightM;
+    return this.activeMoonRaster().sampleHeight(lat, lon).heightM;
   }
 
   /** 带溯源的高程采样：measured-dem（真实 DTM）或 datum-sphere（基准球回退） */
@@ -73,7 +93,7 @@ export class TerrainHeightProvider {
     if (bodyId !== 'moon') {
       return { valid: true, heightM: 0, fidelity: 'datum-sphere', sourceId: null };
     }
-    const s = this.raster.sampleHeight(lat, lon);
+    const s = this.activeMoonRaster().sampleHeight(lat, lon);
     if (s.valid) return s;
     // 窗外/NoData：显式回退基准球（不是隐式 0 米平原——fidelity 标注 datum-sphere）
     if (s.reason === 'outside' || s.reason === 'nodata') {
@@ -92,7 +112,7 @@ export class TerrainHeightProvider {
 
   /** S4c：按天体路由的地形准入态（HUD 遥测如实标注；非落地天体报 unavailable） */
   public getAdmissionState(bodyId: BodyId): string {
-    if (bodyId === 'moon') return this.raster.terrainAdmissionState;
+    if (bodyId === 'moon') return this.activeMoonRaster().terrainAdmissionState;
     if (bodyId === 'mars') return this.jezero.metaReady ? this.jezero.admissionState : 'unavailable';
     return 'unavailable';
   }
@@ -197,8 +217,9 @@ export class TerrainHeightProvider {
    * 几何覆盖 DEM 窗口全部范围；UV 与正射 ortho.u16 网格一一对应（v=0 = 北）。
    */
   public buildDemWindowGeometry(baseRadius: number, maxSegments = 400): THREE.BufferGeometry | null {
-    if (!this.raster.isReady) return null;
-    const bounds = this.raster.windowBounds;
+    const raster = this.activeMoonRaster();
+    if (!raster.isReady) return null;
+    const bounds = raster.windowBounds;
     if (!bounds) return null;
 
     const segsLat = maxSegments;
@@ -264,8 +285,9 @@ export class TerrainHeightProvider {
   } | null {
     // S4b：holeBoundsOverride（火星等非月球天体）不依赖月球栅格就绪——
     // 孔边界显式给出时无需 raster（moon 默认路径仍要求栅格装载完成）
-    if (!holeBoundsOverride && !this.raster.isReady) return null;
-    const wb = holeBoundsOverride ?? this.raster.windowBounds;
+    const raster = this.activeMoonRaster();
+    if (!holeBoundsOverride && !raster.isReady) return null;
+    const wb = holeBoundsOverride ?? raster.windowBounds;
     if (!wb) return null;
 
     const PAD_DEG = 0.35; // 裙带外扩（窗口边缘→孔边界的缓冲）
@@ -323,11 +345,12 @@ export class TerrainHeightProvider {
     edgeSegs = 96,
     bodyId: BodyId = 'moon'
   ): THREE.BufferGeometry | null {
+    const raster = this.activeMoonRaster();
     const wb =
       bodyId === 'mars'
         ? this.jezero.windowBounds
-        : this.raster.isReady
-          ? this.raster.windowBounds
+        : raster.isReady
+          ? raster.windowBounds
           : null;
     if (!wb) return null;
 
