@@ -26,6 +26,8 @@ export type LandingState =
 export type LandingAvailabilityAction =
   | 'land'            // 可执行降落
   | 'travel-to-site'  // 已在月球本地但落区在背面 → 前往着陆区
+  | 'observe'         // S4b：可进入地表观察（火星 v1——无下降导引，直达站点 1.7m 视高）
+  | 'exit-observe'    // S4b：地表观察进行中 → 显示返回轨道入口
   | 'wait'            // 到达但框架/资源未就绪 → 显示有原因的不可执行状态
   | 'none';           // 未到达/任务进行中 → 不显示降落入口
 
@@ -63,6 +65,11 @@ export interface LandingSite {
   elevationDatumOffsetM: number; // 相对基准球的基础高程偏置 (m)
   elevationRangeM: [number, number]; // [最低海拔, 最高海拔] (m)
   lookTargetBodyId?: BodyId; // 在地面仰望的目标母星 (如地球)
+  /**
+   * S4b：是否开放完整下降流程（导引/暂停/返轨）。火星站 v1 仅地表观察
+   * （真实地形+正射+碎石已就位；下降导引的月面硬编码泛化在 S4c）。
+   */
+  descentEnabled?: boolean;
   /** S3b 地貌化碎石场参数（示意层）——缺省由引擎取保守默认 */
   rockField?: {
     count: number; // 块数
@@ -125,5 +132,25 @@ export const LANDING_SITES: Record<string, LandingSite> = {
     // S3b：谷底碎石场——断块山崩积裙地貌，坡度偏好中等（碎石富集于山麓坡脚，
     // 谷底中心相对干净——与阿波罗 17 实照的谷底景象一致）
     rockField: { count: 500, radiusM: 1200, sizeMaxM: 2.5, slopeWeight: 0.55 },
+  },
+  'jezero': {
+    id: 'jezero',
+    bodyId: 'mars',
+    name: '耶泽罗撞击坑 · 火星',
+    nameEn: 'Jezero Crater',
+    subtitle: '耶泽罗坑底 · 真实 HiRISE 地表观察',
+    description:
+      '火星耶泽罗撞击坑西部坑底，毗邻毅力号着陆点与古老河流三角洲。地表为火山碎屑撞击坑底地貌，散布丰富的小碎石。',
+    provenance:
+      'NASA MRO HiRISE 受控立体 DTM DTEEC_045994_1985_046060_1985 (1.01 m/px, PDS MRO-M-HIRISE-5-DTM-V1.0) + RED 正射 (0.25 m/px)',
+    centerLat: 18.45145,
+    centerLon: 77.43657,
+    datumRadiusKm: 3394.8398,
+    elevationDatumOffsetM: -2561.6, // 站点 HiRISE DTM 双线性值（Mars 2000 areoid，米）
+    elevationRangeM: [-2616.6, -2423.8], // 4×5.5km 窗实测范围
+    descentEnabled: false, // S4b：v1 地表观察；完整下降导引 S4c 泛化后开放
+    // 火山坑底：碎石丰富但偏小（毅力号实拍坑底遍布小石、间距米级）、坡度偏好低。
+    // S4b 实测校准：1.7m 眼高可见需米级间距——450m 盘 30000 块 ≈ 1.45m 间距
+    rockField: { count: 30000, radiusM: 450, sizeMaxM: 1.2, slopeWeight: 0.25 },
   },
 };

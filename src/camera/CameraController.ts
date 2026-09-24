@@ -374,6 +374,7 @@ export class CameraController {
   ): void {
     if (token !== this.currentCommandId) return;
 
+    const fromSurfaceLook = this.mode === 'SURFACE_LOOK';
     this.sourceBodyId = this.targetBodyId || this.selectedBodyId || 'earth';
     this.isTransitioning = true;
     this.mode = 'TRANSITION';
@@ -383,6 +384,12 @@ export class CameraController {
     this.transitionDurationSec = Number.isFinite(durationSec) ? Math.max(0.05, durationSec) : (this.reduceMotion ? 0.15 : 2.5);
     this.transitionProgress = 0;
 
+    // SURFACE_LOOK 期间球坐标不随直写机位更新——起飞/返航前从实际机位重建，
+    // 避免飞行从进入地表前的陈旧轨道位突跳（月面返轨与火星地表观察退出同受益）
+    if (fromSurfaceLook) {
+      this.spherical.setFromVector3(new THREE.Vector3().subVectors(this.camera.position, this.targetPosition));
+      this.spherical.makeSafe();
+    }
     this.transitionStartSpherical.copy(this.spherical);
     this.transitionStartTargetPos.copy(this.targetPosition);
 

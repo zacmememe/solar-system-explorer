@@ -10,6 +10,7 @@
 import * as THREE from 'three';
 import type { BodyId } from '../contracts/body';
 import { RasterTerrainSource, type TerrainHeightSample } from './RasterTerrainSource';
+import { JezeroTerrainSource } from './JezeroTerrainSource';
 
 export interface TerrainProfile {
   bodyId: BodyId;
@@ -25,7 +26,19 @@ export class TerrainHeightProvider {
   public static readonly MOON_DATUM_RADIUS_KM = 1737.4;
   public static readonly MOON_DATUM_RADIUS_M = 1737400.0;
 
+  // 火星基准球半径 (m) —— Jezero HiRISE DTM 产品的等距圆柱局部球（15°N 局部半径，
+  // 与 DTM 高程的 Mars 2000 areoid 垂直基准配套使用；见 metadata.json）
+  public static readonly MARS_DATUM_RADIUS_M = JezeroTerrainSource.DATUM_RADIUS_M;
+
   private raster: RasterTerrainSource = RasterTerrainSource.getInstance();
+  private jezero: JezeroTerrainSource = JezeroTerrainSource.getInstance();
+
+  /** 天体的基准球半径（米）——高程→场景单位的换算分母 */
+  private datumRadiusMFor(bodyId: BodyId): number {
+    if (bodyId === 'moon') return TerrainHeightProvider.MOON_DATUM_RADIUS_M;
+    if (bodyId === 'mars') return TerrainHeightProvider.MARS_DATUM_RADIUS_M;
+    return 6371000.0;
+  }
 
   public static getInstance(): TerrainHeightProvider {
     if (!this.instance) {
@@ -40,12 +53,23 @@ export class TerrainHeightProvider {
    * 调用方需区分两者时应使用 getHeightSample 获取 fidelity/溯源。
    */
   public getHeightMeters(bodyId: BodyId, lat: number, lon: number): number {
+    if (bodyId === 'mars') return this.jezero.sampleHeight(lat, lon).heightM; // S4b：Jezero 窗
     if (bodyId !== 'moon') return 0; // 其他天体暂无本地 DTM
     return this.raster.sampleHeight(lat, lon).heightM;
   }
 
   /** 带溯源的高程采样：measured-dem（真实 DTM）或 datum-sphere（基准球回退） */
   public getHeightSample(bodyId: BodyId, lat: number, lon: number): TerrainHeightSample {
+    if (bodyId === 'mars') {
+      const s = this.jezero.sampleHeight(lat, lon);
+      if (s.valid) {
+        return { valid: true, heightM: s.heightM, fidelity: 'measured-dem', sourceId: 'jezero-hirise-v1' };
+      }
+      if (s.reason === 'not-loaded') {
+        return { valid: false, heightM: 0, fidelity: null, sourceId: null, reason: 'not-loaded' };
+      }
+      return { valid: true, heightM: 0, fidelity: 'datum-sphere', sourceId: null };
+    }
     if (bodyId !== 'moon') {
       return { valid: true, heightM: 0, fidelity: 'datum-sphere', sourceId: null };
     }
@@ -74,10 +98,7 @@ export class TerrainHeightProvider {
     baseRadius: number
   ): number {
     const elevM = this.getHeightMeters(bodyId, lat, lon);
-    const datumM =
-      bodyId === 'moon'
-        ? TerrainHeightProvider.MOON_DATUM_RADIUS_M
-        : 6371000.0;
+    const datumM = this.datumRadiusMFor(bodyId);
     const scaleFactor = baseRadius / datumM;
     return baseRadius + elevM * scaleFactor;
   }
@@ -101,10 +122,7 @@ export class TerrainHeightProvider {
     const lon = THREE.MathUtils.radToDeg(Math.atan2(-dir.z, dir.x));
 
     const surfaceRadius = this.getSceneSurfaceRadius(bodyId, lat, lon, baseRadius);
-    const datumM =
-      bodyId === 'moon'
-        ? TerrainHeightProvider.MOON_DATUM_RADIUS_M
-        : 6371000.0;
+    const datumM = this.datumRadiusMFor(bodyId);
     const sceneToMeter = datumM / baseRadius;
 
     const clearanceScene = Math.max(0, dist - surfaceRadius);
@@ -121,10 +139,7 @@ export class TerrainHeightProvider {
     baseRadius: number
   ): number {
     const dist = cameraPos.distanceTo(bodyWorldPos);
-    const datumM =
-      bodyId === 'moon'
-        ? TerrainHeightProvider.MOON_DATUM_RADIUS_M
-        : 6371000.0;
+    const datumM = this.datumRadiusMFor(bodyId);
     const sceneToMeter = datumM / baseRadius;
     return (dist - baseRadius) * sceneToMeter;
   }
@@ -240,7 +255,9 @@ export class TerrainHeightProvider {
     geometry: THREE.BufferGeometry;
     holeBounds: { latMin: number; latMax: number; lonMin: number; lonMax: number };
   } | null {
-    if (!this.raster.isReady) return null;
+    // S4b：holeBoundsOverride（火星等非月球天体）不依赖月球栅格就绪——
+    // 孔边界显式给出时无需 raster（moon 默认路径仍要求栅格装载完成）
+    if (!holeBoundsOverride && !this.raster.isReady) return null;
     const wb = holeBoundsOverride ?? this.raster.windowBounds;
     if (!wb) return null;
 
@@ -296,10 +313,15 @@ export class TerrainHeightProvider {
     baseRadius: number,
     holeBounds: { latMin: number; latMax: number; lonMin: number; lonMax: number },
     rings = 10,
-    edgeSegs = 96
+    edgeSegs = 96,
+    bodyId: BodyId = 'moon'
   ): THREE.BufferGeometry | null {
-    if (!this.raster.isReady) return null;
-    const wb = this.raster.windowBounds;
+    const wb =
+      bodyId === 'mars'
+        ? this.jezero.windowBounds
+        : this.raster.isReady
+          ? this.raster.windowBounds
+          : null;
     if (!wb) return null;
 
     // 环形参数化：周向 k ∈ [0,4*edgeSegs)（四边顺时针），径向 r ∈ [0,rings]（0=内缘窗口边）
@@ -335,7 +357,7 @@ export class TerrainHeightProvider {
     const heightAt = (lat: number, lon: number): number => {
       const cLat = THREE.MathUtils.clamp(lat, wb.latMin, wb.latMax);
       const cLon = THREE.MathUtils.clamp(lon, wb.lonMin, wb.lonMax);
-      return this.raster.sampleHeight(cLat, cLon).heightM;
+      return this.getHeightMeters(bodyId, cLat, cLon);
     };
 
     for (let r = 0; r <= rings; r++) {
@@ -348,7 +370,7 @@ export class TerrainHeightProvider {
         const lon = a.lon + (b.lon - a.lon) * tR;
         const hM = heightAt(a.lat, a.lon) * (1 - w); // 内缘=DTM 边缘高程，外缘=0（球面）
         // 半径公式与窗口网格/球面一致：baseRadius + hM*(baseRadius/datumM)
-        const rr = baseRadius + hM * (baseRadius / TerrainHeightProvider.MOON_DATUM_RADIUS_M);
+        const rr = baseRadius + hM * (baseRadius / this.datumRadiusMFor(bodyId));
         const latRad = THREE.MathUtils.degToRad(lat);
         const lonRad = THREE.MathUtils.degToRad(lon);
         const cosLat = Math.cos(latRad);

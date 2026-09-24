@@ -52,12 +52,15 @@ export interface RockFieldOptions {
   /** 地形采样（返回 null 表示窗外，跳过） */
   sampleHeight: (latDeg: number, lonDeg: number) => { heightM: number } | null;
   seed: number;
+  /** S4b：天体基准球半径（米）——度→米换算用；缺省月球 1737400 */
+  datumRadiusM?: number;
 }
 
-/** 月面局部度→米换算（R=1737400，纬向 30325.7 m/°，经向乘 cos 纬度） */
-const M_PER_DEG_LAT = 1737400 * Math.PI / 180;
+/** 局部度→米换算（月球 R=1737400 纬向 30325.7 m/°；火星 3394839.8 纬向 59251 m/°） */
+const mPerDegLat = (datumRadiusM: number) => datumRadiusM * Math.PI / 180;
 
 export function generateRockPlacements(opts: RockFieldOptions): RockPlacement[] {
+  const M_PER_DEG_LAT = mPerDegLat(opts.datumRadiusM ?? 1737400);
   const rng = mulberry32(opts.seed);
   const out: RockPlacement[] = [];
   let attempts = 0;
@@ -125,9 +128,10 @@ export function rockScenePosition(
   latDeg: number,
   lonDeg: number,
   heightM: number,
-  baseRadius: number
+  baseRadius: number,
+  datumRadiusM = 1737400
 ): THREE.Vector3 {
-  const rr = baseRadius + heightM * (baseRadius / 1737400);
+  const rr = baseRadius + heightM * (baseRadius / datumRadiusM);
   const latRad = THREE.MathUtils.degToRad(latDeg);
   const lonRad = THREE.MathUtils.degToRad(lonDeg);
   const cosLat = Math.cos(latRad);

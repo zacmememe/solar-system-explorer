@@ -148,6 +148,99 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine }) => {
         </div>
       )}
 
+      {/* 1a-S4b. 火星耶泽罗地表观察入口（v1：无下降导引，直达站点 1.7m 人眼视高） */}
+      {state === 'ORBIT' && availability?.action === 'observe' && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 84,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 35,
+            pointerEvents: 'auto',
+          }}
+        >
+          <button
+            data-testid="mars-observe-start-btn"
+            onClick={() => engine.startJezeroSurfaceObserve()}
+            style={{
+              padding: '10px 20px',
+              borderRadius: 24,
+              border: '1px solid rgba(251, 146, 60, 0.6)',
+              background: 'linear-gradient(135deg, rgba(234, 88, 12, 0.28), rgba(194, 65, 12, 0.16))',
+              backdropFilter: 'blur(12px)',
+              color: '#ffffff',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              boxShadow: '0 8px 24px rgba(194, 65, 12, 0.25)',
+              transition: 'all 0.2s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'translateY(-2px)';
+              e.currentTarget.style.borderColor = '#fb923c';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.borderColor = 'rgba(251, 146, 60, 0.6)';
+            }}
+          >
+            <span style={{ fontSize: 16 }}>🔴</span>
+            <span>耶泽罗撞击坑 · 地表观察</span>
+            <span
+              style={{
+                fontSize: 10,
+                color: '#fed7aa',
+                background: 'rgba(251, 146, 60, 0.2)',
+                padding: '2px 6px',
+                borderRadius: 10,
+              }}
+            >
+              HiRISE 2m 真实地形
+            </span>
+          </button>
+        </div>
+      )}
+
+      {/* 1a-S4b. 火星地表观察中：返回轨道入口（遥测面板属下降流，S4c 一并接入） */}
+      {availability?.action === 'exit-observe' && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 84,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 35,
+            pointerEvents: 'auto',
+          }}
+        >
+          <button
+            data-testid="mars-observe-exit-btn"
+            onClick={() => engine.exitJezeroSurfaceObserve()}
+            style={{
+              padding: '10px 20px',
+              borderRadius: 24,
+              border: '1px solid rgba(148, 163, 184, 0.4)',
+              background: 'rgba(15, 23, 42, 0.6)',
+              backdropFilter: 'blur(12px)',
+              color: '#e2e8f0',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}
+          >
+            <span style={{ fontSize: 16 }}>🚀</span>
+            <span>离开耶泽罗地表 · 返回火星轨道</span>
+          </button>
+        </div>
+      )}
+
       {/* 1c. 到达但未就绪：显示有原因的不可执行状态 */}
       {state === 'ORBIT' && availability?.action === 'wait' && (
         <div

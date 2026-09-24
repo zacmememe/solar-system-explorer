@@ -1,0 +1,182 @@
+/**
+ * Jezero HiRISE 地形/影像源（P3-S4b，火星第一站）
+ *
+ * 数据：public/data/dem/jezero-hirise-v1/（离线打包自 MRO-M-HIRISE-5-DTM-V1.0
+ * 受控立体 DTM+正射；见 metadata.json 全溯源与 crosscheckNote）。
+ * 网格：站点居中局部米制（4×5.5km @2m，正射 1m），窗内 100% 有效。
+ * 高程：Mars 2000 areoid（米）；datum 球半径 = 产品等距圆柱局部球 3394839.8133163m。
+ */
+import * as THREE from 'three';
+
+interface JezeroMeta {
+  schemaVersion: number;
+  admissionState: string;
+  sourceUrl: string;
+  orthoSourceUrl: string;
+  sourceVersion: string;
+  licenseNote: string;
+  verticalDatum: string;
+  width: number;
+  height: number;
+  windowSizeM: [number, number];
+  stepMeters: number;
+  site: { centerLat: number; centerLon: number; elevationM: number; distToPerseveranceM: number };
+  minimumHeightM: number;
+  maximumHeightM: number;
+  heightSha256: string;
+  validSha256: string;
+  orthoSha256: string;
+  orthoEncoding: { stepMeters: number };
+  anchors: Array<{ name: string; lat: number; lon: number; hM: number }>;
+}
+
+export class JezeroTerrainSource {
+  public static readonly BASE_URL = '/data/dem/jezero-hirise-v1';
+  public static readonly DATUM_RADIUS_M = 3394839.8133163;
+  private static _instance: JezeroTerrainSource | null = null;
+  public static getInstance(): JezeroTerrainSource {
+    if (!this._instance) this._instance = new JezeroTerrainSource();
+    return this._instance;
+  }
+
+  private loadPromise: Promise<void> | null = null;
+  private meta: JezeroMeta | null = null;
+  private heights: Float32Array | null = null;
+  private valid: Uint8Array | null = null;
+  private orthoUrl: string | null = null;
+  private loadError: string | null = null;
+
+  public get isReady(): boolean {
+    return !!(this.meta && this.heights && this.valid);
+  }
+
+  public get error(): string | null {
+    return this.loadError;
+  }
+
+  public get metaReady(): JezeroMeta | null {
+    return this.meta;
+  }
+
+  public get windowBounds(): { latMin: number; latMax: number; lonMin: number; lonMax: number } | null {
+    if (!this.meta) return null;
+    const { centerLat, centerLon } = this.meta.site;
+    const mPerDeg = JezeroTerrainSource.DATUM_RADIUS_M * Math.PI / 180;
+    const cosLat = Math.cos((centerLat * Math.PI) / 180);
+    return {
+      latMin: centerLat - (this.meta.windowSizeM[1] / 2) / mPerDeg,
+      latMax: centerLat + (this.meta.windowSizeM[1] / 2) / mPerDeg,
+      lonMin: centerLon - (this.meta.windowSizeM[0] / 2) / (mPerDeg * cosLat),
+      lonMax: centerLon + (this.meta.windowSizeM[0] / 2) / (mPerDeg * cosLat),
+    };
+  }
+
+  public async load(baseUrl: string = JezeroTerrainSource.BASE_URL): Promise<void> {
+    if (this.loadPromise) return this.loadPromise;
+    this.loadPromise = this.doLoad(baseUrl).catch((err: unknown) => {
+      this.loadError = err instanceof Error ? err.message : String(err);
+      throw err;
+    });
+    return this.loadPromise;
+  }
+
+  private async doLoad(baseUrl: string): Promise<void> {
+    const meta: JezeroMeta = await (await fetch(`${baseUrl}/metadata.json`)).json();
+    const hBuf = await (await fetch(`${baseUrl}/height.f32`)).arrayBuffer();
+    const vBuf = await (await fetch(`${baseUrl}/valid.u8`)).arrayBuffer();
+    if (hBuf.byteLength !== meta.width * meta.height * 4) throw new Error('height.f32 尺寸不符');
+    if (vBuf.byteLength !== meta.width * meta.height) throw new Error('valid.u8 尺寸不符');
+    this.meta = meta;
+    this.heights = new Float32Array(hBuf);
+    this.valid = new Uint8Array(vBuf);
+    this.orthoUrl = `${baseUrl}/ortho.jpg`;
+  }
+
+  /** 窗口网格双线性（行 0 = 北缘；列 0 = 西缘；像素中心=边界内缩半步）。窗外 invalid */
+  public sampleHeight(latDeg: number, lonDeg: number): { valid: boolean; heightM: number; reason?: string } {
+    if (!this.meta || !this.heights || !this.valid) return { valid: false, heightM: 0, reason: 'not-loaded' };
+    const { centerLat, centerLon } = this.meta.site;
+    const mPerDeg = JezeroTerrainSource.DATUM_RADIUS_M * Math.PI / 180;
+    const cosLat = Math.cos((centerLat * Math.PI) / 180);
+    const step = this.meta.stepMeters;
+    const fx = ((lonDeg - centerLon) * mPerDeg * cosLat + this.meta.windowSizeM[0] / 2) / step;
+    const fy = ((centerLat - latDeg) * mPerDeg + this.meta.windowSizeM[1] / 2) / step;
+    const c0 = Math.floor(fx), r0 = Math.floor(fy);
+    if (c0 < 0 || r0 < 0 || c0 >= this.meta.width - 1 || r0 >= this.meta.height - 1) {
+      return { valid: false, heightM: 0, reason: 'outside' };
+    }
+    const tx = fx - c0, ty = fy - r0;
+    const W = this.meta.width;
+    const ok = (r: number, c: number) => this.valid![r * W + c] === 1;
+    if (!ok(r0, c0) || !ok(r0, c0 + 1) || !ok(r0 + 1, c0) || !ok(r0 + 1, c0 + 1)) {
+      return { valid: false, heightM: 0, reason: 'invalid-quad' };
+    }
+    const h = this.heights!;
+    const v = h[r0 * W + c0] * (1 - tx) * (1 - ty) + h[r0 * W + c0 + 1] * tx * (1 - ty) +
+      h[(r0 + 1) * W + c0] * (1 - tx) * ty + h[(r0 + 1) * W + c0 + 1] * tx * ty;
+    return { valid: true, heightM: v };
+  }
+
+  /** 地表网格（与月球 buildDemWindowGeometry 同构；datum=Mars2000 局部球） */
+  public buildDemWindowGeometry(baseRadius: number, maxSegments = 512): THREE.BufferGeometry | null {
+    if (!this.meta || !this.heights) return null;
+    const { centerLat, centerLon } = this.meta.site;
+    const mPerDeg = JezeroTerrainSource.DATUM_RADIUS_M * Math.PI / 180;
+    const cosLat = Math.cos((centerLat * Math.PI) / 180);
+    const W = this.meta.width, H = this.meta.height;
+    const stepI = Math.max(1, Math.ceil(W / maxSegments));
+    const stepJ = Math.max(1, Math.ceil(H / maxSegments));
+    const cols = Math.floor((W - 1) / stepI) + 1;
+    const rows = Math.floor((H - 1) / stepJ) + 1;
+    const scale = baseRadius / JezeroTerrainSource.DATUM_RADIUS_M;
+    const positions = new Float32Array(cols * rows * 3);
+    const uvs = new Float32Array(cols * rows * 2);
+    let p = 0, u = 0;
+    for (let j = 0; j < rows; j++) {
+      const rIdx = j * stepJ;
+      const northM = this.meta.windowSizeM[1] / 2 - rIdx * this.meta.stepMeters;
+      const lat = centerLat + northM / mPerDeg;
+      const latRad = THREE.MathUtils.degToRad(lat);
+      for (let i = 0; i < cols; i++) {
+        const cIdx = i * stepI;
+        const eastM = cIdx * this.meta.stepMeters - this.meta.windowSizeM[0] / 2;
+        const lon = centerLon + eastM / (mPerDeg * cosLat);
+        const hM = this.heights[rIdx * W + cIdx];
+        const rr = baseRadius + hM * scale;
+        const lonRad = THREE.MathUtils.degToRad(lon);
+        const cl = Math.cos(latRad);
+        positions[p++] = rr * cl * Math.cos(lonRad);
+        positions[p++] = rr * Math.sin(latRad);
+        positions[p++] = -rr * cl * Math.sin(lonRad);
+        uvs[u++] = cIdx / (W - 1);
+        uvs[u++] = rIdx / (H - 1);
+      }
+    }
+    const indices: number[] = [];
+    for (let j = 0; j < rows - 1; j++) {
+      for (let i = 0; i < cols - 1; i++) {
+        const a = j * cols + i, b = a + 1, c = a + cols, d = c + 1;
+        indices.push(a, c, b);
+        indices.push(b, c, d);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+    return geo;
+  }
+
+  /** 正射纹理（JPEG 灰度；UV 与网格一致：行 0=北，flipY 关闭——同月面约定） */
+  public buildOrthoTexture(): THREE.Texture | null {
+    if (!this.orthoUrl) return null;
+    const tex = new THREE.TextureLoader().load(this.orthoUrl);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 8; // 掠射视角抗糊（同月面 ortho）
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.flipY = false; // 窗口行 0 = 北；UV v 按行号方向（默认 true 会南北镜像）
+    return tex;
+  }
+}

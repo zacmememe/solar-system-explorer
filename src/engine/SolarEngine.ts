@@ -79,6 +79,7 @@ import {
 import { TerrainHeightProvider } from '../surface/TerrainHeightProvider';
 import { RasterTerrainSource } from '../surface/RasterTerrainSource';
 import { LolaRegionalSource } from '../surface/LolaRegionalSource';
+import { JezeroTerrainSource } from '../surface/JezeroTerrainSource';
 import {
   generateRockPlacements,
   buildRockGeometry,
@@ -239,6 +240,12 @@ export class SolarEngine {
   /** S3a 程序碎石场（示意层）：材质驱动距离淡入 */
   private rockFieldMaterial: THREE.MeshStandardMaterial | null = null;
   private moonMesh?: THREE.Mesh;
+  // S4b：耶泽罗火星地表（结构与月面两级栈同构；无 L1 中间层——S5 MOLA 接入）
+  private marsTerrainMesh?: THREE.Mesh;
+  private marsTerrainMaterial?: THREE.MeshStandardMaterial;
+  private marsCollarMaterial?: THREE.MeshStandardMaterial;
+  private marsHoleCapMesh?: THREE.Mesh;
+  private marsRockFieldMaterial: THREE.MeshStandardMaterial | null = null;
   // P3b-C：WAC EMP 区域反照率层（中远景影像；DTM 装载后创建，SSE 门控显隐）
   private regionalAlbedo: RegionalAlbedoLayer | null = null;
   private collarMaterial: THREE.MeshStandardMaterial | null = null;
@@ -466,7 +473,10 @@ export class SolarEngine {
         roughness: 0.85,
         metalness: 0.05,
       });
-      const mesh = new THREE.Mesh(sphereGeo, defaultMat);
+      const mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial> = new THREE.Mesh(
+        sphereGeo,
+        defaultMat
+      );
       mesh.userData = { bodyId: id };
       mesh.rotation.y = PLANET_SPIN_OFFSETS[id] || 0;
       poleFrame.add(mesh);
@@ -564,6 +574,149 @@ export class SolarEngine {
         const haloMesh = new THREE.Mesh(haloGeo, createAtmosphereHaloMaterial(0xfca5a5, 3.8, 0.28));
         poleFrame.add(haloMesh);
         node.haloMesh = haloMesh;
+
+        // S4b：耶泽罗真实地表（火星第一站，v1 地表观察）。结构与月面两级栈同构：
+        // DTM 窗网格（HiRISE 2m）+ 挖孔全球球 + 窗缘裙边（collar，全球 2K 纹理——
+        // 火星尚无 LOLA 级 L1 中间层，S5 MOLA 接入前 collar 为低清过渡）+ 孔底盖板
+        // + 程序碎石场（示意层）。数据未就绪前全部保持隐藏——不伪造地形。
+        const heightProvider = TerrainHeightProvider.getInstance();
+        const jezero = JezeroTerrainSource.getInstance();
+        const terrainMat = new THREE.MeshStandardMaterial({
+          color: 0xb08d6f,
+          roughness: 0.95,
+          metalness: 0.02,
+          side: THREE.FrontSide,
+          polygonOffset: true,
+          polygonOffsetFactor: -1,
+          polygonOffsetUnits: -1,
+        });
+        this.marsTerrainMaterial = terrainMat;
+        const terrainMesh = new THREE.Mesh(new THREE.BufferGeometry(), terrainMat);
+        terrainMesh.name = 'jezero-terrain';
+        terrainMesh.visible = false;
+        terrainMesh.receiveShadow = true;
+        mesh.add(terrainMesh);
+        this.marsTerrainMesh = terrainMesh;
+        jezero
+          .load()
+          .then(() => {
+            const geo = jezero.buildDemWindowGeometry(displayRadius);
+            const ortho = jezero.buildOrthoTexture();
+            if (!geo || !ortho) {
+              console.error('[SolarEngine] Jezero DTM 已装载但网格构建失败');
+              return;
+            }
+            terrainMat.map = ortho;
+            terrainMat.color.set(0xffffff);
+            terrainMat.needsUpdate = true;
+            terrainMesh.geometry.dispose();
+            terrainMesh.geometry = geo;
+            terrainMesh.visible = true;
+
+            // 碎石场（示意层，同月面 S3b 契约：确定性随机、贴真实 DTM、坡度偏好）
+            try {
+              const site = LANDING_SITES['jezero'];
+              const profile = site.rockField ?? { count: 400, radiusM: 1000, sizeMaxM: 2, slopeWeight: 0.3 };
+              const sample = (lat: number, lon: number) => {
+                const s = jezero.sampleHeight(lat, lon);
+                return s.valid ? { heightM: s.heightM } : null;
+              };
+              const placements = generateRockPlacements({
+                siteLat: site.centerLat,
+                siteLon: site.centerLon,
+                radiusM: profile.radiusM,
+                count: profile.count,
+                sizeMaxM: profile.sizeMaxM,
+                clearZoneM: 20,
+                maxSlopeDeg: 19,
+                slopeWeight: profile.slopeWeight,
+                sampleHeight: sample,
+                seed: 20260924,
+                datumRadiusM: JezeroTerrainSource.DATUM_RADIUS_M,
+              });
+              const rockMat = new THREE.MeshStandardMaterial({ color: 0x6b5647, roughness: 1, metalness: 0 });
+              this.marsRockFieldMaterial = rockMat;
+              // S4b 勘误：米 → 网格局部单位（同月面修复；火星 datum = HiRISE 局部球）。
+              // 另：中心贴地会半埋（几何原点=中心）——沿径向上移竖向半尺度的 50%，
+              // 露出约 75%，接近实拍砾石坐地形态
+              const rockMetricScale = displayRadius / JezeroTerrainSource.DATUM_RADIUS_M;
+              const byVariant: typeof placements[] = [[], [], []];
+              for (const p of placements) byVariant[p.variant].push(p);
+              byVariant.forEach((list, v) => {
+                if (!list.length) return;
+                const inst = new THREE.InstancedMesh(buildRockGeometry(20260924, v), rockMat, list.length);
+                const m = new THREE.Matrix4();
+                const q = new THREE.Quaternion();
+                const up = new THREE.Vector3(0, 1, 0);
+                list.forEach((p, i) => {
+                  const pos = rockScenePosition(
+                    p.latDeg, p.lonDeg, p.heightM, displayRadius, JezeroTerrainSource.DATUM_RADIUS_M
+                  );
+                  pos.setLength(pos.length() + 0.5 * p.scaleM[1] * rockMetricScale);
+                  q.setFromAxisAngle(up, p.rotYRad);
+                  m.compose(
+                    pos,
+                    q,
+                    new THREE.Vector3(
+                      p.scaleM[0] * rockMetricScale,
+                      p.scaleM[1] * rockMetricScale,
+                      p.scaleM[2] * rockMetricScale
+                    )
+                  );
+                  inst.setMatrixAt(i, m);
+                });
+                inst.instanceMatrix.needsUpdate = true;
+                inst.name = 'procedural-rockfield-mars';
+                inst.frustumCulled = false;
+                mesh.add(inst);
+              });
+            } catch (e) {
+              console.warn('[SolarEngine] 火星碎石场构建失败（不影响主链路）:', e);
+            }
+
+            // 挖孔全球球（孔显式给出，不依赖月球栅格）+ 窗缘裙边 + 孔底盖板
+            const wb = jezero.windowBounds;
+            const holed = wb
+              ? heightProvider.buildHoledMoonSphereGeometry(displayRadius, 128, 64, wb)
+              : null;
+            if (holed) {
+              mesh.geometry.dispose();
+              mesh.geometry = holed.geometry;
+              const collarGeo = heightProvider.buildCollarGeometry(
+                displayRadius, holed.holeBounds, 10, 96, 'mars'
+              );
+              if (collarGeo) {
+                const collarMat = new THREE.MeshStandardMaterial({
+                  color: 0xffffff,
+                  roughness: 0.95,
+                  metalness: 0.02,
+                });
+                this.marsCollarMaterial = collarMat;
+                new THREE.TextureLoader().load('/assets/textures/mars/2k_mars.jpg', (tex) => {
+                  tex.colorSpace = THREE.SRGBColorSpace;
+                  collarMat.map = tex;
+                  collarMat.needsUpdate = true;
+                });
+                const collarMesh = new THREE.Mesh(collarGeo, collarMat);
+                collarMesh.name = 'jezero-collar';
+                collarMesh.receiveShadow = true;
+                mesh.add(collarMesh);
+              }
+              // 孔底盖板：半径压到窗口最低高程（−2616.6m）以下留余量（−2900m）
+              const capMesh = new THREE.Mesh(
+                new THREE.SphereGeometry(
+                  displayRadius * (1 - 2900 / JezeroTerrainSource.DATUM_RADIUS_M), 32, 24
+                ),
+                mesh.material
+              );
+              capMesh.name = 'mars-hole-cap';
+              this.marsHoleCapMesh = capMesh;
+              mesh.add(capMesh);
+            }
+          })
+          .catch((err: unknown) => {
+            console.error('[SolarEngine] Jezero DTM 装载失败，火星真实地表保持隐藏:', err);
+          });
       }
 
       // 木星：巨行星微弱暖白/琥珀散射高层大气辉光（挂载在 poleFrame）
@@ -788,6 +941,10 @@ export class SolarEngine {
                 metalness: 0,
               });
               this.rockFieldMaterial = rockMat;
+              // S4b 勘误：scaleM 是米——须乘 metricScale 折算网格局部单位再 compose。
+              // 此前直接把米数值当局部 scale，物理比例下碎石半径达天体级、相机
+              // 恒在石内被 FrontSide 剔除（月火同构 bug，实测 2026-09-24 火星探针）。
+              const rockMetricScale = satRadius / 1737400;
               const byVariant: typeof placements[] = [[], [], []];
               for (const p of placements) byVariant[p.variant].push(p);
               byVariant.forEach((list, v) => {
@@ -798,8 +955,17 @@ export class SolarEngine {
                 const up = new THREE.Vector3(0, 1, 0);
                 list.forEach((p, i) => {
                   const pos = rockScenePosition(p.latDeg, p.lonDeg, p.heightM, satRadius);
+                  pos.setLength(pos.length() + 0.5 * p.scaleM[1] * rockMetricScale); // 露出 75%（同火星）
                   q.setFromAxisAngle(up, p.rotYRad);
-                  m.compose(pos, q, new THREE.Vector3(p.scaleM[0], p.scaleM[1], p.scaleM[2]));
+                  m.compose(
+                    pos,
+                    q,
+                    new THREE.Vector3(
+                      p.scaleM[0] * rockMetricScale,
+                      p.scaleM[1] * rockMetricScale,
+                      p.scaleM[2] * rockMetricScale
+                    )
+                  );
                   inst.setMatrixAt(i, m);
                 });
                 inst.instanceMatrix.needsUpdate = true;
@@ -1189,6 +1355,10 @@ export class SolarEngine {
         this.marsMaterial.uniforms.teachingLight.value = this.teachingLight ? 1.0 : 0.0;
         safeDisposeMaterial(node.mesh.material);
         node.mesh.material = this.marsMaterial;
+        // S4b：火星孔底盖板同步换装（同月面 S1 结论——盖板与本体共享材质实例，
+        // 明暗恒一致，避免孔洞区域色差闪烁）
+        const cap = this.marsHoleCapMesh;
+        if (cap) cap.material = this.marsMaterial;
       }
     }).catch((e) => console.error('[Texture] Mars load failed:', e));
 
@@ -1539,7 +1709,32 @@ export class SolarEngine {
       return { action: 'none', reason: 'travel-in-progress' };
     }
     if (camSnap.mode === 'SURFACE_LOOK') {
+      // S4b：火星地表观察不经下降状态机——处于火星 SURFACE_LOOK 时发布退出入口
+      if (camSnap.targetBodyId === 'mars' || camSnap.selectedBodyId === 'mars') {
+        return { action: 'exit-observe', reason: 'mission-active', detail: '耶泽罗地表观察中' };
+      }
       return { action: 'none', reason: 'mission-active' };
+    }
+    // S4b：火星耶泽罗地表观察入口（v1 无下降导引——descentEnabled=false，S4c 泛化）
+    const atMoon = camSnap.targetBodyId === 'moon' || camSnap.selectedBodyId === 'moon';
+    const atMars = camSnap.targetBodyId === 'mars' || camSnap.selectedBodyId === 'mars';
+    if (!atMoon && atMars) {
+      const marsPose = this.getBodyWorldPose('mars');
+      const dist = this.camera.position.distanceTo(marsPose.pos);
+      if (dist > marsPose.surfaceRadius * 10) {
+        return { action: 'none', reason: 'not-at-body' };
+      }
+      if (this.bodyPoseProvider.getTransitionProgress() > 0 && this.bodyPoseProvider.getTransitionProgress() < 1) {
+        return { action: 'wait', reason: 'frame-transition', detail: '比例框架过渡中…' };
+      }
+      const jezero = JezeroTerrainSource.getInstance();
+      if (jezero.error) {
+        return { action: 'wait', reason: 'assets-error', detail: `Jezero DTM 装载失败：${jezero.error}` };
+      }
+      if (!jezero.isReady) {
+        return { action: 'wait', reason: 'assets-loading', detail: '正在装载耶泽罗真实 DTM 地形…' };
+      }
+      return { action: 'observe', reason: 'ready' };
     }
     if (camSnap.targetBodyId !== 'moon' && camSnap.selectedBodyId !== 'moon') {
       return { action: 'none', reason: 'not-at-body' };
@@ -1798,14 +1993,14 @@ export class SolarEngine {
    * simTimeHours + updateEphemerisPoses(0) 的实测法（focusEarthRegion 同款），
    * 结束时一次性落到选定时刻。当前已在 [12°,45°] 则不调整。
    */
-  private ensureLandingLighting(): void {
-    const site = LANDING_SITES['taurus-littrow'];
+  private ensureLandingLighting(bodyId: BodyId = 'moon', siteId: string = 'taurus-littrow'): void {
+    const site = LANDING_SITES[siteId];
     const siteLocal = new THREE.Vector3(...latLonDirection(site.centerLat, site.centerLon));
     const elevationNow = (): number => {
-      const moon = this.getBodyWorldPose('moon');
+      const body = this.getBodyWorldPose(bodyId);
       const sun = this.getBodyWorldPose('sun');
-      const sunDir = new THREE.Vector3().subVectors(sun.pos, moon.pos).normalize();
-      const siteWorld = siteLocal.clone().applyQuaternion(moon.quaternion);
+      const sunDir = new THREE.Vector3().subVectors(sun.pos, body.pos).normalize();
+      const siteWorld = siteLocal.clone().applyQuaternion(body.quaternion);
       const d = siteWorld.dot(sunDir);
       return (Math.asin(Math.max(-1, Math.min(1, d))) * 180) / Math.PI;
     };
@@ -1951,6 +2146,48 @@ export class SolarEngine {
     });
   }
 
+  /**
+   * S4b：进入耶泽罗地表观察（火星第一站，v1）。与月面下降不同：无导引轨迹/
+   * 悬停/升空状态机——直达站点 1.7m 人眼视高原地观察。光照同月面规则选时
+   * （站点白昼 12°–45° 仰角）；比例框架切物理观察（火星为参考天体）。
+   */
+  public startJezeroSurfaceObserve(): boolean {
+    const avail = this.getLandingAvailability();
+    if (avail.action !== 'observe') {
+      return false; // 入口拒绝：世界状态保持不变
+    }
+    const site = LANDING_SITES['jezero'];
+    this.cameraController.executeCommand({ type: 'select', bodyId: 'mars' });
+    if (this.callbacks.onSelectBody) {
+      this.callbacks.onSelectBody('mars');
+    }
+    this.setPresentationPolicy('PHYSICAL_OBSERVATION');
+    this.ensureLandingLighting('mars', 'jezero');
+    soundEffects.playWarp();
+    this.cameraController.executeCommand({
+      type: 'enterSurfaceLook',
+      bodyId: 'mars',
+      lat: site.centerLat,
+      lon: site.centerLon,
+      eyeHeightM: 1.7,
+      // 朝东南平视——毅力号着陆点在站点东南 ~894m（坑底缓坡开阔方向）
+      initialYawDeg: 115,
+      initialPitchDeg: 2,
+    });
+    return true;
+  }
+
+  /** S4b：退出火星地表观察——从当前机位连续飞回火星轨道取景 */
+  public exitJezeroSurfaceObserve(): void {
+    const snap = this.cameraController.getSnapshot();
+    if (snap.mode !== 'SURFACE_LOOK') return;
+    this.cameraController.executeCommand({
+      type: 'flyTo',
+      bodyId: 'mars',
+      durationSec: 2.5,
+    });
+  }
+
   public resetMoonSurfaceLook(): void {
     this.cameraController.executeCommand({
       type: 'setSurfaceLook',
@@ -1973,6 +2210,11 @@ export class SolarEngine {
 
   public getLunarValleyMesh(): THREE.Mesh | undefined {
     return this.lunarValleyMesh;
+  }
+
+  /** S4b：耶泽罗火星地表网格（探针/验收用；数据就绪前 undefined-safe） */
+  public getMarsTerrainMesh(): THREE.Mesh | undefined {
+    return this.marsTerrainMesh;
   }
 
   /**
@@ -2567,6 +2809,45 @@ export class SolarEngine {
           const op = t * t * (3 - 2 * t);
           this.rockFieldMaterial.transparent = op < 1;
           this.rockFieldMaterial.opacity = op;
+        }
+      }
+    }
+
+    // S4b：耶泽罗火星地形距离渐显（与月面 DTM 同律：块屏幕张角 8→36px smoothstep）。
+    // collar 与窗口同律渐显（同属本地实测面）；远距全球球可见、孔底盖板兜底——
+    // 隐藏期不透星空、无亚像素走样。火星网格无逐帧缩放（行星不经卫星比例过渡），
+    // 场景半径直接取 pose 口径。
+    if (this.marsTerrainMesh && this.marsTerrainMaterial) {
+      const jezero = JezeroTerrainSource.getInstance();
+      const meta = jezero.metaReady;
+      if (meta) {
+        const marsPose = this.getBodyWorldPose('mars');
+        const sceneRadius = marsPose.surfaceRadius;
+        const metersPerScene = JezeroTerrainSource.DATUM_RADIUS_M / Math.max(1e-9, sceneRadius);
+        const site = LANDING_SITES['jezero'];
+        const siteWorld = new THREE.Vector3(...latLonDirection(site.centerLat, site.centerLon))
+          .applyQuaternion(marsPose.quaternion)
+          .multiplyScalar(sceneRadius)
+          .add(marsPose.pos);
+        const siteDistM = Math.max(1, this.camera.position.distanceTo(siteWorld) * metersPerScene);
+        this.renderer.getDrawingBufferSize(this.drawingBufferSizeTmp);
+        const blockPx = projectedTexelPx(
+          Math.max(meta.windowSizeM[0], meta.windowSizeM[1]),
+          focalPixelsPx(this.drawingBufferSizeTmp.y, THREE.MathUtils.degToRad(this.camera.fov)),
+          siteDistM
+        );
+        const opacity = terrainRevealOpacity(blockPx);
+        this.marsTerrainMaterial.transparent = opacity < 1;
+        this.marsTerrainMaterial.opacity = opacity;
+        if (this.marsCollarMaterial) {
+          this.marsCollarMaterial.transparent = opacity < 1;
+          this.marsCollarMaterial.opacity = opacity;
+        }
+        if (this.marsRockFieldMaterial) {
+          const t = Math.min(1, Math.max(0, (9000 - siteDistM) / 3000));
+          const op = t * t * (3 - 2 * t);
+          this.marsRockFieldMaterial.transparent = op < 1;
+          this.marsRockFieldMaterial.opacity = op;
         }
       }
     }
