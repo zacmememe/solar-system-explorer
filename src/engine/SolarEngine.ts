@@ -79,6 +79,7 @@ import {
 import { TerrainHeightProvider } from '../surface/TerrainHeightProvider';
 import { RasterTerrainSource } from '../surface/RasterTerrainSource';
 import { LolaRegionalSource } from '../surface/LolaRegionalSource';
+import { MolaRegionalSource } from '../surface/MolaRegionalSource';
 import { JezeroTerrainSource } from '../surface/JezeroTerrainSource';
 import {
   generateRockPlacements,
@@ -266,12 +267,15 @@ export class SolarEngine {
   private marsTerrainMesh?: THREE.Mesh;
   private marsTerrainMaterial?: THREE.MeshStandardMaterial;
   private marsCollarMaterial?: THREE.MeshStandardMaterial;
+  private marsL1Materials: THREE.MeshStandardMaterial[] = [];
+  private marsHaloMesh?: THREE.Mesh;
   private marsHoleCapMesh?: THREE.Mesh;
   private marsRockFieldMaterial: THREE.MeshStandardMaterial | null = null;
   // S4c：火星尘色大气（示意层）——天空单色浸染（星图×尘色）+ 地表线性雾。
   // 非散射模拟：真实火星白昼天空亮黄褐且星不可见，此处为轻量近似，消除
   // "无大气天体般的纯黑星空 + 生硬地平线"观感；月面无大气保持纯黑星空=真实。
   private dustSkyMix = 0;
+  private surfaceExposureMix = 0;
   private readonly marsDustColor = new THREE.Color(0xc9a67e);
   private readonly clearSkyColor = new THREE.Color(0xffffff);
   private dustFog: THREE.Fog | null = null;
@@ -603,11 +607,12 @@ export class SolarEngine {
         const haloMesh = new THREE.Mesh(haloGeo, createAtmosphereHaloMaterial(0xfca5a5, 3.8, 0.28));
         poleFrame.add(haloMesh);
         node.haloMesh = haloMesh;
+        this.marsHaloMesh = haloMesh;
 
-        // S4b：耶泽罗真实地表（火星第一站，v1 地表观察）。结构与月面两级栈同构：
-        // DTM 窗网格（HiRISE 2m）+ 挖孔全球球 + 窗缘裙边（collar，全球 2K 纹理——
-        // 火星尚无 LOLA 级 L1 中间层，S5 MOLA 接入前 collar 为低清过渡）+ 孔底盖板
-        // + 程序碎石场（示意层）。数据未就绪前全部保持隐藏——不伪造地形。
+        // S4b/S5-1：耶泽罗真实地表（火星第一站）。结构与月面三级栈同构：
+        // DTM 窗网格（HiRISE 2m）+ MOLA L1 区域地形（463m/px）+ 窗缘裙圈 +
+        // 挖孔全球球 + 孔底盖板 + 程序碎石场（示意层）。MOLA 不可用时回退
+        // 两级栈（collar 低清过渡）。数据未就绪前全部保持隐藏——不伪造地形。
         const heightProvider = TerrainHeightProvider.getInstance();
         const jezero = JezeroTerrainSource.getInstance();
         const terrainMat = new THREE.MeshStandardMaterial({
@@ -628,7 +633,7 @@ export class SolarEngine {
         this.marsTerrainMesh = terrainMesh;
         jezero
           .load()
-          .then(() => {
+          .then(async () => {
             const geo = jezero.buildDemWindowGeometry(displayRadius);
             const ortho = jezero.buildOrthoTexture();
             if (!geo || !ortho) {
@@ -703,39 +708,141 @@ export class SolarEngine {
               console.warn('[SolarEngine] 火星碎石场构建失败（不影响主链路）:', e);
             }
 
-            // 挖孔全球球（孔显式给出，不依赖月球栅格）+ 窗缘裙边 + 孔底盖板
+            // S5-1：MOLA L1 中间层（463m/px 真实区域地形，GMM3 areoid）。就绪时
+            // 球面孔扩大到 L1 裁窗边界、L1 网格成为该区域唯一有效不透明表面，
+            // S4b 低清 collar 环带退役；不可用则回退两级栈（孔=DTM 窗+collar）。
+            // 同月面 P3-T5 结构。MOLA/HiRISE 基准偏差窗内 mean +0.7m / rms 9.6m。
+            const mola = MolaRegionalSource.getInstance();
+            let molaReady = false;
+            try {
+              await mola.load();
+              molaReady = mola.isReady;
+            } catch (e) {
+              console.warn('[SolarEngine] MOLA L1 不可用（回退两级栈）:', mola.error ?? e);
+            }
             const wb = jezero.windowBounds;
-            const holed = wb
-              ? heightProvider.buildHoledMoonSphereGeometry(displayRadius, 128, 64, wb)
+            const holeSource = molaReady ? mola.windowBounds ?? wb : wb;
+            const holed = holeSource
+              ? heightProvider.buildHoledMoonSphereGeometry(displayRadius, 128, 64, holeSource)
               : null;
             if (holed) {
               mesh.geometry.dispose();
               mesh.geometry = holed.geometry;
-              const collarGeo = heightProvider.buildCollarGeometry(
-                displayRadius, holed.holeBounds, 10, 96, 'mars'
-              );
-              if (collarGeo) {
-                const collarMat = new THREE.MeshStandardMaterial({
-                  color: 0xffffff,
-                  roughness: 0.95,
-                  metalness: 0.02,
-                });
-                this.marsCollarMaterial = collarMat;
-                new THREE.TextureLoader().load('/assets/textures/mars/2k_mars.jpg', (tex) => {
-                  tex.colorSpace = THREE.SRGBColorSpace;
-                  collarMat.map = tex;
-                  collarMat.needsUpdate = true;
-                });
-                const collarMesh = new THREE.Mesh(collarGeo, collarMat);
-                collarMesh.name = 'jezero-collar';
-                collarMesh.receiveShadow = true;
-                mesh.add(collarMesh);
+              if (molaReady) {
+                // L1 在 HiRISE 高精窗处挖孔（同月面 P3-T5b：无孔平板在眼高附近
+                // 切过谷底呈"水面穿模"）；窗缘裙圈（HiRISE 内缘→MOLA 外缘）填缝
+                const dtmHole = wb
+                  ? {
+                      latMin: wb.latMin - 0.12, latMax: wb.latMax + 0.12,
+                      lonMin: wb.lonMin - 0.12, lonMax: wb.lonMax + 0.12,
+                    }
+                  : undefined;
+                const l1Geo = mola.buildRegionalGeometry(displayRadius, 2, dtmHole);
+                if (l1Geo) {
+                  const l1Mat = new THREE.MeshStandardMaterial({
+                    color: 0xffffff,
+                    roughness: 0.95,
+                    metalness: 0.02,
+                  });
+                  this.marsL1Materials = [l1Mat];
+                  // L1 网格 UV=全球等距圆柱：2K 全球图直接可用
+                  new THREE.TextureLoader().load('/assets/textures/mars/2k_mars.jpg', (tex) => {
+                    tex.colorSpace = THREE.SRGBColorSpace;
+                    for (const mat of this.marsL1Materials) {
+                      if (mat.map) continue;
+                      mat.map = tex;
+                      mat.needsUpdate = true;
+                    }
+                  });
+                  const l1Mesh = new THREE.Mesh(l1Geo, l1Mat);
+                  l1Mesh.name = 'mola-l1-regional-terrain';
+                  l1Mesh.receiveShadow = true;
+                  mesh.add(l1Mesh);
+                  const skirtGeo = mola.buildBoundarySkirt(displayRadius, holed.holeBounds);
+                  if (skirtGeo) {
+                    const skirtMesh = new THREE.Mesh(skirtGeo, l1Mat); // 同材质：换装一次覆盖两网格
+                    skirtMesh.name = 'mola-l1-boundary-skirt';
+                    skirtMesh.receiveShadow = true;
+                    mesh.add(skirtMesh);
+                  }
+                  if (wb) {
+                    const dtmHeightAt = (lat: number, lon: number): number => {
+                      const cl = Math.max(wb.latMin, Math.min(wb.latMax, lat));
+                      const co = Math.max(wb.lonMin, Math.min(wb.lonMax, lon));
+                      return jezero.sampleHeight(cl, co).heightM;
+                    };
+                    const rimGeo = mola.buildWindowRimSkirt(displayRadius, wb, dtmHeightAt, 0.15);
+                    if (rimGeo) {
+                      // 裙圈是窗缘细级：polygonOffset 压过 L1 挖孔锯齿边（LOD 排序）。
+                      // 饱和度渐变（展示层，不改动源影像）：内缘接灰度 HiRISE 正射、
+                      // 外缘接彩色 2K 全球图——跨 LOD 接缝的灰↔彩色差在 ~9km 裙圈内
+                      // 平滑过渡（S5-1 collar 接缝色差消除）
+                      const RIM_RINGS = 10, RIM_SEGS = 96;
+                      const perimeter = 4 * RIM_SEGS;
+                      const grayMix = new Float32Array(rimGeo.getAttribute('position').count);
+                      for (let v = 0; v < grayMix.length; v++) {
+                        grayMix[v] = Math.floor(v / perimeter) / RIM_RINGS;
+                      }
+                      rimGeo.setAttribute('aGrayMix', new THREE.BufferAttribute(grayMix, 1));
+                      const rimMat = l1Mat.clone();
+                      rimMat.polygonOffset = true;
+                      rimMat.polygonOffsetFactor = -1;
+                      rimMat.polygonOffsetUnits = -1;
+                      rimMat.onBeforeCompile = (shader) => {
+                        shader.vertexShader = `attribute float aGrayMix;\nvarying float vGrayMix;\n${shader.vertexShader}`.replace(
+                          '#include <begin_vertex>',
+                          '#include <begin_vertex>\n\tvGrayMix = aGrayMix;'
+                        );
+                        shader.fragmentShader = `varying float vGrayMix;\n${shader.fragmentShader}`.replace(
+                          '#include <map_fragment>',
+                          '#include <map_fragment>\n\tfloat grayLum = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));\n\tdiffuseColor.rgb = mix(vec3(grayLum), diffuseColor.rgb, vGrayMix);'
+                        );
+                      };
+                      this.marsL1Materials.push(rimMat);
+                      const rimMesh = new THREE.Mesh(rimGeo, rimMat);
+                      rimMesh.name = 'mola-l1-window-rim';
+                      rimMesh.receiveShadow = true;
+                      mesh.add(rimMesh);
+                    }
+                  }
+                } else {
+                  console.warn('[SolarEngine] MOLA L1 网格构建失败（保持两级栈）');
+                  molaReady = false;
+                  this.marsL1Materials = [];
+                }
               }
-              // 孔底盖板：半径压到窗口最低高程（−2616.6m）以下留余量（−2900m）
+              if (!molaReady) {
+                const collarGeo = heightProvider.buildCollarGeometry(
+                  displayRadius, holed.holeBounds, 10, 96, 'mars'
+                );
+                if (collarGeo) {
+                  const collarMat = new THREE.MeshStandardMaterial({
+                    color: 0xffffff,
+                    roughness: 0.95,
+                    metalness: 0.02,
+                  });
+                  this.marsCollarMaterial = collarMat;
+                  new THREE.TextureLoader().load('/assets/textures/mars/2k_mars.jpg', (tex) => {
+                    tex.colorSpace = THREE.SRGBColorSpace;
+                    collarMat.map = tex;
+                    collarMat.needsUpdate = true;
+                  });
+                  const collarMesh = new THREE.Mesh(collarGeo, collarMat);
+                  collarMesh.name = 'jezero-collar';
+                  collarMesh.receiveShadow = true;
+                  mesh.add(collarMesh);
+                }
+              }
+              // 孔底盖板：L1 就绪时压到 L1 裁窗最低高程以下留余量（MOLA datum
+              // 3396km 球）；两级栈时维持 −2900m（HiRISE 局部球 datum）
+              const capDepthM = molaReady
+                ? Math.abs(mola.metaReady?.minimumHeightM ?? -2900) + 402
+                : 2900;
+              const capDatumM = molaReady
+                ? mola.metaReady?.projection.referenceRadiusM ?? JezeroTerrainSource.DATUM_RADIUS_M
+                : JezeroTerrainSource.DATUM_RADIUS_M;
               const capMesh = new THREE.Mesh(
-                new THREE.SphereGeometry(
-                  displayRadius * (1 - 2900 / JezeroTerrainSource.DATUM_RADIUS_M), 32, 24
-                ),
+                new THREE.SphereGeometry(displayRadius * (1 - capDepthM / capDatumM), 32, 24),
                 mesh.material
               );
               capMesh.name = 'mars-hole-cap';
@@ -2611,11 +2718,45 @@ export class SolarEngine {
         this.dustFog = new THREE.Fog(this.marsDustColor.getHex());
       }
       this.dustFog.color.copy(this.marsDustColor);
-      this.dustFog.near = 600 * metersPerScene;
-      this.dustFog.far = (9000 * metersPerScene) / Math.max(0.4, mix); // 淡入期雾拉远，避免突变
+      // S5-1 勘误：near/far 为视空间场景单位——米须除以 metersPerScene
+      // （原 600*metersPerScene=2.1e9 场景单位，雾从未实际生效，仅天穹浸染起效）
+      this.dustFog.near = 600 / metersPerScene;
+      this.dustFog.far = (9000 / metersPerScene) / Math.max(0.4, mix); // 淡入期雾拉远，避免突变
       this.scene.fog = this.dustFog;
     } else if (this.dustFog && this.scene.fog === this.dustFog) {
       this.scene.fog = null;
+    }
+
+    // S5-1：大气光晕是轨道视角资产（行星边缘菲涅尔辉光）。地表视角相机在
+    // 1.015R 壳内，BackSide 壳反而包裹整个视野——自定义 shader 内视输出垃圾
+    // （暗楔形+整体压暗）。地表/下降期隐藏，尘色天空由天穹浸染+雾接管；
+    // 恢复时尊重用户大气显示开关。
+    if (this.marsHaloMesh) {
+      this.marsHaloMesh.visible = marsGround ? false : this.showAtmosphere;
+    }
+  }
+
+  /**
+   * S5-1：地表视角曝光补偿（展示层）。ACES 色调映射在低太阳仰角+暗反照率
+   * 纹理（耶泽罗玄武岩质地表 ~0.25）下把触地画面压暗 2-3 档（实测地面像素
+   * ~71/255）。SURFACE_LOOK（及 <50km 下降段——地表已充满视野）把
+   * toneMappingExposure 从基线 1.1 平滑升至 ~2.8，返轨/升空平滑回落。
+   * 只调显示曝光，不改动光照物理量与数据。
+   */
+  private updateSurfaceExposure(deltaSec: number): void {
+    const snap = this.cameraController.getSnapshot();
+    let active = snap.mode === 'SURFACE_LOOK';
+    if (!active) {
+      const st = this.landingController.getState();
+      if (st === 'DESCENDING' || st === 'HOLD') {
+        active = this.landingController.evaluateTrajectory().datumAltitudeM < 50000;
+      }
+    }
+    const target = active ? 1 : 0;
+    this.surfaceExposureMix += (target - this.surfaceExposureMix) * Math.min(1, deltaSec * 0.8);
+    const exposure = 1.1 * (1 + 1.55 * this.surfaceExposureMix); // 1.1 → ≈2.8
+    if (Math.abs(this.renderer.toneMappingExposure - exposure) > 1e-4) {
+      this.renderer.toneMappingExposure = exposure;
     }
   }
 
@@ -2723,6 +2864,7 @@ export class SolarEngine {
 
     // S4c：火星地表尘色大气（示意层，见字段注释）；月面/轨道不受影响
     this.updateMarsDustAtmosphere(deltaSec);
+    this.updateSurfaceExposure(deltaSec);
 
     // 着陆控制器生命周期驱动（R5 建立，P2 重写下降段，P3b-B 单腿连续轨迹 + 地平线投影姿态）
     // P1 修复：仅在本控制器刚刚完成"升空返轨"(ASCENDING -> ORBIT 边沿)时才收回 SURFACE_LOOK；
@@ -2914,6 +3056,20 @@ export class SolarEngine {
         if (this.marsCollarMaterial) {
           this.marsCollarMaterial.transparent = opacity < 1;
           this.marsCollarMaterial.opacity = opacity;
+        }
+        // S5-1：MOLA L1 同律渐显——按网格纹元屏幕张角（decimate 2 × 463m ≈ 926m）
+        // 0.35→1.3px smoothstep，先于 DTM 全显（LOD 顺序：全球球→L1→DTM）。
+        // 远距隐藏消除亚像素走样；孔下盖板兜底，隐藏期间不露星空。
+        const molaCellM = (MolaRegionalSource.getInstance().metaReady?.nativeSpacingMeters ?? 463) * 2;
+        const molaCellPx = projectedTexelPx(
+          molaCellM,
+          focalPixelsPx(this.drawingBufferSizeTmp.y, THREE.MathUtils.degToRad(this.camera.fov)),
+          siteDistM
+        );
+        const l1Opacity = terrainRevealOpacity(molaCellPx, 0.35, 1.3);
+        for (const mat of this.marsL1Materials) {
+          mat.transparent = l1Opacity < 1;
+          mat.opacity = l1Opacity;
         }
         if (this.marsRockFieldMaterial) {
           const t = Math.min(1, Math.max(0, (9000 - siteDistM) / 3000));

@@ -93,7 +93,7 @@ export class TerrainHeightProvider {
   /** S4c：按天体路由的地形准入态（HUD 遥测如实标注；非落地天体报 unavailable） */
   public getAdmissionState(bodyId: BodyId): string {
     if (bodyId === 'moon') return this.raster.terrainAdmissionState;
-    if (bodyId === 'mars') return this.jezero.metaReady?.admissionState ?? 'unavailable';
+    if (bodyId === 'mars') return this.jezero.metaReady ? this.jezero.admissionState : 'unavailable';
     return 'unavailable';
   }
 

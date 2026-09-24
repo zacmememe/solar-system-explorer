@@ -1,0 +1,76 @@
+{
+ "schemaVersion": 2,
+ "admissionState": "requires-source-and-registration-review",
+ "fidelityClaim": "measured-dem",
+ "sourceUrl": "https://pds-geosciences.wustl.edu/mgs/mgs-m-mola-5-megdr-l3-v1/mgsl_300x/meg128/megt44n000hb.img",
+ "sourceLabelUrl": "https://pds-geosciences.wustl.edu/mgs/mgs-m-mola-5-megdr-l3-v1/mgsl_300x/meg128/megt44n000hb.lbl",
+ "sourceFile": "megt44n000hb.img",
+ "sourceFileSha256": "14022166079edafc99650f354e5a634e6eb2c2ea544b444c01cd8ee55437df36",
+ "sourceVersion": "MGS-M-MOLA-5-MEGDR-L3-V1.0 PRODUCT_VERSION_ID 2.0 (2003-03-21)，16 分片全球镶嵌 128ppd",
+ "licenseNote": "NASA MGS MOLA PDS 公共数据（Goddard Space Flight Center 制作，PDS Geosciences Node 分发）",
+ "verticalDatum": "行星半径 − GMM3(mgm1025) areoid（LBL：Topography is the planetary radius minus the areoid radius）；MSB int16 米",
+ "nativeSpacingMeters": 463,
+ "width": 1294,
+ "height": 910,
+ "projection": {
+  "type": "SIMPLE_CYLINDRICAL",
+  "coordinateSystem": "PLANETOCENTRIC",
+  "positiveLongitude": "EAST",
+  "referenceRadiusM": 3396000,
+  "centerLatitudeDeg": 0,
+  "centerLongitudeDeg": 180,
+  "pixelsPerDegree": 128,
+  "note": "分片 0-44N/0-90E；LBL LINE/SAMPLE_PROJECTION_OFFSET=5632.5/23040.5 反解：col=23039.5+(lon−180)·128，vRow=11519.5−lat·128（分片行+5888 虚拟全球行，与 LOLA 全球网格同构）"
+ },
+ "window": {
+  "colStart": 9266,
+  "rowStart": 8703,
+  "width": 1294,
+  "height": 910
+ },
+ "sourceNoDataValue": null,
+ "minimumHeightM": -4898,
+ "maximumHeightM": 1675,
+ "heightSha256": "31c1c8a855b046b5e2d38196074916d6e2d21de57655a107b48ba3092cca6b22",
+ "encoding": {
+  "dtype": "int16-le",
+  "scaleMetersPerDn": 1
+ },
+ "crosscheckHiriseDtm": {
+  "anchors": [
+   {
+    "name": "站点",
+    "lat": 18.45145,
+    "lon": 77.43657,
+    "molaM": -2557.5,
+    "hiriseM": -2561.6,
+    "diffM": 4.1
+   },
+   {
+    "name": "站点东 2km",
+    "lat": 18.45145,
+    "lon": 77.47215392079228,
+    "molaM": -2581.1,
+    "hiriseM": -2574.3,
+    "diffM": -6.8
+   },
+   {
+    "name": "站点北 2km",
+    "lat": 18.48520462918064,
+    "lon": 77.43657,
+    "molaM": -2513.6,
+    "hiriseM": -2537.4,
+    "diffM": 23.8
+   }
+  ],
+  "windowGrid": {
+   "spacingM": 500,
+   "n": 88,
+   "meanDiffM": 0.7,
+   "rmsM": 9.6,
+   "biasRemovedSigmaM": 9.6,
+   "minDiffM": -32.8,
+   "maxDiffM": 51.6
+  }
+ }
+}

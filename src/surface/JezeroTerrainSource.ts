@@ -45,6 +45,8 @@ export class JezeroTerrainSource {
   private valid: Uint8Array | null = null;
   private orthoUrl: string | null = null;
   private loadError: string | null = null;
+  // S5-1：验收准入记录（admission.json 由验收脚本写入；缺失则维持 metadata 状态）
+  private admissionStateValue: string | null = null;
 
   public get isReady(): boolean {
     return !!(this.meta && this.heights && this.valid);
@@ -56,6 +58,12 @@ export class JezeroTerrainSource {
 
   public get metaReady(): JezeroMeta | null {
     return this.meta;
+  }
+
+  /** 准入状态：admission.json（admitted-*）覆盖 metadata 基线，未装载为 not-loaded */
+  public get admissionState(): string {
+    if (this.admissionStateValue) return this.admissionStateValue;
+    return this.meta?.admissionState ?? 'not-loaded';
   }
 
   public get windowBounds(): { latMin: number; latMax: number; lonMin: number; lonMax: number } | null {
@@ -90,6 +98,21 @@ export class JezeroTerrainSource {
     this.heights = new Float32Array(hBuf);
     this.valid = new Uint8Array(vBuf);
     this.orthoUrl = `${baseUrl}/ortho.jpg`;
+    this.admissionStateValue = meta.admissionState;
+
+    // 验收通过的准入记录（同 RasterTerrainSource：admission.json 由验收脚本
+    // 写入——S5-1 MOLA 独立交叉校验通过后升级；缺失则维持 requires-review）
+    try {
+      const admRes = await fetch(`${baseUrl}/admission.json`);
+      if (admRes.ok) {
+        const adm = (await admRes.json()) as { state?: string };
+        if (adm.state && adm.state.startsWith('admitted')) {
+          this.admissionStateValue = adm.state;
+        }
+      }
+    } catch {
+      /* 保持 metadata 的准入状态 */
+    }
   }
 
   /** 窗口网格双线性（行 0 = 北缘；列 0 = 西缘；像素中心=边界内缩半步）。窗外 invalid */

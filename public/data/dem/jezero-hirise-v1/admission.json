@@ -1,0 +1,50 @@
+{
+  "state": "admitted-2026-09-24-mola-3point-remote-crosscheck",
+  "evidence": {
+    "points": [
+      {
+        "name": "站点",
+        "lat": 18.45145,
+        "lon": 77.43657,
+        "hiriseM": -2561.6,
+        "molaM": -2557.5,
+        "diffM": 4.1,
+        "source": "MGS-M-MOLA-5-MEGDR-L3-V1.0 megt44n000hb（PDS Geosciences Node 独立下载，MD5 904caea41a1db3a2450cc9497b21c3cc）"
+      },
+      {
+        "name": "站点东 2km",
+        "lat": 18.45145,
+        "lon": 77.47215392079228,
+        "hiriseM": -2574.3,
+        "molaM": -2581.1,
+        "diffM": -6.8,
+        "source": "同上"
+      },
+      {
+        "name": "站点北 2km",
+        "lat": 18.48520462918064,
+        "lon": 77.43657,
+        "hiriseM": -2537.4,
+        "molaM": -2513.6,
+        "diffM": 23.8,
+        "source": "同上"
+      }
+    ],
+    "windowGrid": {
+      "spacingM": 500,
+      "n": 88,
+      "meanDiffM": 0.7,
+      "rmsM": 9.6,
+      "biasRemovedSigmaM": 9.6,
+      "minDiffM": -32.8,
+      "maxDiffM": 51.6
+    },
+    "heightSha256": "d4562052f39feb07728f74714af004a0a8be0cdf58685568faee9c3554457984",
+    "visualRegistrationScreenshots": [
+      "s5-gl-alt4km-down.png",
+      "s5-gl-alt300m-down.png",
+      "s5-gl-touchdown.png"
+    ],
+    "note": "MOLA MEGDR 128ppd（463m/px 激光高度计，GMM3 areoid）对 HiRISE DTM（2m 立体，Mars 2000 areoid）独立跨产品校验：三锚点 |diff|≤23.8m，窗内 500m 间隔 88 点 mean +0.7m / rms 9.6m——463m/px 插值网格量级内闭合，注册（col=23039.5+(lon−180)·128，LBL 反解）与垂直基准同时获证。俯视配准目检（DTM 坑缘与 MOLA 区域地形连续、灰→彩渐变带正常）见截图。像素级曝光/光晕状态核验：exposure 2.805、haloVisible false、地面 RGB(201,166,126)。"
+  }
+}

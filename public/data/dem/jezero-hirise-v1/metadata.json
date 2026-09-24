@@ -64,5 +64,5 @@
   }
  ],
  "missingDataNote": "有效掩码 0 格无效（窗内实测 0.000%）；源 DTM 全图缺失率 ~24%（陡坡/暗区立体空洞）",
- "crosscheckNote": "本轮交叉验证：标签反解映射双向闭合 + 锚点值与公开 Jezero 坑底高程(~−2600m)量级一致；独立跨产品校验（MOLA）未做——admission 保持 requires-review"
+ "crosscheckNote": "本轮交叉验证：标签反解映射双向闭合 + 锚点值与公开 Jezero 坑底高程(~−2600m)量级一致。独立跨产品校验（MOLA MEGDR 128ppd）已完成：三锚点 +4.1/−6.8/+23.8m，窗内 88 点 mean +0.7m / rms 9.6m（详见 mola-l1-jezero-v1/metadata.json crosscheckHiriseDtm）；验收准入记录见 admission.json"
 }
