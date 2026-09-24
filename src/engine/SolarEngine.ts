@@ -1334,6 +1334,9 @@ export class SolarEngine {
         color: satData.colorHex ?? 0xaaaaaa,
         roughness: 0.9,
       });
+      // S5-5：火卫一/二免受火星尘雾浸染——地表尘色雾是近地大气效应，数十 km 外
+      // 的火卫不应被洗掉（S4c 已知限制的修复；月面无雾不受影响）
+      if (satId === 'phobos' || satId === 'deimos') satMat.fog = false;
       const satMesh = new THREE.Mesh(satGeo, satMat);
       satMesh.userData = { bodyId: satId };
       satMesh.rotation.y = PLANET_SPIN_OFFSETS[satId] || 0;
