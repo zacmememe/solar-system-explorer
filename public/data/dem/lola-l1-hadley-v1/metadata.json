@@ -1,0 +1,66 @@
+{
+ "schemaVersion": 2,
+ "admissionState": "requires-source-and-registration-review",
+ "fidelityClaim": "measured-dem",
+ "sourceUrl": "https://imbrium.mit.edu/DATA/LOLA_GDR/CYLINDRICAL/IMG/LDEM_128.IMG",
+ "sourceLabelUrl": "https://imbrium.mit.edu/DATA/LOLA_GDR/CYLINDRICAL/IMG/LDEM_128.LBL",
+ "sourceFile": "LDEM_128.IMG",
+ "sourceFileSha256": "0ab81a3e8d20e5528a21bc6c994974726cb486198013085f4c423c86fbd1154b",
+ "sourceVersion": "V3.0 (PDS3 PRODUCT_VERSION_ID V3.0, PRODUCT_CREATION_TIME 2017-09-15, LRO_ES_52)",
+ "licenseNote": "NASA LRO LOLA PDS 公共数据 LRO-L-LOLA-4-GDR-V1.0，Goddard Space Flight Center 制作（MIT LOLA Data Node 分发）",
+ "verticalDatum": "相对参考球 1737400 m：height_m = DN × 0.5（LBL SCALING_FACTOR）",
+ "nativeSpacingMeters": 236.901,
+ "width": 1587,
+ "height": 1025,
+ "projection": {
+  "type": "SIMPLE_CYLINDRICAL",
+  "coordinateSystem": "PLANETOCENTRIC",
+  "positiveLongitude": "EAST",
+  "referenceRadiusM": 1737400,
+  "centerLatitudeDeg": 0,
+  "centerLongitudeDeg": 180,
+  "pixelsPerDegree": 128,
+  "note": "像素注册：lon = (col−23039.5)/128 + 180；lat = 90−row/128（LBL LINE/SAMPLE_PROJECTION_OFFSET 11519.5/23039.5 反解核实）"
+ },
+ "window": {
+  "colStart": 0,
+  "rowStart": 7647,
+  "width": 1587,
+  "height": 1025
+ },
+ "windowNote": "经度窗 [0.01, 12.4] 不对称：站点近 0° 经线，对称窗跨 0° 环绕（全球栅格列不连续），西缘余量 ~98km 由边界裙边回落球面",
+ "sourceNoDataValue": null,
+ "minimumHeightM": -3386,
+ "maximumHeightM": 3282.5,
+ "heightSha256": "70b4fe2a72b82fa5ccf257b834cda7f422957b70677b79bae64b70e387db1047",
+ "encoding": {
+  "dtype": "int16-le",
+  "scaleMetersPerDn": 0.5
+ },
+ "crosscheckNacDtm": [
+  {
+   "name": "着陆点",
+   "lat": 26.1324,
+   "lon": 3.6338,
+   "lolaM": -1925.4,
+   "nacM": -1924.7,
+   "diffM": -0.7
+  },
+  {
+   "name": "着陆点西 1.5km",
+   "lat": 26.1324,
+   "lon": 3.578700862601076,
+   "lolaM": -1903.7,
+   "nacM": -1902.4,
+   "diffM": -1.3
+  },
+  {
+   "name": "着陆点北 2km",
+   "lat": 26.198355772433615,
+   "lon": 3.6338,
+   "lolaM": -1924.5,
+   "nacM": -1923.1,
+   "diffM": -1.4
+  }
+ ]
+}

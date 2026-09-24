@@ -1,0 +1,117 @@
+{
+ "schemaVersion": 2,
+ "admissionState": "requires-source-and-registration-review",
+ "fidelityClaim": "measured-dem",
+ "sourceUrl": "https://pds.lroc.im-ldi.com/data/LRO-L-LROC-5-RDR-V1.0/LROLRC_2001/DATA/SDP/NAC_DTM/APOLLO15/NAC_DTM_APOLLO15.TIF",
+ "fetchedViaUrl": "https://pds.mcp.nasa.gov/data/store/img/lunar_reconnaissance_orbiter/pds4/lroc/lro-l-lroc-5-rdr/LROLRC_2001/DATA/SDP/NAC_DTM/APOLLO15/NAC_DTM_APOLLO15.TIF",
+ "sourceLabelUrl": "https://pds.lroc.im-ldi.com/data/LRO-L-LROC-5-RDR-V1.0/LROLRC_2001/DATA/SDP/NAC_DTM/APOLLO15/NAC_DTM_APOLLO15.LBL",
+ "sourceReadmeUrl": "https://pds.lroc.im-ldi.com/data/LRO-L-LROC-5-RDR-V1.0/LROLRC_2001/DATA/SDP/NAC_DTM/APOLLO15/NAC_DTM_APOLLO15_README.TXT",
+ "sourceFile": "NAC_DTM_APOLLO15.TIF",
+ "sourceFileSha256": "adfc695c4cc5ccfc40db3fbed585f66259e60ab545c4d1451b20ebabb9725104",
+ "orthoSourceFileSha256": "997fac016d3d81b36bb4b3a98adbaf844b489f2e6d5fea605d7844be55707ba3",
+ "sourceVersion": "v1.9 (PDS3 PRODUCT_VERSION_ID v1.9, PRODUCT_CREATION_TIME 2020-10-10；DTM 2013-08-22 制作)",
+ "licenseNote": "NASA LRO LROC PDS 公共数据 LRO-L-LROC-5-RDR-V1.0，Arizona State University 制作",
+ "verticalDatum": "参考球体半径 1737400 m (LBL a=b=c)；与 LOLA 拟合 RMS 1.74 m（7 条轨道）；SOCET SET 报告精度 1.06 m",
+ "nativeSpacingMeters": 2,
+ "width": 1503,
+ "height": 3001,
+ "pixelCornerAffine": {
+  "rule": "图面米(列角,行角) = (x0 + col·dx, y0 + row·dy)（全源图坐标）",
+  "x0": -4810338.0000014,
+  "y0": 804664.00000024,
+  "dx": 2.0000000000006,
+  "dy": -2.0000000000006
+ },
+ "sampleCenterRule": "像元中心 = pixelCornerAffine(col+0.5, row+0.5)，再按 projection 公式转经纬",
+ "window": {
+  "colStart": 793,
+  "rowStart": 4621,
+  "width": 1503,
+  "height": 3001
+ },
+ "sourceStrip0": 115159,
+ "sourceRowBytes": 10220,
+ "windowFirstSampleCenter": {
+  "latDeg": 26.231303232467507,
+  "lonDeg": 3.560865833524531
+ },
+ "sourceNoDataValue": -3.40282266e+38,
+ "format": "float32-le",
+ "units": "metres above sphere radius 1737400 m",
+ "noData": "NaN",
+ "validSampleCount": 4510503,
+ "minimumHeightM": -2218.283447265625,
+ "maximumHeightM": -1875.62890625,
+ "ortho": {
+  "file": "ortho.u16",
+  "format": "uint16-le（源 PC_REAL I/F float32 × orthoScale，99.5 分位→65535）",
+  "sourceUrl": "https://pds.lroc.im-ldi.com/data/LRO-L-LROC-5-RDR-V1.0/LROLRC_2001/DATA/SDP/NAC_DTM/APOLLO15/NAC_DTM_APOLLO15_M111571816_2M.IMG",
+  "fetchedViaUrl": "https://pds.mcp.nasa.gov/data/store/img/lunar_reconnaissance_orbiter/pds4/lroc/lro-l-lroc-5-rdr/LROLRC_2001/DATA/SDP/NAC_DTM/APOLLO15/NAC_DTM_APOLLO15_M111571816_2M.IMG",
+  "sampleType": "PC_REAL float32 I/F（附着 PDS3 标签 1×10220B）",
+  "sameGridAsDem": true,
+  "ifScale": 143.11228183374777,
+  "note": "正射为 NACL_1/NACR_1 镶嵌（M111571816），DTM 分辨率 2m 网格；LINE/SAMPLE_PROJECTION_OFFSET 与 DTM 逐值一致"
+ },
+ "anchors": [
+  {
+   "name": "着陆点",
+   "lat": 26.1324,
+   "lon": 3.6338,
+   "valid": true,
+   "heightM": -1924.7
+  },
+  {
+   "name": "着陆点西 1.5km",
+   "lat": 26.1324,
+   "lon": 3.578700862601076,
+   "valid": true,
+   "heightM": -1902.4
+  },
+  {
+   "name": "着陆点北 2km",
+   "lat": 26.198355772433615,
+   "lon": 3.6338,
+   "valid": true,
+   "heightM": -1923.1
+  }
+ ],
+ "remoteByteCrosscheck": [
+  {
+   "name": "着陆点",
+   "remoteM": -1924.779,
+   "localM": -1924.779,
+   "byteIdentical": true
+  },
+  {
+   "name": "着陆点西 1.5km",
+   "remoteM": -1902.342,
+   "localM": -1902.342,
+   "byteIdentical": true
+  },
+  {
+   "name": "着陆点北 2km",
+   "remoteM": -1923.064,
+   "localM": -1923.064,
+   "byteIdentical": true
+  }
+ ],
+ "site": {
+  "centerLat": 26.1324,
+  "centerLon": 3.616,
+  "apollo15LandingLat": 26.1324,
+  "apollo15LandingLon": 3.6338
+ },
+ "crosscheckNote": "GeoTIFF ModelTiepoint/PixelScale 反解与 LBL 四角互核 ≤1e-5°；三点 MCP 网关 Range 独立字节取回与本地裁窗逐位一致；LOLA 独立交叉校验见 lola-l1-hadley-v1 crosscheckNacDtm；admission 待实机目视配准验收（引擎多站点化 S5-3 后）",
+ "heightSha256": "fa333fd0ce3c455797e9147d6acfbb174700d9315c52443205876df4e52ef079",
+ "validSha256": "92ad18e677bbcb95862ec60f899f373455b00ca2fd3be4e7de7c1d114ed24b31",
+ "orthoSha256": "1acf56e01b84059a6df724482fe84c03379304b17bacd756b6a934bd4d01ba1a",
+ "projection": {
+  "type": "EQUIRECTANGULAR",
+  "coordinateSystem": "PLANETOCENTRIC",
+  "positiveLongitude": "EAST",
+  "referenceRadiusM": 1737400,
+  "centerLatitudeDeg": 26,
+  "centerLongitudeDeg": 180,
+  "note": "xM=CLON 经线起算投影米（GeoTIFF tiepoint 口径），yM 自赤道；lon=CLON+xM/(R·rad)，lat=CLAT+yM/(R·rad)"
+ }
+}
