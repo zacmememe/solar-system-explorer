@@ -100,10 +100,14 @@ async function runR2Verification() {
     });
     console.log('初始瓦片系统状态:', initialStatus);
 
-    // 2. 真实用户交互：通过 DOM 点击“📍 珠江口 (500m高精)”按钮！
-    console.log('2. 正在通过真实 DOM 触发地理入口按钮: [data-testid="earth-region-prd-btn"]...');
-    await page.waitForSelector('[data-testid="earth-region-prd-btn"]', { timeout: 5000 });
-    await page.click('[data-testid="earth-region-prd-btn"]');
+    // 2. S2（Pro 260924）：珠江口 DOM 入口已移除——瓦片链路经引擎内部 API 验证
+    console.log('2. 经引擎内部 API focusEarthRegion 进近珠江口（S2：DOM 入口已移除）...');
+    await page.evaluate(() => {
+      const engine = (window as any).__SOLAR_ENGINE__;
+      if (engine && typeof engine.focusEarthRegion === 'function') {
+        engine.focusEarthRegion('pearl-river-delta');
+      }
+    });
 
     // 等待 800ms，在平滑飞行中途截取转场帧
     await new Promise((r) => setTimeout(r, 800));
@@ -241,7 +245,7 @@ async function runR2Verification() {
         },
       },
       interactionAndCamera: {
-        userEntryTested: 'DOM [data-testid="earth-region-prd-btn"]',
+        userEntryTested: 'engine.focusEarthRegion (S2：珠江口 DOM 入口已移除，瓦片链路经内部 API 验证)',
         command: 'focusRegion(lat: 22.3, lon: 113.8, altitude: 0.05)',
         cameraFinalDistance: prdStatus.cameraDistance,
         isTransitioning: prdStatus.isTransitioning,

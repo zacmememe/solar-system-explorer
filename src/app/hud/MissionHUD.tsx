@@ -14,7 +14,6 @@ export interface MissionHUDProps {
   isPaused: boolean;
   timeScale: number;
   viewCameraMode: ViewCameraMode;
-  showOrbits: boolean;
   showClouds: boolean;
   showAtmosphere: boolean;
   showLabels: boolean;
@@ -26,7 +25,6 @@ export interface MissionHUDProps {
   onPause(): void;
   onSpeed(speed: number): void;
   onViewMode(mode: ViewCameraMode): void;
-  onToggleOrbits(): void;
   onToggleClouds(): void;
   onToggleAtmosphere(): void;
   onToggleLabels(): void;
@@ -36,7 +34,6 @@ export interface MissionHUDProps {
   onToggleTitan(): void;
   onReframe(): void;
   onCancelTransition(): void;
-  onFocusRegion?(regionKey: string): void;
 }
 
 function ContextGraphic({ frame, centerId, selectedId }: { frame: HudFrame; centerId: BodyId; selectedId: BodyId }) {
@@ -182,7 +179,6 @@ export function MissionHUD(props: MissionHUDProps) {
             onClick={() => props.onViewMode(mode)}>{label}</button>)}</div>
           <p>载具：{props.vehicleName || '未选择'}。伴飞模型是视觉呈现；下方三角指示观察机位，不冒充独立航天器轨道。</p>
           <div className="hud-settings-grid">
-            {toggle('轨道线', props.showOrbits, props.onToggleOrbits)}
             {toggle('天体标识', props.showLabels, props.onToggleLabels)}
             {toggle('地球云层', props.showClouds, props.onToggleClouds)}
             {toggle('大气微光', props.showAtmosphere, props.onToggleAtmosphere)}
@@ -201,25 +197,6 @@ export function MissionHUD(props: MissionHUDProps) {
             <div><dt>公转周期{body.orbitPeriodDays < 0 ? '（逆行）' : ''}</dt><dd>{formatPeriod(body.orbitPeriodDays)}</dd></div>
             <div><dt>自转周期</dt><dd>{Math.abs(body.rotationPeriodHours).toFixed(1)} 小时</dd></div></dl>
           <p className="hud-source-note">{materialNote(body.id, props.titanInfraredMode)}<br />原项目标注来源：{body.sourceRef}</p>
-          {body.id === 'earth' && (
-            <div style={{ marginTop: 10, padding: '8px 10px', background: 'rgba(56, 189, 248, 0.08)', borderRadius: 6, border: '1px solid rgba(56, 189, 248, 0.25)' }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: '#38bdf8', marginBottom: 3 }}>🌍 真实高空俯瞰 (约236km)</div>
-              <div style={{ fontSize: 10, color: '#cbd5e1', marginBottom: 6, lineHeight: 1.4 }}>
-                NASA BMNG D1 官方数据 · 珠江口大湾区 (463m/px)
-              </div>
-              <button
-                data-testid="hud-focus-prd-btn"
-                className="hud-action"
-                style={{ width: '100%', margin: 0, padding: '5px 8px', fontSize: 11 }}
-                onClick={() => {
-                  props.onFocusRegion?.('pearl-river-delta');
-                  closePanel();
-                }}
-              >
-                🔍 俯瞰珠江口 (约236km)
-              </button>
-            </div>
-          )}
           <button className="hud-action" disabled={!ready} onClick={transitioning ? props.onCancelTransition : props.onReframe}>
             {transitioning ? '取消镜头转场' : '重新取景'}</button>
         </>}

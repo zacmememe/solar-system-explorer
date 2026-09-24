@@ -101,12 +101,13 @@ async function runP0Verification() {
     await saveScreenshot('64-p0-earth-global-d1-daylight.png');
 
     // 2. 飞向珠江口高空俯瞰机位 (约236km)
-    console.log('【步骤 2】点击“📍 俯瞰珠江口 (约236km)”按钮并执行平滑进近 (物理观测·白昼与云层)...');
-    const prdBtn = await page.$('[data-testid="earth-region-prd-btn"]');
-    if (!prdBtn) {
-      throw new Error('未找到 [data-testid="earth-region-prd-btn"] 按钮！');
-    }
-    await prdBtn.click();
+    // S2（Pro 260924）：珠江口产品入口已移除——脚本改走引擎保留的内部 API
+    //（地球瓦片/可见性链路仍受验，地区探索 UI 不再是产品能力）
+    console.log('【步骤 2】经引擎内部 API focusEarthRegion 进近珠江口俯瞰机位 (物理观测·白昼与云层)...');
+    await page.evaluate(() => {
+      const engine = (window as any).__solarEngine;
+      if (engine) engine.focusEarthRegion('pearl-river-delta');
+    });
 
     // 等待相机转场插值完成 (约 2.2 秒) 与瓦片多级细化
     console.log('等待镜头转场完成...');
@@ -121,28 +122,15 @@ async function runP0Verification() {
     );
     await new Promise((r) => setTimeout(r, 2500));
 
-    // 验证状态卡片出现
-    const statusCard = await page.$('[data-testid="earth-region-status-card"]');
-    if (!statusCard) {
-      throw new Error('未找到 [data-testid="earth-region-status-card"] 状态卡片！');
-    }
-    const cardText = await page.evaluate((el) => el.textContent, statusCard);
-    console.log('状态卡片内容:', cardText);
-
     // 截图态 1：物理观测模式 (白昼含真实云层)
     await saveScreenshot('65-p0-earth-prd-physical-clouds.png');
 
     // 3. 切换至“地貌观察 (terrain-study)”模式
     console.log('【步骤 3】切换至“地貌观察 (terrain-study)”模式 (隐藏云层，开启参考照明，模拟时钟保持不变)...');
-    const toggleBtn = await page.$('[data-testid="toggle-study-mode-btn"]');
-    if (toggleBtn) {
-      await toggleBtn.click();
-    } else {
-      await page.evaluate(() => {
-        const engine = (window as any).__solarEngine;
-        if (engine) engine.setObservationMode('terrain-study');
-      });
-    }
+    await page.evaluate(() => {
+      const engine = (window as any).__solarEngine;
+      if (engine) engine.setObservationMode('terrain-study');
+    });
 
     await new Promise((r) => setTimeout(r, 1500));
 

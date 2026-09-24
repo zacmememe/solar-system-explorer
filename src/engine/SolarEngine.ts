@@ -14,7 +14,6 @@ import { CameraController } from '../camera/CameraController';
 import { normalizeWheelDelta, pinchLogDelta } from '../camera/inputKernels';
 import {
   BODIES,
-  getNavOrbitRadius,
   getNavDisplayRadius,
   getPlanetNavPosition,
   PLANET_SPIN_OFFSETS,
@@ -129,7 +128,6 @@ interface BodyRenderNode {
   cloudMesh?: THREE.Mesh;
   haloMesh?: THREE.Mesh;
   ringMesh?: THREE.Mesh;
-  orbitLine?: THREE.LineLoop;
   material?: THREE.Material;
   coronaMesh?: THREE.Mesh;
 }
@@ -153,9 +151,6 @@ export class SolarEngine {
   private bodyNodes: Map<BodyId, BodyRenderNode> = new Map();
   private pickableMeshes: THREE.Mesh[] = [];
 
-  // 轨道线容器
-  private orbitLinesGroup: THREE.Group;
-
   // 光照
   private sunPointLight: THREE.PointLight;
   private ambientLight: THREE.AmbientLight;
@@ -170,7 +165,6 @@ export class SolarEngine {
   private showClouds: boolean = true;
   private teachingLight: boolean = false;
   private showAtmosphere: boolean = true;
-  private showOrbits: boolean = true;
   private venusRadarMode: boolean = false;
   private reduceMotion: boolean = false;
 
@@ -339,17 +333,12 @@ export class SolarEngine {
     this.camera.add(this.cameraHeadlight);
     this.scene.add(this.camera);
 
-    // 5. 轨道线组
-    this.orbitLinesGroup = new THREE.Group();
-    this.scene.add(this.orbitLinesGroup);
-
     // 5.1 载具航天器容器与初始载具
     this.scene.add(this.vehicleGroup);
     this.setVehicle(this.currentVehicleId);
 
     // 6. 初始化所有天体对象（包含太阳、八大行星与主要卫星）
     this.initAllBodies();
-    this.updateOrbitsVisibility('earth');
 
     // 7. 绑定输入事件
     this.bindEvents();
@@ -485,29 +474,8 @@ export class SolarEngine {
         material: defaultMat,
       };
 
-      // 4. 行星公转轨道线（优雅半透明椭圆）
-      if (data.orbitSemiMajorAxisKm > 0) {
-        const orbitRadius = getNavOrbitRadius(data.orbitSemiMajorAxisKm);
-        const incRad = THREE.MathUtils.degToRad(data.orbitalInclinationDeg || 0);
-        const points: THREE.Vector3[] = [];
-        const segments = 128;
-        for (let i = 0; i <= segments; i++) {
-          const angle = (i / segments) * Math.PI * 2;
-          const x = orbitRadius * Math.cos(angle);
-          const y = orbitRadius * Math.sin(angle) * Math.sin(incRad);
-          const z = orbitRadius * Math.sin(angle) * Math.cos(incRad);
-          points.push(new THREE.Vector3(x, y, z));
-        }
-        const orbitGeo = new THREE.BufferGeometry().setFromPoints(points);
-        const orbitMat = new THREE.LineBasicMaterial({
-          color: data.colorHex ?? 0x557799,
-          transparent: true,
-          opacity: 0.35,
-        });
-        const orbitLine = new THREE.LineLoop(orbitGeo, orbitMat);
-        this.orbitLinesGroup.add(orbitLine);
-        node.orbitLine = orbitLine;
-      }
+      // S2（Pro 260924）：行星公转轨道线整体移除——真实位置、自转、公转与时间
+      // 计算全部保留，只去掉主场景中穿过天体与星空的冗余轨迹示意。
 
       // 5. 地球专属多层：独立自旋云层、大气光晕与高精多分辨率地理瓦片金字塔 (挂载在 poleFrame)
       if (id === 'earth') {
@@ -930,37 +898,7 @@ export class SolarEngine {
           });
       }
 
-      // 卫星局部公转轨道线（优雅微弱半透明环，直观呈现多星系同心轨道分布）
-      let satOrbitLine: THREE.LineLoop | undefined;
-      if (satData.orbitSemiMajorAxisKm > 0) {
-        const parentR = getNavDisplayRadius(parentNode.data.radiusKm, parentNode.data.type);
-        const baseClearance = parentNode.data.ringConfig
-          ? parentR * (parentNode.data.ringConfig.outerRadiusRatio + 0.38)
-          : parentR * 2.65;
-        const normDist = Math.pow((satData.orbitSemiMajorAxisKm || 100000) / 100000.0, 0.52);
-        const visualOrbitR = baseClearance + normDist * (parentR * 1.35);
-        const incRad = THREE.MathUtils.degToRad(satData.orbitalInclinationDeg || 0);
-
-        const pts: THREE.Vector3[] = [];
-        const segs = 64;
-        for (let i = 0; i <= segs; i++) {
-          const a = (i / segs) * Math.PI * 2;
-          pts.push(new THREE.Vector3(
-            visualOrbitR * Math.cos(a),
-            visualOrbitR * Math.sin(a) * Math.sin(incRad),
-            visualOrbitR * Math.sin(a) * Math.cos(incRad)
-          ));
-        }
-        const satOrbitGeo = new THREE.BufferGeometry().setFromPoints(pts);
-        const satOrbitMat = new THREE.LineBasicMaterial({
-          color: satData.colorHex ?? 0x64748b,
-          transparent: true,
-          opacity: 0.22,
-        });
-        satOrbitLine = new THREE.LineLoop(satOrbitGeo, satOrbitMat);
-        satOrbitLine.visible = this.showOrbits;
-        parentNode.systemGroup.add(satOrbitLine);
-      }
+      // S2（Pro 260924）：卫星公转轨道线随行星轨迹线一并移除（真实星环保留）
 
       let satHalo: THREE.Mesh | undefined;
       let satCloudMesh: THREE.Mesh | undefined;
@@ -991,7 +929,6 @@ export class SolarEngine {
         material: satMat,
         cloudMesh: satCloudMesh,
         haloMesh: satHalo,
-        orbitLine: satOrbitLine,
       });
     }
   }
@@ -1503,16 +1440,8 @@ export class SolarEngine {
     }
     if (cmd.type === 'flyTo' || cmd.type === 'overview' || cmd.type === 'restoreBookmark') {
       soundEffects.playWarp();
-      if (cmd.type === 'flyTo') {
-        this.updateOrbitsVisibility(cmd.bodyId);
-      } else if (cmd.type === 'overview') {
-        this.updateOrbitsVisibility('sun');
-      } else if (cmd.type === 'restoreBookmark') {
-        this.updateOrbitsVisibility(cmd.targetBodyId);
-      }
     } else if (cmd.type === 'select') {
       soundEffects.playClick();
-      this.updateOrbitsVisibility(cmd.bodyId);
       if (this.callbacks.onSelectBody) {
         this.callbacks.onSelectBody(cmd.bodyId);
       }
@@ -2132,44 +2061,12 @@ export class SolarEngine {
   }
 
   /**
-   * 空间自适应轨道线显示：
-   * 1. 当处于局部系统特写（如地月系、土星系）时，默认仅显示本系统内卫星同心轨道，隐藏穿插切割主体的全局日心轨道线；
-   * 2. 当处于太阳系全景时，显示八大行星绕日轨道；
-   * 3. 用户手动关闭轨道线时完全隐藏。
+   * S2（Pro 260924）：主场景公转轨迹线已整体移除（真实位置/自转/公转/时间计算
+   * 全保留）。setShowOrbits 保留为惰性兼容入口——旧设置与书签恢复不会报错，
+   * 也不再重新创建任何轨迹线。
    */
-  private updateOrbitsVisibility(targetId?: BodyId): void {
-    if (!this.showOrbits) {
-      this.orbitLinesGroup.visible = false;
-      for (const node of this.bodyNodes.values()) {
-        if (node.orbitLine) node.orbitLine.visible = false;
-      }
-      return;
-    }
-
-    const currentId = targetId || this.cameraController.getSnapshot().targetBodyId || 'earth';
-    const currentBody = BODIES[currentId];
-    const systemPlanet = currentBody?.type === 'moon' ? currentBody.parentId : currentId;
-
-    if (systemPlanet === 'sun') {
-      this.orbitLinesGroup.visible = true;
-      for (const node of this.bodyNodes.values()) {
-        if (node.orbitLine) {
-          node.orbitLine.visible = node.data.type === 'planet';
-        }
-      }
-    } else {
-      this.orbitLinesGroup.visible = false;
-      for (const node of this.bodyNodes.values()) {
-        if (node.orbitLine) {
-          node.orbitLine.visible = node.data.type === 'moon' && node.data.parentId === systemPlanet;
-        }
-      }
-    }
-  }
-
-  public setShowOrbits(show: boolean): void {
-    this.showOrbits = show;
-    this.updateOrbitsVisibility();
+  public setShowOrbits(_show: boolean): void {
+    void _show;
   }
 
   public setShowVenusSurface(radar: boolean): void {
@@ -2220,10 +2117,6 @@ export class SolarEngine {
 
   public isShowAtmosphere(): boolean {
     return this.showAtmosphere;
-  }
-
-  public isShowOrbits(): boolean {
-    return this.showOrbits;
   }
 
   public isVenusRadarMode(): boolean {
@@ -3037,7 +2930,7 @@ export class SolarEngine {
         showClouds: this.showClouds,
         showAtmosphere: this.showAtmosphere,
         teachingLight: this.teachingLight,
-        showOrbits: this.showOrbits,
+        showOrbits: false, // S2：轨迹线已移除——字段保留 v3 书签兼容，恒 false
         venusRadarMode: this.venusRadarMode,
       },
       simTimeHours: this.simTimeHours,
@@ -3129,10 +3022,6 @@ export class SolarEngine {
       if (node.ringMesh) {
         node.ringMesh.geometry.dispose();
         safeDisposeMaterial(node.ringMesh.material);
-      }
-      if (node.orbitLine) {
-        node.orbitLine.geometry.dispose();
-        safeDisposeMaterial(node.orbitLine.material);
       }
     }
 

@@ -151,7 +151,7 @@ export function upgradeBookmarkToV2(raw: any): BookmarkItemV2 {
       showClouds: raw.layers?.showClouds ?? true,
       showAtmosphere: raw.layers?.showAtmosphere ?? true,
       teachingLight: raw.layers?.teachingLight ?? false,
-      showOrbits: raw.layers?.showOrbits ?? true,
+      showOrbits: raw.layers?.showOrbits ?? false, // S2：轨迹线已移除——字段仅存 v3 兼容，不再消费
       venusRadarMode: raw.layers?.venusRadarMode ?? false,
     },
     simTimeHours: typeof raw.simTimeHours === 'number' ? raw.simTimeHours : 0,

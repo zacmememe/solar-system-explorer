@@ -68,7 +68,6 @@ export const App: React.FC = () => {
   const [showClouds, setShowClouds] = useState<boolean>(true);
   const [teachingLight, setTeachingLight] = useState<boolean>(false);
   const [showAtmosphere, setShowAtmosphere] = useState<boolean>(true);
-  const [showOrbits, setShowOrbits] = useState<boolean>(true);
   const [venusRadarMode, setVenusRadarMode] = useState<boolean>(false);
   const [titanInfraredMode, setTitanInfraredMode] = useState<boolean>(false);
   const [reduceMotion, setReduceMotion] = useState<boolean>(false);
@@ -95,7 +94,6 @@ export const App: React.FC = () => {
 
   // 地貌观察 / 物理观测模式 (P0 核心体验)
   const [observationMode, setObservationMode] = useState<ObservationMode>('physical');
-  const [focusedRegion, setFocusedRegion] = useState<string | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -105,7 +103,6 @@ export const App: React.FC = () => {
         onHudSnapshot: hudStore.publish,
         onSelectBody: (id) => {
           setSelectedBodyId(id);
-          setFocusedRegion(null);
         },
         onCameraSnapshot: (snap) => setCameraSnapshot(snap),
         onWebGLInfo: (info) => setWebglInfo(info),
@@ -138,14 +135,7 @@ export const App: React.FC = () => {
 
   const handleFlyTo = (id: BodyId) => {
     setSelectedBodyId(id);
-    setFocusedRegion(null);
     engineRef.current?.executeCameraCommand({ type: 'flyTo', bodyId: id });
-  };
-
-  const handleFocusPearlRiverDelta = () => {
-    setFocusedRegion('pearl-river-delta');
-    engineRef.current?.focusEarthRegion('pearl-river-delta');
-    showToast('🌏 正在俯瞰珠江口 (约236km·NASA BMNG D1)');
   };
 
   const handleToggleObservationMode = () => {
@@ -191,12 +181,6 @@ export const App: React.FC = () => {
     const next = !showAtmosphere;
     setShowAtmosphere(next);
     engineRef.current?.setShowAtmosphere(next);
-  };
-
-  const toggleOrbits = () => {
-    const next = !showOrbits;
-    setShowOrbits(next);
-    engineRef.current?.setShowOrbits(next);
   };
 
   const toggleVenusRadar = () => {
@@ -307,8 +291,7 @@ export const App: React.FC = () => {
     setTeachingLight(bm.layers.teachingLight);
     engineRef.current?.setTeachingLight(bm.layers.teachingLight);
 
-    setShowOrbits(bm.layers.showOrbits);
-    engineRef.current?.setShowOrbits(bm.layers.showOrbits);
+    // S2：轨迹线已移除——旧书签的 showOrbits 字段不再消费（引擎入口为惰性空操作）
 
     setVenusRadarMode(bm.layers.venusRadarMode);
     engineRef.current?.setShowVenusSurface(bm.layers.venusRadarMode);
@@ -600,15 +583,6 @@ export const App: React.FC = () => {
             <>
               <div style={{ width: 1, height: 12, background: 'rgba(255,255,255,0.15)', margin: '0 4px', flexShrink: 0 }} />
               <button
-                data-testid="earth-region-prd-btn"
-                onClick={handleFocusPearlRiverDelta}
-                className="app-satellite-btn"
-                style={{ borderColor: 'rgba(56, 189, 248, 0.45)', color: '#38bdf8' }}
-                aria-label="俯瞰珠江口 (约236km)"
-              >
-                <span>📍 俯瞰珠江口 (约236km)</span>
-              </button>
-              <button
                 data-testid="earth-observation-mode-btn"
                 onClick={handleToggleObservationMode}
                 className={`app-satellite-btn ${observationMode === 'terrain-study' ? 'is-active' : ''}`}
@@ -624,71 +598,6 @@ export const App: React.FC = () => {
             </>
           )}
         </div>
-      )}
-
-      {/* 珠江口俯瞰与地貌观察模式状态卡片 */}
-      {selectedBodyId === 'earth' && focusedRegion === 'pearl-river-delta' && (
-        <aside
-          data-testid="earth-region-status-card"
-          style={{
-            position: 'absolute',
-            top: 72,
-            left: 20,
-            background: 'rgba(15, 23, 42, 0.92)',
-            backdropFilter: 'blur(12px)',
-            border: '1px solid rgba(56, 189, 248, 0.4)',
-            borderRadius: 8,
-            padding: '10px 14px',
-            color: '#f8fafc',
-            fontSize: 12,
-            zIndex: 25,
-            maxWidth: 320,
-            boxShadow: '0 8px 30px rgba(0,0,0,0.6)',
-          }}
-          aria-label="珠江口俯瞰状态"
-        >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-            <span style={{ fontWeight: 600, color: '#38bdf8' }}>📍 俯瞰珠江口 (约236km)</span>
-            <span style={{ fontSize: 10, color: '#94a3b8' }}>NASA BMNG D1</span>
-          </div>
-          <div style={{ fontSize: 11, color: '#cbd5e1', lineHeight: 1.5, marginBottom: 8 }}>
-            {observationMode === 'terrain-study'
-              ? '【地貌观察】已隐藏云层，提供全向参考照明，便于核验地形与海岸线。模拟时间保持不变。'
-              : '【物理观测】依据当前模拟时钟实时呈现昼夜与云层。夜面可见城市夜景，若需排查地表可切换至地貌观察。'}
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              data-testid="toggle-study-mode-btn"
-              onClick={handleToggleObservationMode}
-              style={{
-                flex: 1,
-                padding: '4px 8px',
-                fontSize: 11,
-                borderRadius: 4,
-                border: '1px solid ' + (observationMode === 'terrain-study' ? '#f59e0b' : 'rgba(56, 189, 248, 0.5)'),
-                background: observationMode === 'terrain-study' ? 'rgba(245, 158, 11, 0.2)' : 'rgba(56, 189, 248, 0.15)',
-                color: observationMode === 'terrain-study' ? '#fcd34d' : '#38bdf8',
-                cursor: 'pointer',
-              }}
-            >
-              {observationMode === 'terrain-study' ? '切换为物理观测' : '切换为地貌观察'}
-            </button>
-            <button
-              onClick={() => setFocusedRegion(null)}
-              style={{
-                padding: '4px 8px',
-                fontSize: 11,
-                borderRadius: 4,
-                border: '1px solid rgba(255, 255, 255, 0.2)',
-                background: 'transparent',
-                color: '#94a3b8',
-                cursor: 'pointer',
-              }}
-            >
-              关闭提示
-            </button>
-          </div>
-        </aside>
       )}
 
       {/* 3D 屏幕空间天体悬浮引导标识 */}
@@ -773,23 +682,16 @@ export const App: React.FC = () => {
       <MissionHUD
         store={hudStore} selectedBodyId={selectedBodyId}
         isPaused={isPaused} timeScale={timeScale} viewCameraMode={viewCameraMode}
-        showOrbits={showOrbits} showClouds={showClouds} showAtmosphere={showAtmosphere}
+        showClouds={showClouds} showAtmosphere={showAtmosphere}
         showLabels={showLabels} teachingLight={teachingLight} reduceMotion={reduceMotion}
         venusRadarMode={venusRadarMode} titanInfraredMode={titanInfraredMode}
         vehicleName={activeVehicle?.name ?? ''}
         onPause={togglePause} onSpeed={changeSpeed} onViewMode={handleCameraModeChange}
-        onToggleOrbits={toggleOrbits} onToggleClouds={toggleClouds} onToggleAtmosphere={toggleAtmosphere}
+        onToggleClouds={toggleClouds} onToggleAtmosphere={toggleAtmosphere}
         onToggleLabels={() => setShowLabels(value => !value)} onToggleLight={toggleTeachingLight}
         onToggleReduceMotion={toggleReduceMotion} onToggleVenus={toggleVenusRadar} onToggleTitan={toggleTitanInfrared}
         onReframe={() => handleFlyTo(selectedBodyId)}
         onCancelTransition={() => engineRef.current?.executeCameraCommand({ type: 'cancelFlight' })}
-        onFocusRegion={(regionKey) => {
-          if (regionKey === 'pearl-river-delta') {
-            handleFocusPearlRiverDelta();
-          } else {
-            engineRef.current?.focusEarthRegion(regionKey);
-          }
-        }}
       />
 
       {engineError && <div role="alert" style={{ position: 'absolute', top: '40%', left: '10%', right: '10%',
@@ -840,7 +742,7 @@ export const App: React.FC = () => {
           showClouds,
           showAtmosphere,
           teachingLight,
-          showOrbits,
+          showOrbits: false,
           venusRadarMode,
         }}
         onToast={showToast}
