@@ -88,7 +88,7 @@ describe('S4b：采样公式与契约', () => {
   it('站点双线性高程 = 契约 elevationDatumOffsetM ±0.5m（同源核验）', () => {
     const site = LANDING_SITES['jezero'];
     expect(site.bodyId).toBe('mars');
-    expect(site.descentEnabled).toBe(false);
+    expect(site.descentEnabled).toBe(true); // S4c：下降流泛化后开放
     const s = sampleHeight(site.centerLat, site.centerLon);
     expect(s.valid).toBe(true);
     expect(Math.abs(s.heightM - site.elevationDatumOffsetM)).toBeLessThanOrEqual(0.5);

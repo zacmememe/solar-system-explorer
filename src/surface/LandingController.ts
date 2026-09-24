@@ -74,6 +74,22 @@ export class LandingController {
     }
   }
 
+  /**
+   * S4c：切换任务站点（下降流泛化——月/火多站共用一个状态机）。
+   * 仅 ORBIT 态允许（任务进行中切换会破坏轨迹/遥测语义，拒绝并返回 false）。
+   */
+  public switchSite(siteId: string): boolean {
+    const next = LANDING_SITES[siteId];
+    if (!next || this.state !== 'ORBIT') return false;
+    if (next.id === this.site.id) return true;
+    this.site = next;
+    this.targetLat = next.centerLat;
+    this.targetLon = next.centerLon;
+    this.lastTangentHeadingDeg = 225;
+    this.notifyTelemetry();
+    return true;
+  }
+
   public getState(): LandingState {
     return this.state;
   }
@@ -308,7 +324,7 @@ export class LandingController {
     commandedTangentialSpeedMps: number;
   } {
     if (this.state === 'SURFACE_LOOK') {
-      const elevM = this.heightProvider.getHeightMeters('moon', this.targetLat, this.targetLon);
+      const elevM = this.heightProvider.getHeightMeters(this.site.bodyId, this.targetLat, this.targetLon);
       return {
         lat: this.targetLat,
         lon: this.targetLon,
@@ -329,7 +345,7 @@ export class LandingController {
       const from =
         this.ascendFrom ??
         (() => {
-          const elevM = this.heightProvider.getHeightMeters('moon', this.targetLat, this.targetLon);
+          const elevM = this.heightProvider.getHeightMeters(this.site.bodyId, this.targetLat, this.targetLon);
           return {
             latDeg: this.targetLat,
             lonDeg: this.targetLon,
@@ -340,7 +356,7 @@ export class LandingController {
       const t = Math.max(0, Math.min(1, 1 - this.ascendSec / total));
       const s = smootherstep(t);
       const H = from.datumM + (this.ORBIT_ALTITUDE_M - from.datumM) * s;
-      const elevM = this.heightProvider.getHeightMeters('moon', from.latDeg, from.lonDeg);
+      const elevM = this.heightProvider.getHeightMeters(this.site.bodyId, from.latDeg, from.lonDeg);
       const rate = ((this.ORBIT_ALTITUDE_M - from.datumM) * smootherstepDerivative(t)) / total;
       return {
         lat: from.latDeg,
@@ -374,7 +390,7 @@ export class LandingController {
     }
 
     const s = sampleDescent(leg, this.elapsedSec);
-    const elevM = this.heightProvider.getHeightMeters('moon', s.latDeg, s.lonDeg);
+    const elevM = this.heightProvider.getHeightMeters(this.site.bodyId, s.latDeg, s.lonDeg);
     const H = s.clearanceM;
     const headingDeg = this.updateTangentHeading(s.latDeg, s.lonDeg);
     return {
@@ -435,8 +451,8 @@ export class LandingController {
       verticalSpeedMps = Number(Math.abs(traj.commandedClearanceRateMps).toFixed(1));
     }
 
-    const sample = this.heightProvider.getHeightSample('moon', this.targetLat, this.targetLon);
-    const provenance = this.heightProvider.rasterAdmissionState;
+    const sample = this.heightProvider.getHeightSample(this.site.bodyId, this.targetLat, this.targetLon);
+    const provenance = this.heightProvider.getAdmissionState(this.site.bodyId);
 
     return {
       state: this.state,

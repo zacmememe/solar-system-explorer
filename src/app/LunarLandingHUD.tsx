@@ -9,6 +9,7 @@
 
 import React, { useEffect, useState } from 'react';
 import type { LandingTelemetry, LandingAvailability } from '../contracts/landing';
+import { LANDING_SITES } from '../contracts/landing';
 import type { SolarEngine } from '../engine/SolarEngine';
 
 interface LunarLandingHUDProps {
@@ -55,7 +56,7 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine }) => {
 
   return (
     <>
-      {/* 1. P3b-A：入口按权威可用性分派——先到达，再降落 */}
+      {/* 1. P3b-A：入口按权威可用性分派——先到达，再降落（S4c：文案/徽章按站点） */}
       {state === 'ORBIT' && availability?.action === 'land' && (
         <div
           style={{
@@ -96,7 +97,7 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine }) => {
             }}
           >
             <span style={{ fontSize: 16 }}>🚀</span>
-            <span>降落 Taurus–Littrow 山谷</span>
+            <span>降落 {LANDING_SITES[availability.siteId ?? 'taurus-littrow']?.nameEn ?? '着陆区'}</span>
             <span
               style={{
                 fontSize: 10,
@@ -106,7 +107,9 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine }) => {
                 borderRadius: 10,
               }}
             >
-              5m DTM 真实地形
+              {(LANDING_SITES[availability.siteId ?? 'taurus-littrow']?.bodyId === 'mars'
+                ? '2m HiRISE 真实地形'
+                : '5m DTM 真实地形')}
             </span>
           </button>
         </div>
@@ -143,69 +146,13 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine }) => {
             }}
           >
             <span style={{ fontSize: 16 }}>🧭</span>
-            <span>前往着陆区（月球背面）</span>
+            <span>前往着陆区（背面）</span>
           </button>
         </div>
       )}
 
-      {/* 1a-S4b. 火星耶泽罗地表观察入口（v1：无下降导引，直达站点 1.7m 人眼视高） */}
-      {state === 'ORBIT' && availability?.action === 'observe' && (
-        <div
-          style={{
-            position: 'absolute',
-            bottom: 84,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            zIndex: 35,
-            pointerEvents: 'auto',
-          }}
-        >
-          <button
-            data-testid="mars-observe-start-btn"
-            onClick={() => engine.startJezeroSurfaceObserve()}
-            style={{
-              padding: '10px 20px',
-              borderRadius: 24,
-              border: '1px solid rgba(251, 146, 60, 0.6)',
-              background: 'linear-gradient(135deg, rgba(234, 88, 12, 0.28), rgba(194, 65, 12, 0.16))',
-              backdropFilter: 'blur(12px)',
-              color: '#ffffff',
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              boxShadow: '0 8px 24px rgba(194, 65, 12, 0.25)',
-              transition: 'all 0.2s ease',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-2px)';
-              e.currentTarget.style.borderColor = '#fb923c';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.borderColor = 'rgba(251, 146, 60, 0.6)';
-            }}
-          >
-            <span style={{ fontSize: 16 }}>🔴</span>
-            <span>耶泽罗撞击坑 · 地表观察</span>
-            <span
-              style={{
-                fontSize: 10,
-                color: '#fed7aa',
-                background: 'rgba(251, 146, 60, 0.2)',
-                padding: '2px 6px',
-                borderRadius: 10,
-              }}
-            >
-              HiRISE 2m 真实地形
-            </span>
-          </button>
-        </div>
-      )}
-
-      {/* 1a-S4b. 火星地表观察中：返回轨道入口（遥测面板属下降流，S4c 一并接入） */}
+      {/* 1a-S4b. 火星地表观察中（observe 快捷路径/探针进入）：返回轨道入口。
+          S4c 起正常用户路径走完整下降流（遥测面板内返回），本入口仅兜底 */}
       {availability?.action === 'exit-observe' && (
         <div
           style={{
@@ -430,7 +377,7 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine }) => {
             )}
             {state === 'DESCENDING' && '💡 提示：按住鼠标拖拽画面可随时暂停位移进行悬停检查。'}
             {state === 'HOLD' && '⏸ 悬停保持：位移已停驻，可自由拖拽环顾山谷；需要时可点"恢复导引视线"平滑转回地平线构图。'}
-            {state === 'SURFACE_LOOK' && '👀 位于陶拉斯—利特罗谷底 1.7m 人眼视高，可 360° 原地转头与仰望天空。'}
+            {state === 'SURFACE_LOOK' && `👀 位于${telemetry.site.name} 1.7m 人眼视高，可 360° 原地转头与仰望天空。`}
           </div>
 
           {/* 操作行动按钮栏 */}
@@ -529,13 +476,14 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine }) => {
                     cursor: 'pointer',
                   }}
                 >
-                  🚀 返回月球轨道
+                  🚀 返回轨道
                 </button>
               </>
             )}
 
             {state === 'SURFACE_LOOK' && (
               <>
+                {telemetry.site.lookTargetBodyId === 'earth' && (
                 <button
                   data-testid="landing-btn-look-earth"
                   onClick={() => engine.lookAtEarthFromMoon()}
@@ -551,6 +499,7 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine }) => {
                 >
                   🌍 仰望母星地球 (53.7° 仰角 · 1.90° 视圆盘)
                 </button>
+                )}
                 <button
                   data-testid="landing-btn-reset-look"
                   onClick={() => engine.resetMoonSurfaceLook()}
@@ -563,7 +512,7 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine }) => {
                     cursor: 'pointer',
                   }}
                 >
-                  🔄 重设平视山谷地平线
+                  🔄 重设平视地平线
                 </button>
                 <button
                   data-testid="landing-btn-return-orbit"
@@ -578,7 +527,7 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine }) => {
                     cursor: 'pointer',
                   }}
                 >
-                  🚀 启动升空 · 返回月球轨道
+                  🚀 启动升空 · 返回轨道
                 </button>
               </>
             )}

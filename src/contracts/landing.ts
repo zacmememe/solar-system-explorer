@@ -46,6 +46,8 @@ export interface LandingAvailability {
   reason: LandingAvailabilityReason;
   /** 人类可读的原因说明（等待态展示给用户） */
   detail?: string;
+  /** S4c：动作对应的目标站点（land/travel-to-site/wait——HUD 按站点名渲染入口） */
+  siteId?: string;
 }
 
 /**
@@ -148,7 +150,10 @@ export const LANDING_SITES: Record<string, LandingSite> = {
     datumRadiusKm: 3394.8398,
     elevationDatumOffsetM: -2561.6, // 站点 HiRISE DTM 双线性值（Mars 2000 areoid，米）
     elevationRangeM: [-2616.6, -2423.8], // 4×5.5km 窗实测范围
-    descentEnabled: false, // S4b：v1 地表观察；完整下降导引 S4c 泛化后开放
+    // S4c：开放完整下降流（下降/悬停/触地/返轨与月面同链路）。
+    // 注意窗仅 4×5.5km：下降末段（<8km 高度）的窗外地面回退基准球，
+    // 渐显门控保证 DTM 在屏幕张角足够时才出现（同月面两级栈语义）。
+    descentEnabled: true,
     // 火山坑底：碎石丰富但偏小（毅力号实拍坑底遍布小石、间距米级）、坡度偏好低。
     // S4b 实测校准：1.7m 眼高可见需米级间距——450m 盘 30000 块 ≈ 1.45m 间距
     rockField: { count: 30000, radiusM: 450, sizeMaxM: 1.2, slopeWeight: 0.25 },

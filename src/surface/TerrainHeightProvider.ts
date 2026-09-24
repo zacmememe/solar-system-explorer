@@ -90,6 +90,13 @@ export class TerrainHeightProvider {
     return this.raster.terrainAdmissionState;
   }
 
+  /** S4c：按天体路由的地形准入态（HUD 遥测如实标注；非落地天体报 unavailable） */
+  public getAdmissionState(bodyId: BodyId): string {
+    if (bodyId === 'moon') return this.raster.terrainAdmissionState;
+    if (bodyId === 'mars') return this.jezero.metaReady?.admissionState ?? 'unavailable';
+    return 'unavailable';
+  }
+
   /** 将高程（米）折算为场景单位渲染半径 */
   public getSceneSurfaceRadius(
     bodyId: BodyId,

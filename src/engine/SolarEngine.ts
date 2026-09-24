@@ -67,7 +67,7 @@ import { soundEffects } from '../audio/SoundEffects';
 import { VehicleLoader } from '../vehicles/VehicleLoader';
 import { LandingController } from '../surface/LandingController';
 import { RegionalAlbedoLayer } from '../surface/RegionalAlbedoLayer';
-import { LANDING_SITES, type LandingTelemetry, type LandingAvailability } from '../contracts/landing';
+import { LANDING_SITES, type LandingTelemetry, type LandingAvailability, type LandingSite } from '../contracts/landing';
 import {
   latLonDirection,
   stepOrientationQuat,
@@ -231,6 +231,28 @@ export class SolarEngine {
 
   // 批次 R5：着陆控制器与月表 3D 浮雕网格
   private landingController: LandingController = new LandingController('taurus-littrow');
+
+  // S4c：当前任务站点（下降流泛化——月/火多站共用一个状态机；startLunarLanding
+  // 在准备前 switchSite 到相机目标天体的站点，此后全链消费本 getter）
+  private get activeLandingSite(): LandingSite {
+    return this.landingController.getSite();
+  }
+  private get activeLandingBodyId(): BodyId {
+    return this.landingController.getSite().bodyId;
+  }
+
+  /** 相机目标天体 → 该天体首个可下降站点（descentEnabled !== false）；无则 null */
+  private resolveLandingSiteForCamera(camSnap: CameraStateSnapshot): { bodyId: BodyId; site: LandingSite } | null {
+    for (const id of [camSnap.targetBodyId, camSnap.selectedBodyId]) {
+      if (!id) continue;
+      for (const site of Object.values(LANDING_SITES)) {
+        if (site.bodyId === id && site.descentEnabled !== false) {
+          return { bodyId: id, site };
+        }
+      }
+    }
+    return null;
+  }
   private lunarValleyMesh?: THREE.Mesh;
   private lunarValleyMaterial?: THREE.MeshStandardMaterial;
   private moonHoleCapMesh?: THREE.Mesh;
@@ -246,6 +268,13 @@ export class SolarEngine {
   private marsCollarMaterial?: THREE.MeshStandardMaterial;
   private marsHoleCapMesh?: THREE.Mesh;
   private marsRockFieldMaterial: THREE.MeshStandardMaterial | null = null;
+  // S4c：火星尘色大气（示意层）——天空单色浸染（星图×尘色）+ 地表线性雾。
+  // 非散射模拟：真实火星白昼天空亮黄褐且星不可见，此处为轻量近似，消除
+  // "无大气天体般的纯黑星空 + 生硬地平线"观感；月面无大气保持纯黑星空=真实。
+  private dustSkyMix = 0;
+  private readonly marsDustColor = new THREE.Color(0xc9a67e);
+  private readonly clearSkyColor = new THREE.Color(0xffffff);
+  private dustFog: THREE.Fog | null = null;
   // P3b-C：WAC EMP 区域反照率层（中远景影像；DTM 装载后创建，SSE 门控显隐）
   private regionalAlbedo: RegionalAlbedoLayer | null = null;
   private collarMaterial: THREE.MeshStandardMaterial | null = null;
@@ -1636,8 +1665,8 @@ export class SolarEngine {
   }
 
   public executeCameraCommand(cmd: CameraCommand): void {
-    // P2：用户改选其它天体时收回过期的着陆准备（不自动重发）
-    if (cmd.type === 'select' && cmd.bodyId !== 'moon') {
+    // P2：用户改选其它天体时收回过期的着陆准备（不自动重发；S4c 按活动站点判）
+    if (cmd.type === 'select' && cmd.bodyId !== this.activeLandingBodyId) {
       this.landingController.cancelPreparation();
       this.landingPrep = null;
     }
@@ -1709,43 +1738,26 @@ export class SolarEngine {
       return { action: 'none', reason: 'travel-in-progress' };
     }
     if (camSnap.mode === 'SURFACE_LOOK') {
-      // S4b：火星地表观察不经下降状态机——处于火星 SURFACE_LOOK 时发布退出入口
+      // S4b observe 路径进入的火星地表（控制器空闲）仍发布退出入口；
+      // 下降流自身的 SURFACE_LOOK 在上方 ctlState 分支即返回 mission-active
       if (camSnap.targetBodyId === 'mars' || camSnap.selectedBodyId === 'mars') {
         return { action: 'exit-observe', reason: 'mission-active', detail: '耶泽罗地表观察中' };
       }
       return { action: 'none', reason: 'mission-active' };
     }
-    // S4b：火星耶泽罗地表观察入口（v1 无下降导引——descentEnabled=false，S4c 泛化）
-    const atMoon = camSnap.targetBodyId === 'moon' || camSnap.selectedBodyId === 'moon';
-    const atMars = camSnap.targetBodyId === 'mars' || camSnap.selectedBodyId === 'mars';
-    if (!atMoon && atMars) {
-      const marsPose = this.getBodyWorldPose('mars');
-      const dist = this.camera.position.distanceTo(marsPose.pos);
-      if (dist > marsPose.surfaceRadius * 10) {
-        return { action: 'none', reason: 'not-at-body' };
-      }
-      if (this.bodyPoseProvider.getTransitionProgress() > 0 && this.bodyPoseProvider.getTransitionProgress() < 1) {
-        return { action: 'wait', reason: 'frame-transition', detail: '比例框架过渡中…' };
-      }
-      const jezero = JezeroTerrainSource.getInstance();
-      if (jezero.error) {
-        return { action: 'wait', reason: 'assets-error', detail: `Jezero DTM 装载失败：${jezero.error}` };
-      }
-      if (!jezero.isReady) {
-        return { action: 'wait', reason: 'assets-loading', detail: '正在装载耶泽罗真实 DTM 地形…' };
-      }
-      return { action: 'observe', reason: 'ready' };
-    }
-    if (camSnap.targetBodyId !== 'moon' && camSnap.selectedBodyId !== 'moon') {
+    // S4c：按相机目标天体解析可下降站点（moon→taurus-littrow，mars→jezero）
+    const resolved = this.resolveLandingSiteForCamera(camSnap);
+    if (!resolved) {
       return { action: 'none', reason: 'not-at-body' };
     }
-    // 到达判定：相机与月心的实际渲染距离（整球取景属可访问——不设公里级门槛
+    const { bodyId, site } = resolved;
+    // 到达判定：相机与天体中心的实际渲染距离（整球取景属可访问——不设公里级门槛
     // 使正常取景失效）。×10 而非几何严格的 ×6：现存 displayRadius(0.368) 与
     // 球体几何/取景半径(0.687) 口径不一致（预存在问题，已登记待专项），
     // 正常 flyTo 取景距离(~2.9)在严格阈值下会被误判为未到达。
-    const moonPose = this.getBodyWorldPose('moon');
-    const dist = this.camera.position.distanceTo(moonPose.pos);
-    if (dist > moonPose.surfaceRadius * 10) {
+    const bodyPose = this.getBodyWorldPose(bodyId);
+    const dist = this.camera.position.distanceTo(bodyPose.pos);
+    if (dist > bodyPose.surfaceRadius * 10) {
       return { action: 'none', reason: 'not-at-body' };
     }
     // 比例框架：仅在有进行中的过渡时等待（空闲时为 NAV 是正常状态——
@@ -1753,36 +1765,48 @@ export class SolarEngine {
     if (this.bodyPoseProvider.getTransitionProgress() > 0 && this.bodyPoseProvider.getTransitionProgress() < 1) {
       return { action: 'wait', reason: 'frame-transition', detail: '比例框架过渡中…' };
     }
-    // 资产就绪（DTM fail-closed：未就绪等待并展示原因，不伪造地形）
-    const raster = RasterTerrainSource.getInstance();
-    if (raster.state === 'failed') {
-      return { action: 'wait', reason: 'assets-error', detail: `DTM 装载失败：${raster.error ?? '未知原因'}` };
-    }
-    if (!raster.isReady) {
-      return { action: 'wait', reason: 'assets-loading', detail: '正在装载真实 DTM 地形…' };
+    // 资产就绪（按天体路由，fail-closed：未就绪等待并展示原因，不伪造地形）
+    if (bodyId === 'mars') {
+      const jezero = JezeroTerrainSource.getInstance();
+      if (jezero.error) {
+        return { action: 'wait', reason: 'assets-error', detail: `Jezero DTM 装载失败：${jezero.error}`, siteId: site.id };
+      }
+      if (!jezero.isReady) {
+        return { action: 'wait', reason: 'assets-loading', detail: '正在装载耶泽罗真实 DTM 地形…', siteId: site.id };
+      }
+    } else {
+      const raster = RasterTerrainSource.getInstance();
+      if (raster.state === 'failed') {
+        return { action: 'wait', reason: 'assets-error', detail: `DTM 装载失败：${raster.error ?? '未知原因'}`, siteId: site.id };
+      }
+      if (!raster.isReady) {
+        return { action: 'wait', reason: 'assets-loading', detail: '正在装载真实 DTM 地形…', siteId: site.id };
+      }
     }
     // 落区可见性：相机与站点是否同半球（背面 → 前往着陆区，沿球外绕行，不穿球不改起点）
-    const rel = this.camera.position.clone().sub(moonPose.pos).applyQuaternion(moonPose.quaternion.clone().invert()).normalize();
-    const site = LANDING_SITES['taurus-littrow'];
+    const rel = this.camera.position.clone().sub(bodyPose.pos).applyQuaternion(bodyPose.quaternion.clone().invert()).normalize();
     const siteDir = latLonDirection(site.centerLat, site.centerLon);
     const dot = rel.x * siteDir[0] + rel.y * siteDir[1] + rel.z * siteDir[2];
     if (dot < 0) {
-      return { action: 'travel-to-site', reason: 'far-side-site', detail: '着陆区在月球背面，需先前往着陆区上空' };
+      return { action: 'travel-to-site', reason: 'far-side-site', detail: '着陆区在天体背面，需先前往着陆区上空', siteId: site.id };
     }
-    return { action: 'land', reason: 'ready' };
+    return { action: 'land', reason: 'ready', siteId: site.id };
   }
 
   /** P3b-A：前往着陆区上空（球外绕行到达站点同侧；不修改落区与起点） */
   public travelToLandingSite(): void {
-    const moonPose = this.getBodyWorldPose('moon');
-    const site = LANDING_SITES['taurus-littrow'];
-    const siteDir = new THREE.Vector3(...latLonDirection(site.centerLat, site.centerLon));
-    const siteWorld = siteDir.clone().applyQuaternion(moonPose.quaternion).normalize();
-    const dist = this.camera.position.distanceTo(moonPose.pos);
-    const target = moonPose.pos.clone().addScaledVector(siteWorld, dist);
+    const resolved = this.resolveLandingSiteForCamera(this.cameraController.getSnapshot()) ?? {
+      bodyId: this.activeLandingBodyId,
+      site: this.activeLandingSite,
+    };
+    const bodyPose = this.getBodyWorldPose(resolved.bodyId);
+    const siteDir = new THREE.Vector3(...latLonDirection(resolved.site.centerLat, resolved.site.centerLon));
+    const siteWorld = siteDir.clone().applyQuaternion(bodyPose.quaternion).normalize();
+    const dist = this.camera.position.distanceTo(bodyPose.pos);
+    const target = bodyPose.pos.clone().addScaledVector(siteWorld, dist);
     this.cameraController.executeCommand({
       type: 'flyTo',
-      bodyId: 'moon',
+      bodyId: resolved.bodyId,
       durationSec: 2.8,
       targetPos: [target.x, target.y, target.z],
       exact: true,
@@ -1817,15 +1841,20 @@ export class SolarEngine {
     if (avail.action !== 'land') {
       return false; // 入口拒绝：世界状态保持不变（UI 也不应显示可执行入口）
     }
+    // S4c：解析目标站点并切换控制器（下降流泛化——月/火同链路）
+    const resolved = this.resolveLandingSiteForCamera(this.cameraController.getSnapshot());
+    if (!resolved || !this.landingController.switchSite(resolved.site.id)) {
+      return false;
+    }
     const missionId = ++this.landingMissionId;
-    // 旧流程的 select 命令在此触发相机目标切换→updateEphemerisPoses 物理分支以地月系
-    // 线性化参考（月面 mesh 按真实比例 0.687 摆放）。P3b-A 重写时一度删除该命令，
-    // 导致物理模式下月面仍按 NAV 半径 0.368 摆放（实测回归）——保留。
+    // 旧流程的 select 命令在此触发相机目标切换→updateEphemerisPoses 物理分支以
+    // 天体系线性化参考（月面 mesh 按真实比例摆放）。P3b-A 重写时一度删除该命令，
+    // 导致物理模式下月面仍按 NAV 半径摆放（实测回归）——保留。
     // 注意顺序：select 必须在 landingPrep 设置之前（executeCameraCommand 的准备期
     // 失效钩子只在 prep 存在时触发）。
-    this.cameraController.executeCommand({ type: 'select', bodyId: 'moon' });
+    this.cameraController.executeCommand({ type: 'select', bodyId: resolved.bodyId });
     if (this.callbacks.onSelectBody) {
-      this.callbacks.onSelectBody('moon');
+      this.callbacks.onSelectBody(resolved.bodyId);
     }
     this.landingPrep = {
       missionId,
@@ -1871,7 +1900,7 @@ export class SolarEngine {
       this.landingController.cancelPreparation();
       return;
     }
-    if (camSnap.targetBodyId !== 'moon' && camSnap.selectedBodyId !== 'moon') {
+    if (camSnap.targetBodyId !== this.activeLandingBodyId && camSnap.selectedBodyId !== this.activeLandingBodyId) {
       this.landingPrep = null;
       this.landingController.cancelPreparation();
       return;
@@ -1889,7 +1918,7 @@ export class SolarEngine {
     if (prep.phase === 'lighting') {
       // 光照选时前置到准备阶段（用户已批准的推荐白昼取舍）；此后下降过程不再改时间。
       const before = this.simTimeHours;
-      this.ensureLandingLighting();
+      this.ensureLandingLighting(this.activeLandingBodyId, this.activeLandingSite.id);
       if (Math.abs(this.simTimeHours - before) > 1e-9) {
         this.lastLandingLightingAdjustHours = this.simTimeHours;
         this.emitSnapshot();
@@ -1898,16 +1927,19 @@ export class SolarEngine {
       return;
     }
     if (prep.phase === 'capture') {
-      // 资源门槛（DTM ready + 站点 measured-dem）——就绪前不捕获不开始
-      const site = LANDING_SITES['taurus-littrow'];
+      // 资源门槛（按天体路由的 DTM ready + 站点 measured-dem）——就绪前不捕获不开始
+      const site = this.activeLandingSite;
       const hp = TerrainHeightProvider.getInstance();
-      if (!hp.isRasterReady || hp.getHeightSample('moon', site.centerLat, site.centerLon).fidelity !== 'measured-dem') {
+      const dataReady = this.activeLandingBodyId === 'mars'
+        ? JezeroTerrainSource.getInstance().isReady
+        : hp.isRasterReady;
+      if (!dataReady || hp.getHeightSample(this.activeLandingBodyId, site.centerLat, site.centerLon).fidelity !== 'measured-dem') {
         return;
       }
       // 同帧完整起点：位置（地面投射 + 基准面净空 H）+ 姿态 q0 四元数（含滚转）。
       // P3b-B：clearance 一律 datum 口径（不扣地面高程）——规划无 DTM 窗口基准跳变；
       // 姿态导引在引擎侧以角速率受限收敛（见 animate DESCENDING 分支），不再传 yaw/pitch。
-      const groundPose = this.computeMoonGroundPose();
+      const groundPose = this.computeGroundPose(this.activeLandingBodyId);
       this.landingStartQuat = this.camera.quaternion.clone();
       this.landingGuidedQuat = this.camera.quaternion.clone();
       this.landingGuideActive = true;
@@ -1941,7 +1973,7 @@ export class SolarEngine {
     yawDeg: number,
     pitchDeg: number
   ): THREE.Quaternion {
-    const moonPose = this.getBodyWorldPose('moon');
+    const moonPose = this.getBodyWorldPose(this.activeLandingBodyId);
     const latRad = THREE.MathUtils.degToRad(latDeg);
     const lonRad = THREE.MathUtils.degToRad(lonDeg);
     const cosLat = Math.cos(latRad);
@@ -1966,7 +1998,7 @@ export class SolarEngine {
    * → yaw = atan2(f·e, f·n)，pitch = asin(f·u)。
    */
   private extractMoonSurfaceOrientation(latDeg: number, lonDeg: number): { yawDeg: number; pitchDeg: number } {
-    const moonPose = this.getBodyWorldPose('moon');
+    const moonPose = this.getBodyWorldPose(this.activeLandingBodyId);
     const latRad = THREE.MathUtils.degToRad(latDeg);
     const lonRad = THREE.MathUtils.degToRad(lonDeg);
     const cosLat = Math.cos(latRad);
@@ -2027,27 +2059,29 @@ export class SolarEngine {
   }
 
   /**
-   * 当前相机在月面 body-fixed 系下的地面投射与净空（用于下降起点连续）。
-   * P3b-B：clearanceM 为基准面净空 H =（镜头到月心距离 − 基准球半径），不扣地面
+   * 当前相机在天体 body-fixed 系下的地面投射与净空（用于下降起点连续）。
+   * P3b-B：clearanceM 为基准面净空 H =（镜头到天体中心距离 − 基准球半径），不扣地面
    * 高程——单腿以 datum 规划，跨 DTM 窗口边界无基准跳变（Pro §3.4）。
+   * S4c：按天体参数化（datum 取活动站点契约值；行星无逐帧缩放，卫星取世界有效半径）。
    */
-  private computeMoonGroundPose(): { latDeg: number; lonDeg: number; clearanceM: number } {
-    const moonPose = this.getBodyWorldPose('moon');
-    const rel = this.camera.position.clone().sub(moonPose.pos);
-    const local = rel.applyQuaternion(moonPose.quaternion.clone().invert());
+  private computeGroundPose(bodyId: BodyId): { latDeg: number; lonDeg: number; clearanceM: number } {
+    const bodyPose = this.getBodyWorldPose(bodyId);
+    const site = this.activeLandingSite;
+    const rel = this.camera.position.clone().sub(bodyPose.pos);
+    const local = rel.applyQuaternion(bodyPose.quaternion.clone().invert());
     const len = local.length();
     if (len < 1e-9) {
-      return { latDeg: 20.1, lonDeg: 30.5, clearanceM: 50000 };
+      return { latDeg: site.centerLat, lonDeg: site.centerLon, clearanceM: 50000 };
     }
     const latDeg = THREE.MathUtils.radToDeg(Math.asin(Math.max(-1, Math.min(1, local.y / len))));
     const lonDeg = THREE.MathUtils.radToDeg(Math.atan2(-local.z, local.x));
 
-    const datumM = 1737400;
-    const moonNode = this.bodyNodes.get('moon');
-    // 场景单位 → 米：物理观察下 satMesh 被缩放，取 mesh 世界有效半径
+    const datumM = site.datumRadiusKm * 1000;
+    const node = this.bodyNodes.get(bodyId);
+    // 场景单位 → 米：物理观察下卫星 mesh 被缩放，取 mesh 世界有效半径；行星恒 scale 1
     const sceneRadius =
-      moonNode && moonNode.mesh ? moonNode.displayRadius * moonNode.mesh.scale.x : moonNode?.displayRadius ?? 0.368;
-    const metersPerScene = sceneRadius > 0 ? datumM / sceneRadius : datumM / 0.368;
+      node && node.mesh ? node.displayRadius * node.mesh.scale.x : bodyPose.surfaceRadius;
+    const metersPerScene = sceneRadius > 0 ? datumM / sceneRadius : datumM / 1;
     const datumClearanceM = (len - sceneRadius) * metersPerScene;
     return { latDeg, lonDeg, clearanceM: datumClearanceM };
   }
@@ -2086,10 +2120,10 @@ export class SolarEngine {
    */
   private applyLandingFrame(deltaSec: number, positionFrozen: boolean): void {
     const traj = this.landingController.evaluateTrajectory();
-    const site = LANDING_SITES['taurus-littrow'];
+    const site = this.activeLandingSite;
     const hp = TerrainHeightProvider.getInstance();
 
-    const elevHere = hp.getHeightMeters('moon', traj.lat, traj.lon);
+    const elevHere = hp.getHeightMeters(this.activeLandingBodyId, traj.lat, traj.lon);
     const band = traj.datumAltitudeM - site.elevationDatumOffsetM;
     const w = smootherstep(Math.max(0, Math.min(1, (band - 500) / 2500)));
     const eyeHeightM = Math.max(
@@ -2131,7 +2165,7 @@ export class SolarEngine {
 
     this.cameraController.executeCommand({
       type: 'enterSurfaceLook',
-      bodyId: 'moon',
+      bodyId: this.activeLandingBodyId,
       lat: traj.lat,
       lon: traj.lon,
       eyeHeightM,
@@ -2550,6 +2584,41 @@ export class SolarEngine {
     this.renderer.render(this.scene, this.camera);
   }
 
+  /**
+   * S4c：火星地表尘色大气（示意层）。激活条件 = 火星 SURFACE_LOOK 或火星下降
+   * 任务进行中；指数平滑淡入淡出（跨态过渡无跳变）。天空 = 星图纹理乘尘色
+   * （MeshBasicMaterial.color 浸染，星星被洗入尘色背景）；地面 = 线性雾
+   * （Standard 材质，600m 起 / ~9km 全雾——地平线 3.4km 处明显尘化）。
+   * 退出火星地表即渐变回纯黑星空（月面语义不受影响）。
+   */
+  private updateMarsDustAtmosphere(deltaSec: number): void {
+    const snap = this.cameraController.getSnapshot();
+    const marsGround =
+      (snap.mode === 'SURFACE_LOOK' && (snap.targetBodyId === 'mars' || snap.selectedBodyId === 'mars')) ||
+      (this.landingController.getState() !== 'ORBIT' && this.activeLandingBodyId === 'mars');
+    const target = marsGround ? 1 : 0;
+    this.dustSkyMix += (target - this.dustSkyMix) * Math.min(1, deltaSec * 1.6);
+    const mix = this.dustSkyMix;
+
+    if (this.skyboxMesh) {
+      const mat = this.skyboxMesh.material as THREE.MeshBasicMaterial;
+      mat.color.copy(this.clearSkyColor).lerp(this.marsDustColor, mix);
+    }
+    if (mix > 0.02) {
+      const marsPose = this.getBodyWorldPose('mars');
+      const metersPerScene = JezeroTerrainSource.DATUM_RADIUS_M / Math.max(1e-9, marsPose.surfaceRadius);
+      if (!this.dustFog) {
+        this.dustFog = new THREE.Fog(this.marsDustColor.getHex());
+      }
+      this.dustFog.color.copy(this.marsDustColor);
+      this.dustFog.near = 600 * metersPerScene;
+      this.dustFog.far = (9000 * metersPerScene) / Math.max(0.4, mix); // 淡入期雾拉远，避免突变
+      this.scene.fog = this.dustFog;
+    } else if (this.dustFog && this.scene.fog === this.dustFog) {
+      this.scene.fog = null;
+    }
+  }
+
   private emitSnapshot(): void {
     if (this.callbacks.onCameraSnapshot) {
       this.callbacks.onCameraSnapshot(this.cameraController.getSnapshot());
@@ -2652,6 +2721,9 @@ export class SolarEngine {
       this.skyboxMesh.position.copy(this.camera.position);
     }
 
+    // S4c：火星地表尘色大气（示意层，见字段注释）；月面/轨道不受影响
+    this.updateMarsDustAtmosphere(deltaSec);
+
     // 着陆控制器生命周期驱动（R5 建立，P2 重写下降段，P3b-B 单腿连续轨迹 + 地平线投影姿态）
     // P1 修复：仅在本控制器刚刚完成"升空返轨"(ASCENDING -> ORBIT 边沿)时才收回 SURFACE_LOOK；
     // 书签恢复等外部进入的地表观察不被空闲的着陆状态机逐帧抢占 (用户保有控制权)
@@ -2702,14 +2774,14 @@ export class SolarEngine {
     ) {
       this.cameraController.executeCommand({
         type: 'flyTo',
-        bodyId: 'moon',
+        bodyId: this.activeLandingBodyId,
         durationSec: 1.5,
       });
     }
     if (landingState === 'SURFACE_LOOK' && this.prevLandingState === 'DESCENDING') {
       // B2（Pro §5.5）：接地边沿——从最终画面提取实际视线写入姿态基。
       // 不回填默认 225°/12°：SURFACE_LOOK 渲染基与下降末帧视线一致，无 SNAP。
-      const site = LANDING_SITES['taurus-littrow'];
+      const site = this.activeLandingSite;
       const orientation = this.extractMoonSurfaceOrientation(site.centerLat, site.centerLon);
       this.landingController.setSurfaceOrientation(orientation.yawDeg, orientation.pitchDeg);
       this.cameraController.executeCommand({
