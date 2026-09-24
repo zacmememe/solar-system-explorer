@@ -150,8 +150,8 @@ async function runR5Verification() {
           engine.executeCameraCommand({
             type: 'enterSurfaceLook',
             bodyId: 'moon',
-            lat: 20.35,
-            lon: 30.78,
+            lat: 20.2108,
+            lon: 30.7997,
             eyeHeightM: 1.7,
             initialYawDeg: 225.0,
             initialPitchDeg: 12.0,
@@ -266,8 +266,8 @@ async function runR5Verification() {
         targetSite: {
           id: 'taurus-littrow',
           name: '陶拉斯—利特罗山谷 · 虚拟降落',
-          centerLat: 20.35,
-          centerLon: 30.78,
+          centerLat: 20.2108,
+          centerLon: 30.7997,
           provenance: 'NASA LROC NAC DTM Apollo 17 / CGI Moon Kit (5m DEM Reference)',
         },
         stateTransitions: [
@@ -311,7 +311,7 @@ async function runR5Verification() {
 
     console.log('='.repeat(80));
     console.log('🎉 批次 R5 实机端到端验收全部通过！');
-    console.log(`- 目标落地点: 陶拉斯—利特罗山谷 (20.35°N, 30.78°E)`);
+    console.log(`- 目标落地点: 陶拉斯—利特罗山谷谷底平坦点 (20.2108°N, 30.7997°E)`);
     console.log(`- 地貌标定: 北/南断块山、雕刻丘、谷底平原 3D 浮雕与余弦裙边缝合`);
     console.log(`- 状态机流转: ORBIT -> DESCENDING -> HOLD -> RESUME -> SURFACE_LOOK -> ASCENDING -> ORBIT 完整闭环`);
     console.log(`- 月表仰望地球: 53.7° 仰角、1.90° 视圆盘成功定位`);

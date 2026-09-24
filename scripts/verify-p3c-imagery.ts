@@ -10,6 +10,7 @@
 import puppeteer from 'puppeteer-core';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
+import { LANDING_SITES } from '../src/contracts/landing';
 
 const TARGET_URL = process.env.TEST_URL || 'http://localhost:4173';
 const EDGE_PATH = process.env.EDGE_PATH || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
@@ -99,13 +100,14 @@ async function main() {
     { timeout: 30000 }
   );
   const st0 = await page.evaluate(() => (window as any).__solarEngine.getRegionalAlbedoStatus());
+  const site = LANDING_SITES['taurus-littrow'];
   record(
     'C1 WAC 层装载 + 溯源（官方产品/304ppd≈99.75m/边界含站点）',
     st0.ready === true &&
       st0.provenance?.sourceProduct === 'WAC_EMP_643NM_E300N0450_304P' &&
       Math.abs(st0.provenance.nativeSpacingMeters - 99.748) < 0.01 &&
-      st0.provenance.bounds.latMin < 20.35 && st0.provenance.bounds.latMax > 20.35 &&
-      st0.provenance.bounds.lonMin < 30.78 && st0.provenance.bounds.lonMax > 30.78,
+      st0.provenance.bounds.latMin < site.centerLat && st0.provenance.bounds.latMax > site.centerLat &&
+      st0.provenance.bounds.lonMin < site.centerLon && st0.provenance.bounds.lonMax > site.centerLon,
     st0
   );
   record('C2 裙边已换装同源 WAC（全球等距 UV 逆映射）', st0.collarSwapped === true, { collarSwapped: st0.collarSwapped });
@@ -128,11 +130,12 @@ async function main() {
   await page.evaluate(() => {
     const e = (window as any).__solarEngine;
     e.executeCameraCommand({
-      type: 'enterSurfaceLook', bodyId: 'moon', lat: 20.35, lon: 30.78,
+      // 谷底平坦站点（2026-09-24 迁址，与 LANDING_SITES 契约一致）
+      type: 'enterSurfaceLook', bodyId: 'moon', lat: 20.2108, lon: 30.7997,
       eyeHeightM: 250000, initialYawDeg: 0, initialPitchDeg: -35,
     });
   });
-  await waitFrames(1500); // 淡入窗口
+  await waitFrames(9000); // 缓显窗口（FADE_SEC=8s——P3b-D 用户反馈：亮区须渐显非突现）
   const nearStatus = await page.evaluate(() => (window as any).__solarEngine.getRegionalAlbedoStatus());
   record(
     'C3b 站点上空 250km：SSE 门控开启（WAC ≥0.3px/源像元 且父级明显更糊）',
@@ -165,7 +168,7 @@ async function main() {
   await page.evaluate(() => {
     const e = (window as any).__solarEngine;
     e.executeCameraCommand({
-      type: 'enterSurfaceLook', bodyId: 'moon', lat: 20.35, lon: 30.78,
+      type: 'enterSurfaceLook', bodyId: 'moon', lat: 20.2108, lon: 30.7997,
       eyeHeightM: 900000, initialYawDeg: 0, initialPitchDeg: -30,
     });
   });

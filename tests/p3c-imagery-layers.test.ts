@@ -61,11 +61,15 @@ describe('P3b-C：区域反照率层', () => {
     expect(meta.pixelsPerDegree).toBe(304);
     expect(meta.nativeSpacingMeters).toBeCloseTo(99.748, 1);
     expect(meta.displayTransform.gain).toBeGreaterThan(0);
-    // 边界包含站点 (20.35, 30.78) 与扩窗后 DEM 窗口（lat 20.152–20.548 / lon 30.57–30.99）
+    // 边界包含谷底站点 (20.2108, 30.7997) 与扩窗后 DEM 窗口（lat 20.152–20.548 / lon 30.57–30.99）
     expect(meta.bounds.latMin).toBeLessThan(20.152);
     expect(meta.bounds.latMax).toBeGreaterThan(20.548);
     expect(meta.bounds.lonMin).toBeLessThan(30.57);
     expect(meta.bounds.lonMax).toBeGreaterThan(30.99);
+    expect(meta.bounds.latMin).toBeLessThan(20.2108);
+    expect(meta.bounds.latMax).toBeGreaterThan(20.2108);
+    expect(meta.bounds.lonMin).toBeLessThan(30.7997);
+    expect(meta.bounds.lonMax).toBeGreaterThan(30.7997);
     expect(meta.albedoSha256).toMatch(/^[0-9a-f]{64}$/);
   });
 

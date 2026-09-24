@@ -15,6 +15,7 @@ import { TerrainHeightProvider } from '../src/surface/TerrainHeightProvider';
 import { RasterTerrainSource } from '../src/surface/RasterTerrainSource';
 import { LandingController } from '../src/surface/LandingController';
 import { CameraController } from '../src/camera/CameraController';
+import { LANDING_SITES } from '../src/contracts/landing';
 import {
   horizonDip,
   pitchForHorizonElevation,
@@ -55,11 +56,25 @@ describe('月球落地闭环测试 (真实 DTM 栅格后端)', () => {
     it('R5-01: 站点/窗口高程为实测值，窗外显式 datum-sphere 回退', () => {
       const provider = TerrainHeightProvider.getInstance();
 
-      // 站点双线性值与打包实测一致（LANDING_SITES 标定 -1690.9 m）
-      const siteSample = provider.getHeightSample('moon', 20.35, 30.78);
+      // 站点双线性值与打包实测一致（坐标/高程由 LANDING_SITES 契约给出——
+      // 2026-09-24 站点自 42° 山坡迁至谷底平坦点，契约值与 DEM 采样互证）
+      const site = LANDING_SITES['taurus-littrow'];
+      const siteSample = provider.getHeightSample('moon', site.centerLat, site.centerLon);
       expect(siteSample.fidelity).toBe('measured-dem');
       expect(siteSample.sourceId).toBe('NAC_DTM_APOLLO17');
-      expect(siteSample.heightM).toBeCloseTo(-1690.9, 0);
+      expect(siteSample.heightM).toBeCloseTo(site.elevationDatumOffsetM, 0);
+      // 站点局部平坦：四向 150m 采样高差 < 20m（谷底平坦点选址依据）
+      const dLat150 = (150 / 1737400) * (180 / Math.PI);
+      const dLon150 = (150 / (1737400 * Math.cos((20.2 * Math.PI) / 180))) * (180 / Math.PI);
+      const around = [
+        provider.getHeightSample('moon', site.centerLat + dLat150, site.centerLon),
+        provider.getHeightSample('moon', site.centerLat - dLat150, site.centerLon),
+        provider.getHeightSample('moon', site.centerLat, site.centerLon + dLon150),
+        provider.getHeightSample('moon', site.centerLat, site.centerLon - dLon150),
+      ];
+      for (const p of around) {
+        expect(Math.abs(p.heightM - site.elevationDatumOffsetM)).toBeLessThan(20);
+      }
 
       // 窗内数值在打包 metadata 的 min/max 范围内（P3b-C 扩窗后 [−2746.5, −646.9]）
       const inWin = provider.getHeightSample('moon', 20.36, 30.79);
@@ -80,14 +95,24 @@ describe('月球落地闭环测试 (真实 DTM 栅格后端)', () => {
       const provider = TerrainHeightProvider.getInstance();
       const moonBaseRadius = 0.36815;
 
-      // 谷底低于基准球（真实谷底 ~ -1113 m）
-      const sceneRadius = provider.getSceneSurfaceRadius('moon', 20.35, 30.78, moonBaseRadius);
+      // 谷底低于基准球（新站点谷底 −2641 m ≈ 半径的 0.152%——上界 0.999→0.998 随迁址放宽）
+      const sceneRadius = provider.getSceneSurfaceRadius(
+        'moon',
+        LANDING_SITES['taurus-littrow'].centerLat,
+        LANDING_SITES['taurus-littrow'].centerLon,
+        moonBaseRadius
+      );
       expect(sceneRadius).toBeLessThan(moonBaseRadius);
-      expect(sceneRadius).toBeGreaterThan(moonBaseRadius * 0.999);
+      expect(sceneRadius).toBeGreaterThan(moonBaseRadius * 0.998);
 
       // AGL 净空读数（相机在谷底上方 100m）
       const bodyPos = new THREE.Vector3(10, 0, 0);
-      const surfacePt = provider.latLonToVector3('moon', 20.35, 30.78, moonBaseRadius);
+      const surfacePt = provider.latLonToVector3(
+        'moon',
+        LANDING_SITES['taurus-littrow'].centerLat,
+        LANDING_SITES['taurus-littrow'].centerLon,
+        moonBaseRadius
+      );
       const normal = surfacePt.clone().normalize();
       const scene100m = 100.0 * (moonBaseRadius / TerrainHeightProvider.MOON_DATUM_RADIUS_M);
       const cameraPos = bodyPos.clone().add(surfacePt).addScaledVector(normal, scene100m);
@@ -160,8 +185,11 @@ describe('月球落地闭环测试 (真实 DTM 栅格后端)', () => {
       expect(controller.getState()).toBe('SURFACE_LOOK');
       const surfaceTelemetry = controller.getTelemetry();
       expect(surfaceTelemetry.altitudeAGLM).toBe(1.7);
-      // 站点 MSL = 真实 DEM 高程 + 眼高
-      expect(surfaceTelemetry.altitudeMSLM).toBeCloseTo(-1690.9 + 1.7, 0);
+      // 站点 MSL = 真实 DEM 高程 + 眼高（契约值驱动）
+      expect(surfaceTelemetry.altitudeMSLM).toBeCloseTo(
+        LANDING_SITES['taurus-littrow'].elevationDatumOffsetM + 1.7,
+        0
+      );
 
       // 6. 升空返轨
       controller.returnToOrbit();
@@ -241,11 +269,11 @@ describe('月球落地闭环测试 (真实 DTM 栅格后端)', () => {
       }
       expect(minTangential).toBeGreaterThan(0);
 
-      // 时长律：T = clamp(10+11·log10((50000−siteDatum)/100), 12, 55) ≈ 39.8s
-      // （site 终点 datum = −1690.9+1.7，落差 ≈ 51.7km → 10+11×2.713 ≈ 39.9s）
+      // 时长律：T = clamp(10+11·log10((50000−siteDatum)/100), 12, 55) ≈ 39.9s
+      // （新站点终点 datum = −2641.1+1.7，落差 ≈ 52.6km → 10+11×2.72 ≈ 39.9s）
     });
 
-    it('P3b-B-1b: 切向航向——起点(20.1,30.5)→站点(20.35,30.78) 东北向，方位角 ~48°', () => {
+    it('P3b-B-1b: 切向航向——起点(20.1,30.5)→谷底站点(20.2108,30.7997) 东北偏东向，方位角 ~68°', () => {
       const controller = new LandingController('taurus-littrow');
       controller.startDescent();
       controller.completePreparation(undefined, undefined, {
@@ -254,8 +282,8 @@ describe('月球落地闭环测试 (真实 DTM 栅格后端)', () => {
         clearanceM: 50000,
       });
       const first = controller.evaluateTrajectory();
-      expect(first.tangentHeadingDeg).toBeGreaterThan(40);
-      expect(first.tangentHeadingDeg).toBeLessThan(60);
+      expect(first.tangentHeadingDeg).toBeGreaterThan(60);
+      expect(first.tangentHeadingDeg).toBeLessThan(80);
       // 名义导引俯仰（FOV=45°、uTop=0.32）：50km 处 δ≈13.6° → pitch ≈ −22.1°
       expect(first.cameraPitchDeg!).toBeLessThan(-18);
       expect(first.cameraPitchDeg!).toBeGreaterThan(-28);
@@ -291,12 +319,13 @@ describe('月球落地闭环测试 (真实 DTM 栅格后端)', () => {
     });
 
     it('P3b-A-3: 对跖起点拒绝启动（不再 +1.5° 规避），普通路径不受影响', () => {
-      const controller = new LandingController('taurus-littrow'); // 站点 (20.35, 30.78)
+      const controller = new LandingController('taurus-littrow'); // 谷底站点 (20.2108, 30.7997)
       controller.startDescent();
+      const site = LANDING_SITES['taurus-littrow'];
       expect(() =>
         controller.completePreparation(undefined, undefined, {
-          latDeg: -20.35,
-          lonDeg: 30.78 - 180,
+          latDeg: -site.centerLat,
+          lonDeg: site.centerLon - 180,
           clearanceM: 50000,
         })
       ).toThrow(/antipodal/);

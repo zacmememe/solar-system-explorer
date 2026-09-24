@@ -17,6 +17,7 @@ import {
   directionLatLon,
 } from '../src/world-support/descentCurve';
 import { RasterTerrainSource } from '../src/surface/RasterTerrainSource';
+import { LANDING_SITES } from '../src/contracts/landing';
 
 const DEM_DIR = path.resolve('public/data/dem/apollo17-v1');
 const meta = JSON.parse(readFileSync(path.join(DEM_DIR, 'metadata.json'), 'utf-8'));
@@ -176,19 +177,21 @@ describe('P2 RasterTerrainSource 采样语义', () => {
     });
 
     it('三点数值锚点：站点与两个偏移点的双线性值与标定一致', () => {
-      // 站点（Apollo 17 着陆点）双线性值 -1690.9 m（整文件本地裁窗 + 远程交叉校验后标定）
-      const site = src.sampleHeight(20.35, 30.78);
+      // 站点双线性值与契约一致（坐标由 LANDING_SITES 给出——2026-09-24 迁至谷底平坦点
+      // (20.2108, 30.7997)，DEM 采样 −2641.1 m 与契约互证）
+      const siteDef = LANDING_SITES['taurus-littrow'];
+      const site = src.sampleHeight(siteDef.centerLat, siteDef.centerLon);
       expect(site.valid).toBe(true);
-      expect(site.heightM).toBeCloseTo(-1690.9, 1);
+      expect(site.heightM).toBeCloseTo(siteDef.elevationDatumOffsetM, 1);
       expect(site.fidelity).toBe('measured-dem');
 
       // 站点正东 +2 km 与正北 +2 km（窗口内）——记录值与打包数据一致即可（非编造常数）
       const R = 1737400,
         rad = Math.PI / 180;
       const dLat = (2000 / R) / rad;
-      const dLon = (2000 / (R * Math.cos(20.35 * rad))) / rad;
-      const east = src.sampleHeight(20.35, 30.78 + dLon);
-      const north = src.sampleHeight(20.35 + dLat, 30.78);
+      const dLon = (2000 / (R * Math.cos(siteDef.centerLat * rad))) / rad;
+      const east = src.sampleHeight(siteDef.centerLat, siteDef.centerLon + dLon);
+      const north = src.sampleHeight(siteDef.centerLat + dLat, siteDef.centerLon);
       expect(east.valid).toBe(true);
       expect(north.valid).toBe(true);
       // 数值在窗口实测范围内
@@ -197,7 +200,7 @@ describe('P2 RasterTerrainSource 采样语义', () => {
         expect(s.heightM).toBeLessThanOrEqual(meta.maximumHeightM + 0.5);
       }
       // 与文件直接读数一致：east/north 由独立公式算出像元后双线性
-      const pos = src.latLonToSourcePixel(20.35, 30.78);
+      const pos = src.latLonToSourcePixel(siteDef.centerLat, siteDef.centerLon);
       expect(pos.col).toBeGreaterThan(meta.window.colStart);
       expect(pos.row).toBeGreaterThan(meta.window.rowStart);
     });
@@ -233,8 +236,11 @@ describe('P2 RasterTerrainSource 采样语义', () => {
       const lonSpan = ((meta.width - 1) * 5) / (30325.7 * Math.cos((20.0 * Math.PI) / 180)); // 标准纬线 20°
       expect(b.latMax - b.latMin).toBeCloseTo(latSpan, 3);
       expect(b.lonMax - b.lonMin).toBeCloseTo(lonSpan, 3);
-      expect(b.latMin).toBeLessThan(20.35);
-      expect(b.latMax).toBeGreaterThan(20.35);
+      const siteDef = LANDING_SITES['taurus-littrow'];
+      expect(b.latMin).toBeLessThan(siteDef.centerLat);
+      expect(b.latMax).toBeGreaterThan(siteDef.centerLat);
+      expect(b.lonMin).toBeLessThan(siteDef.centerLon);
+      expect(b.lonMax).toBeGreaterThan(siteDef.centerLon);
     });
 
     it('正射纹理可构建且尺寸与 DEM 网格一致', () => {

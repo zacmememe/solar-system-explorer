@@ -92,10 +92,12 @@ export interface LandingTelemetry {
 /**
  * 预设着陆点列表
  * 首发第一站：月球陶拉斯—利特罗山谷 (Apollo 17 区域)
- * 高程字段取自真实 NAC DTM APOLLO17 窗口实测值（6×6 km 窗口，整文件本地裁窗 +
+ * 高程字段取自真实 NAC DTM APOLLO17 窗口实测值（12×12 km 窗口，整文件本地裁窗 +
  * 远程小范围独立读数交叉校验，2026-09-24）：
- * 站点双线性采样 −1690.9 m，窗口范围 [−2712.2, −878.2] m（相对 1737.4 km 参考球），
- * 谷地向东南下切加深（SW/SE 角约 −2585/−2687 m）。
+ * 站点双线性采样 −2641.1 m，窗口范围 [−2746.5, −646.9] m（相对 1737.4 km 参考球）。
+ * 2026-09-24 站点南移：原中心 (20.35, 30.78) 实测坡度 42°（位于谷缘山坡，触地视野
+ * 被山体遮挡）——按 DEM 坡度/视线开阔度扫描迁至谷底平坦点 (20.2108, 30.7997)
+ * （坡度 0.8°、200m 起伏 18m、2km 内无遮挡），距阿波罗 17 真实着陆点约 1km。
  */
 export const LANDING_SITES: Record<string, LandingSite> = {
   'taurus-littrow': {
@@ -107,11 +109,11 @@ export const LANDING_SITES: Record<string, LandingSite> = {
     description:
       '位于月球澄海东南边缘的狭长山谷，两侧耸立着高出谷底逾 2000 米的北断块山与南断块山，阿波罗 17 号任务曾在此着陆考察。',
     provenance: 'NASA LROC NAC DTM APOLLO17 v1.9 (5 m/px, PDS LRO-L-LROC-5-RDR-V1.0)',
-    centerLat: 20.35,
-    centerLon: 30.78,
+    centerLat: 20.2108,
+    centerLon: 30.7997,
     datumRadiusKm: 1737.4,
-    elevationDatumOffsetM: -1690.9, // 站点真实 DEM 双线性值 (2026-09-24 校验后数据)
-    elevationRangeM: [-2712.2, -878.2], // 6×6 km 窗口实测范围
+    elevationDatumOffsetM: -2641.1, // 站点真实 DEM 双线性值 (2026-09-24 谷底平坦点)
+    elevationRangeM: [-2746.5, -646.9], // 12×12 km 窗口实测范围
     lookTargetBodyId: 'earth',
   },
 };

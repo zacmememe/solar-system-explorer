@@ -7,8 +7,9 @@
  * 设计（Pro §6.3/6.4）：
  * - 环形网格：外缘 = WAC 裁窗边界（半径渐落回球面，几何无缝），内缘 = 挖孔球面
  *   孔边界（与裙边外缘共圈；裙边材质随后也换 WAC——同源影像、同照明模型）；
- * - 同一不透明表面混合：加载完成后 0.35s 时间域淡入；缺层时父级（全球图）兜底，
- *   不挖黑洞、不加透明壳；
+ * - 同一不透明表面混合：门控开启后约 8s 时间域缓显（smoothstep 成形）——高空接近段
+ *   月盘为夜侧暗面，亮地形随距离接近逐渐"显影"，避免触地前亮区突现（用户反馈
+ *   2026-09-24）；缺层时父级（全球图）兜底，不挖黑洞、不加透明壳；
  * - 显示口径由离线打包统一（增益匹配 NAC 正射、外缘羽化回底图）——运行时不做
  *   逐瓦片拉伸；
  * - SSE 门控用实际 drawingBuffer 与 FOV（见 screenSpaceMetrics），有迟滞。
@@ -32,7 +33,9 @@ export interface AlbedoLayerMeta {
   displayTransform: { gain: number };
 }
 
-const FADE_SEC = 0.35;
+/** 门控开启后的缓显时长：末段接近（门控开 ~361km → 触地）约 11s，8s 缓显让亮地形
+ *  随接近逐渐显影而非突现（用户反馈 2026-09-24：触地前黑暗→明亮过于突兀） */
+const FADE_SEC = 8;
 
 export class RegionalAlbedoLayer {
   private readonly baseRadius: number;
@@ -173,7 +176,9 @@ export class RegionalAlbedoLayer {
       }
       if (this.fadeT < 1) {
         this.fadeT = Math.min(1, this.fadeT + deltaSec / FADE_SEC);
-        this.material.opacity = this.fadeT;
+        // smoothstep 成形：起止更缓，中间段亮起（线性不透明度对"逐渐变亮"观感偏生硬）
+        const s = this.fadeT;
+        this.material.opacity = s * s * (3 - 2 * s);
         if (this.fadeT >= 1) {
           // 淡入完成回到不透明（Pro：同一不透明表面上混合）
           this.material.transparent = false;

@@ -18,6 +18,7 @@ import * as fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import { isValidBookmarkAnyVersion } from '../src/utils/bookmarkStorage';
 import { upgradeBookmarkToV3 } from '../src/contracts/bookmark';
+import { LANDING_SITES } from '../src/contracts/landing';
 
 const TARGET_URL = process.env.TEST_URL || 'http://localhost:4173';
 const EDGE_PATH = process.env.EDGE_PATH || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
@@ -140,10 +141,11 @@ async function main() {
 
   // ---------- 检查 2: 三点独立远程交叉校验 + 哈希 + 准入 ----------
   console.log('\n【检查 2】三点独立远程交叉校验（NASA 网关原始字节 vs 页面采样）…');
+  const siteDef = LANDING_SITES['taurus-littrow'];
   const anchors: Array<{ name: string; lat: number; lon: number }> = [
-    { name: 'Apollo17 站点', lat: 20.35, lon: 30.78 },
-    { name: '站点东 2km', lat: 20.35, lon: 30.78 + (2000 / (1737400 * Math.cos((20.35 * Math.PI) / 180))) * (180 / Math.PI) },
-    { name: '站点北 2km', lat: 20.35 + (2000 / 1737400) * (180 / Math.PI), lon: 30.78 },
+    { name: '谷底平坦站点', lat: siteDef.centerLat, lon: siteDef.centerLon },
+    { name: '站点东 2km', lat: siteDef.centerLat, lon: siteDef.centerLon + (2000 / (1737400 * Math.cos((siteDef.centerLat * Math.PI) / 180))) * (180 / Math.PI) },
+    { name: '站点北 2km', lat: siteDef.centerLat + (2000 / 1737400) * (180 / Math.PI), lon: siteDef.centerLon },
   ];
   const crossResults: Array<{ name: string; col: number; row: number; remote: number; packed: number; nodeBilinear: number; diffPacked: number }> = [];
   for (const a of anchors) {
@@ -233,7 +235,8 @@ async function main() {
   await page.evaluate(() => {
     const engine = (window as any).__solarEngine;
     engine.executeCameraCommand({
-      type: 'enterSurfaceLook', bodyId: 'moon', lat: 20.35, lon: 30.78,
+      // 谷底平坦站点（2026-09-24 迁址，与 LANDING_SITES 契约一致）
+      type: 'enterSurfaceLook', bodyId: 'moon', lat: 20.2108, lon: 30.7997,
       eyeHeightM: 1.7, initialYawDeg: 225, initialPitchDeg: 0,
     });
   });
@@ -270,7 +273,7 @@ async function main() {
   await page.evaluate(() => {
     const engine = (window as any).__solarEngine;
     engine.executeCameraCommand({
-      type: 'enterSurfaceLook', bodyId: 'moon', lat: 20.35, lon: 30.78,
+      type: 'enterSurfaceLook', bodyId: 'moon', lat: 20.2108, lon: 30.7997,
       eyeHeightM: 500, initialYawDeg: 225, initialPitchDeg: 0,
     });
   });
@@ -283,7 +286,7 @@ async function main() {
   record(
     'P2-WEB-04 500m 眼高画面（站点仍为真实 DEM 高程，视野地平线可见）',
     probe500.nonBlack / probe500.total >= 0.12 &&
-      Math.abs((pose500.heightM as number) + 1690.9) < 5 &&
+      Math.abs((pose500.heightM as number) - siteDef.elevationDatumOffsetM) < 5 &&
       pose500.eyeHeightM === 500,
     { ...probe500, ...pose500 }
   );
@@ -304,7 +307,7 @@ async function main() {
       var local = cam.worldToLocal(new T.Vector3(earth.pos.x, earth.pos.y, earth.pos.z)).normalize();
       return (Math.asin(Math.max(-1, Math.min(1, local.y))) * 180) / Math.PI;
     }
-    return { nearSide: earthElevAt(20.35, 30.78), farSide: earthElevAt(20.35, -149.22) };
+    return { nearSide: earthElevAt(20.2108, 30.7997), farSide: earthElevAt(-20.2108, 30.7997 - 180) };
   })()`)) as { nearSide: number; farSide: number };
   record(
     'P2-WEB-05 近侧站点地球在地平线上、背侧站点在地平线下（P1 潮汐锁向修正的两侧语义）',
@@ -364,11 +367,26 @@ async function main() {
     holdPhases.length === 3 &&
       finalTm.state === 'SURFACE_LOOK' &&
       Math.abs(finalTm.altitudeAGLM - 1.7) < 0.01 &&
-      Math.abs(finalTm.altitudeMSLM + 1689.2) < 5 &&
+      Math.abs(finalTm.altitudeMSLM - (siteDef.elevationDatumOffsetM + 1.7)) < 5 &&
       finalTm.terrain?.fidelity === 'measured-dem',
     { holdPhases, touchdown: finalTm }
   );
   await saveScreenshot('82-p2-touchdown-dtm.png');
+
+  // ---------- 检查 6b: 谷底平坦站点四向环顾（P3b-D 用户反馈：平坦、无近距遮挡） ----------
+  // 触地时刻光照已调整（站点白昼）——四向 1.7m 眼高视野证明可环顾四周地貌
+  for (const [name, yaw] of [['n', 0], ['e', 90], ['s', 180], ['w', 270]] as const) {
+    await page.evaluate((y: number) => {
+      const engine = (window as any).__solarEngine;
+      engine.executeCameraCommand({
+        type: 'enterSurfaceLook', bodyId: 'moon',
+        lat: 20.2108, lon: 30.7997,
+        eyeHeightM: 1.7, initialYawDeg: y, initialPitchDeg: 0,
+      });
+    }, yaw);
+    await new Promise((r) => setTimeout(r, 700));
+    await saveScreenshot(`82-p3d-site-look-${name}.png`);
+  }
 
   // 返轨
   await page.click('[data-testid="landing-btn-return-orbit"]');
@@ -438,7 +456,7 @@ async function main() {
     const engine = (window as any).__solarEngine;
     engine.setSimTimeHours(0);
     engine.executeCameraCommand({
-      type: 'enterSurfaceLook', bodyId: 'moon', lat: 20.35, lon: 30.78,
+      type: 'enterSurfaceLook', bodyId: 'moon', lat: 20.2108, lon: 30.7997,
       eyeHeightM: 1.7, initialYawDeg: 225, initialPitchDeg: 8,
     });
   });
@@ -471,13 +489,13 @@ async function main() {
     return { heightM: p?.station?.heightM, eye: p?.station?.eyeHeightM, lat: p?.station?.latDeg, lon: p?.station?.lonDeg };
   });
   record(
-    'P2-WEB-08 书签恢复后站点高程为真实 DTM 值 (≈−1690.9m)',
+    'P2-WEB-08 书签恢复后站点高程为真实 DTM 值（≈−2641.1m，谷底平坦点）',
     bmValid &&
       bmRound.schemaVersion === 3 &&
-      Math.abs((restored2.heightM as number) + 1690.9) < 5 &&
+      Math.abs((restored2.heightM as number) - siteDef.elevationDatumOffsetM) < 5 &&
       restored2.eye === 1.7 &&
-      restored2.lat === 20.35 &&
-      restored2.lon === 30.78,
+      Math.abs((restored2.lat as number) - siteDef.centerLat) < 1e-9 &&
+      Math.abs((restored2.lon as number) - siteDef.centerLon) < 1e-9,
     { bmValid, sourceVersion: bmRound.sourceVersion, ...restored2 }
   );
   await saveScreenshot('83-p2-bookmark-restored-dtm.png');
