@@ -1,0 +1,42 @@
+{
+ "state": "admitted-2026-09-24-mola-3point-dual-channel-crosscheck",
+ "evidence": {
+  "points": [
+   {
+    "name": "站点",
+    "lat": -2.06,
+    "lon": 354.5,
+    "hiriseM": -1404.6,
+    "molaM": -1390.1,
+    "diffM": 14.5,
+    "source": "MGS-M-MOLA-5-MEGDR-L3-V1.0 megt00n270hb（南带分片独立下载；pack-hirise-site 与 pack-mola-l1-south 两打包通道数值一致复现）"
+   },
+   {
+    "name": "站点东 2km",
+    "lat": -2.06,
+    "lon": 354.53376302966905,
+    "hiriseM": -1389.5,
+    "molaM": -1378.7,
+    "diffM": 10.8,
+    "source": "MGS-M-MOLA-5-MEGDR-L3-V1.0 megt00n270hb（南带分片独立下载；pack-hirise-site 与 pack-mola-l1-south 两打包通道数值一致复现）"
+   },
+   {
+    "name": "站点北 2km",
+    "lat": -2.0262587902837694,
+    "lon": 354.5,
+    "hiriseM": -1375,
+    "molaM": -1379,
+    "diffM": -4,
+    "source": "MGS-M-MOLA-5-MEGDR-L3-V1.0 megt00n270hb（南带分片独立下载；pack-hirise-site 与 pack-mola-l1-south 两打包通道数值一致复现）"
+   }
+  ],
+  "heightSha256": "05859abd2439fe7c67aba5c02fed7457ecd09175e8ff68fb57e469893c64fc88",
+  "validSha256": "56d077c3ed17c64a079fad26b5873fb09ac453e24a0469a865328145657870b1",
+  "visualRegistrationScreenshots": [
+   "s5-mars-vic-touchdown.png",
+   "s5-mars-vic-alt60m-oblique.png",
+   "s5-mars-vic-alt6km-down.png"
+  ],
+  "note": "MOLA MEGDR 128ppd（463m/px 激光高度计，GMM3 areoid）对 HiRISE DTM（2m 受控立体，Mars 2000 areoid）独立跨产品校验：三锚点 |diff|≤14.5m，463m/px 网格量级内闭合；LBL 投影反解（CLAT0 南带产品 datum 3396190，col=23039.5+(lon−180)·128）双通道互证。窗内 15.457% DTM 立体空洞已做邻域扩散填充（示意插值，valid.u8 保留实测格标记，metadata 如实计数）。像素级曝光/雾核验：exposure 2.805、fog c9a67e、触地地面 RGB(201,166,126)；下降流探针遥测 sourceId=victoria-hirise-v1、fidelity=measured-dem。"
+ }
+}

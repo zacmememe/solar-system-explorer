@@ -1,0 +1,42 @@
+{
+ "state": "admitted-2026-09-24-mola-3point-crosscheck-smoothing-bias-documented",
+ "evidence": {
+  "points": [
+   {
+    "name": "站点",
+    "lat": -4.95,
+    "lon": 137.39,
+    "hiriseM": -2710.6,
+    "molaM": -2648.8,
+    "diffM": 61.8,
+    "source": "MGS-M-MOLA-5-MEGDR-L3-V1.0 megt00n090hb（南带分片独立下载；pack-hirise-site 与 pack-mola-l1-south 两打包通道数值一致复现）"
+   },
+   {
+    "name": "站点东 2km",
+    "lat": -4.95,
+    "lon": 137.42386752282547,
+    "hiriseM": -2452.8,
+    "molaM": -2358.7,
+    "diffM": 94.1,
+    "source": "MGS-M-MOLA-5-MEGDR-L3-V1.0 megt00n090hb（南带分片独立下载；pack-hirise-site 与 pack-mola-l1-south 两打包通道数值一致复现）"
+   },
+   {
+    "name": "站点北 2km",
+    "lat": -4.91625879028377,
+    "lon": 137.39,
+    "hiriseM": -2887.1,
+    "molaM": -2772.9,
+    "diffM": 114.2,
+    "source": "MGS-M-MOLA-5-MEGDR-L3-V1.0 megt00n090hb（南带分片独立下载；pack-hirise-site 与 pack-mola-l1-south 两打包通道数值一致复现）"
+   }
+  ],
+  "heightSha256": "f9107dca46b8cbc213c82f67da668246223505183c71341e508a15430aaedccb",
+  "validSha256": "0ffbeae0a7e5e2658fe0f485bb1005750dcd9137ad3599b050124ff1cca62935",
+  "visualRegistrationScreenshots": [
+   "s5-mars-gale-touchdown.png",
+   "s5-mars-gale-alt60m-oblique.png",
+   "s5-mars-gale-alt6km-down.png"
+  ],
+  "note": "MOLA 三锚点差 +61.8/+94.1/+114.2m——方向与幅度同 Murray Buttes 孤峰陡峭地形下 463m/px MOLA 插值网格的系统性平滑偏差一致（HiRISE 采到峰间谷底真实低值，MOLA 网格混合了周边高地），非源数据错误；两打包通道数值一致复现。DTM 为 NASA 受控立体产品且窗内 100% 有效。触地画面为逆光构图：岩塔背光面接近全黑（目检清单已登记：显示层环境光下限属后续打磨项，非本轮范围）；6km 俯瞰三级 LOD 与饱和度裙圈正常。下降流探针遥测 sourceId=gale-hirise-v1、fidelity=measured-dem。"
+ }
+}

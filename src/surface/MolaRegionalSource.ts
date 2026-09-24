@@ -116,6 +116,9 @@ export class MolaRegionalSource {
   public sampleHeight(latDeg: number, lonDeg: number): { heightM: number } | null {
     if (!this.meta || !this.dNs) return null;
     const ppd = this.meta.projection.pixelsPerDegree;
+    // 像素中心注册：窗口像素 j 的中心（全球连续坐标）= colStart + j。
+    // 两代打包统一此约定——jezero 北带 colStart=9266（整数），南带 X.5（非整数，
+    // tileColBase 带 .5 的分片西缘直接换算，勿取整——S5-6 勘误）
     const fc = 23039.5 + (lonDeg - 180) * ppd - this.meta.window.colStart;
     const fr = 11519.5 - latDeg * ppd - this.meta.window.rowStart;
     const c0 = Math.floor(fc), r0 = Math.floor(fr);

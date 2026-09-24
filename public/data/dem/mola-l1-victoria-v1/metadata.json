@@ -1,0 +1,67 @@
+{
+ "schemaVersion": 2,
+ "admissionState": "requires-source-and-registration-review",
+ "fidelityClaim": "measured-dem",
+ "sourceUrl": "https://pds-geosciences.wustl.edu/mgs/mgs-m-mola-5-megdr-l3-v1/mgsl_300x/meg128/megt00n270hb.img",
+ "sourceLabelUrl": "https://pds-geosciences.wustl.edu/mgs/mgs-m-mola-5-megdr-l3-v1/mgsl_300x/meg128/megt00n270hb.lbl",
+ "sourceFile": "megt00n270hb.img",
+ "sourceFileSha256": "074356eea72882c0560f2c15f4466d01fd6b18b57decb419fb96878154dd7b29",
+ "sourceVersion": "MGS-M-MOLA-5-MEGDR-L3-V1.0 PRODUCT_VERSION_ID 2.0 (2003-03-21)，16 分片全球镶嵌 128ppd",
+ "licenseNote": "NASA MGS MOLA PDS 公共数据（Goddard Space Flight Center 制作，PDS Geosciences Node 分发）",
+ "verticalDatum": "行星半径 − GMM3(mgm1025) areoid；MSB int16 米（打包转 int16-le 1m/DN）",
+ "nativeSpacingMeters": 463,
+ "width": 1292,
+ "height": 724,
+ "projection": {
+  "type": "SIMPLE_CYLINDRICAL",
+  "coordinateSystem": "PLANETOCENTRIC",
+  "positiveLongitude": "EAST",
+  "referenceRadiusM": 3396000,
+  "centerLatitudeDeg": 0,
+  "centerLongitudeDeg": 180,
+  "pixelsPerDegree": 128,
+  "note": "分片 megt00n*（0..-44°）；注册与 LOLA/北带同构：col=23039.5+(lon−180)·128，vRow=11519.5−lat·128"
+ },
+ "window": {
+  "colStart": 44729.5,
+  "rowStart": 11525.5,
+  "width": 1292,
+  "height": 724
+ },
+ "windowNote": "Victoria L1 窗（北缘截 0° 分片界，不对称窗——窗外由边界裙边回落球面）",
+ "minimumHeightM": -3009,
+ "maximumHeightM": -259,
+ "heightSha256": "8c125c19cac5857a42e982a96b0b13cd9d210951ace997e766e28112aeb70647",
+ "encoding": {
+  "dtype": "int16-le",
+  "scaleMetersPerDn": 1
+ },
+ "crosscheckHiriseDtm": {
+  "anchors": [
+   {
+    "name": "站点",
+    "lat": -2.06,
+    "lon": 354.5,
+    "molaM": -1390.1,
+    "hiriseM": -1404.6,
+    "diffM": 14.5
+   },
+   {
+    "name": "站点东 2km",
+    "lat": -2.06,
+    "lon": 354.53376302966905,
+    "molaM": -1378.7,
+    "hiriseM": -1389.5,
+    "diffM": 10.8
+   },
+   {
+    "name": "站点北 2km",
+    "lat": -2.0262587902837694,
+    "lon": 354.5,
+    "molaM": -1379,
+    "hiriseM": -1375,
+    "diffM": -4
+   }
+  ]
+ }
+}

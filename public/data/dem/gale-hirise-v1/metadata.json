@@ -1,0 +1,98 @@
+{
+ "schemaVersion": 2,
+ "admissionState": "requires-source-and-registration-review",
+ "fidelityClaim": "measured-dem",
+ "sourceUrl": "https://uahirise.org/PDS/DTM/ESP/ORB_019600_019699/ESP_019698_1750_ESP_019988_1750/DTEEC_019698_1750_019988_1750_U01.IMG",
+ "orthoSourceUrl": "https://uahirise.org/PDS/DTM/ESP/ORB_019600_019699/ESP_019698_1750_ESP_019988_1750/ESP_019698_1750_RED_A_01_ORTHO.JP2",
+ "sourceFile": "DTEEC_019698_1750_019988_1750_U01.IMG",
+ "sourceFileSha256": "27d77e3c27aaa570226946fe55c5a2a219ba527b78f3f812b57371b28a84b1a3",
+ "sourceVersion": "MRO-M-HIRISE-5-DTM-V1.0 attached PDS3 label",
+ "licenseNote": "NASA MRO HiRISE PDS 公共数据（University of Arizona / USGS-Astrogeology 制作）",
+ "verticalDatum": "Mars 2000 areoid（Smith et al. 2001），米；PC_REAL float32",
+ "nativeSpacingMeters": 1.0117467946,
+ "width": 2000,
+ "height": 2750,
+ "windowSizeM": [
+  4000,
+  5500
+ ],
+ "stepMeters": 2,
+ "projection": {
+  "type": "EQUIRECTANGULAR",
+  "coordinateSystem": "PLANETOCENTRIC",
+  "positiveLongitude": "EAST",
+  "referenceRadiusM": 3396190,
+  "centerLatitudeDeg": 0,
+  "centerLongitudeDeg": 137.38,
+  "note": "源像元映射（LBL 反解）：lat=(LPO−line)/RES，lon=CL+(sample−SPO)/(RES·cos0°)；LPO=-277061.50000001/SPO=3971.5000000002/RES=58586.494013 px/deg；打包网格为站点局部米制（经度按站点纬度 cos 收缩），首像素中心=窗口边界内缩半步"
+ },
+ "site": {
+  "centerLat": -4.95,
+  "centerLon": 137.39,
+  "name": "Gale (Murray Buttes)",
+  "flatPointSuggestion": {
+   "d": 316.22776601683796,
+   "lat": -4.944939,
+   "lon": 137.388307,
+   "slope": 1.44,
+   "hM": -2745
+  }
+ },
+ "minimumHeightM": -3188.4,
+ "maximumHeightM": -2275.4,
+ "heightSha256": "f9107dca46b8cbc213c82f67da668246223505183c71341e508a15430aaedccb",
+ "validSha256": "0ffbeae0a7e5e2658fe0f485bb1005750dcd9137ad3599b050124ff1cca62935",
+ "orthoSha256": "2fb49667bffc25a9cfd26a3035183a7a6449bc269f84d7b34c6b52c876c94313",
+ "orthoEncoding": {
+  "format": "jpeg-gray",
+  "stepMeters": 1
+ },
+ "anchors": [
+  {
+   "name": "站点",
+   "lat": -4.95,
+   "lon": 137.39,
+   "hM": -2710.6
+  },
+  {
+   "name": "站点东 2km",
+   "lat": -4.95,
+   "lon": 137.42386752282547,
+   "hM": -2452.8
+  },
+  {
+   "name": "站点北 2km",
+   "lat": -4.91625879028377,
+   "lon": 137.39,
+   "hM": -2887.1
+  }
+ ],
+ "missingDataNote": "有效掩码 0 格无效（窗内实测 0.000%）",
+ "crosscheckMola": [
+  {
+   "name": "站点",
+   "lat": -4.95,
+   "lon": 137.39,
+   "hM": -2710.6,
+   "molaM": -2648.8,
+   "diffM": 61.8
+  },
+  {
+   "name": "站点东 2km",
+   "lat": -4.95,
+   "lon": 137.42386752282547,
+   "hM": -2452.8,
+   "molaM": -2358.7,
+   "diffM": 94.1
+  },
+  {
+   "name": "站点北 2km",
+   "lat": -4.91625879028377,
+   "lon": 137.39,
+   "hM": -2887.1,
+   "molaM": -2772.9,
+   "diffM": 114.2
+  }
+ ],
+ "crosscheckNote": "标签反解映射 + MOLA MEGDR 128ppd 三锚点独立交叉（分片 megt00n090hb.img）；admission 待实机目视配准验收"
+}

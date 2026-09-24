@@ -38,6 +38,10 @@ export class TerrainHeightProvider {
   private moonRasters: Map<string, RasterTerrainSource> = new Map([['taurus-littrow', this.raster]]);
   private activeMoonSiteId = 'taurus-littrow';
 
+  // S5-6：火星多站点栅格注册表（镜像月面；默认站 jezero 即单例）
+  private marsRasters: Map<string, JezeroTerrainSource> = new Map([['jezero', this.jezero]]);
+  private activeMarsSiteId = 'jezero';
+
   /** S5-3：登记月面站点的栅格源（引擎建栈时调用；可同时设为激活站） */
   public registerMoonRaster(siteId: string, raster: RasterTerrainSource, makeActive = false): void {
     this.moonRasters.set(siteId, raster);
@@ -53,10 +57,25 @@ export class TerrainHeightProvider {
     return this.moonRasters.get(this.activeMoonSiteId) ?? this.raster;
   }
 
+  /** S5-6：登记火星站点的栅格源（引擎建栈时调用；可同时设为激活站） */
+  public registerMarsRaster(siteId: string, dtm: JezeroTerrainSource, makeActive = false): void {
+    this.marsRasters.set(siteId, dtm);
+    if (makeActive) this.activeMarsSiteId = siteId;
+  }
+
+  /** S5-6：切换激活火星站（高程查询/准入态/collar 几何构建路由目标） */
+  public setActiveMarsSite(siteId: string): void {
+    if (this.marsRasters.has(siteId)) this.activeMarsSiteId = siteId;
+  }
+
+  public activeMarsRaster(): JezeroTerrainSource {
+    return this.marsRasters.get(this.activeMarsSiteId) ?? this.jezero;
+  }
+
   /** 天体的基准球半径（米）——高程→场景单位的换算分母 */
   private datumRadiusMFor(bodyId: BodyId): number {
     if (bodyId === 'moon') return TerrainHeightProvider.MOON_DATUM_RADIUS_M;
-    if (bodyId === 'mars') return TerrainHeightProvider.MARS_DATUM_RADIUS_M;
+    if (bodyId === 'mars') return this.activeMarsRaster().datumRadius; // S5-6：按激活站产品局部球
     return 6371000.0;
   }
 
@@ -73,7 +92,7 @@ export class TerrainHeightProvider {
    * 调用方需区分两者时应使用 getHeightSample 获取 fidelity/溯源。
    */
   public getHeightMeters(bodyId: BodyId, lat: number, lon: number): number {
-    if (bodyId === 'mars') return this.jezero.sampleHeight(lat, lon).heightM; // S4b：Jezero 窗
+    if (bodyId === 'mars') return this.activeMarsRaster().sampleHeight(lat, lon).heightM; // S5-6：按激活站路由
     if (bodyId !== 'moon') return 0; // 其他天体暂无本地 DTM
     return this.activeMoonRaster().sampleHeight(lat, lon).heightM;
   }
@@ -81,9 +100,10 @@ export class TerrainHeightProvider {
   /** 带溯源的高程采样：measured-dem（真实 DTM）或 datum-sphere（基准球回退） */
   public getHeightSample(bodyId: BodyId, lat: number, lon: number): TerrainHeightSample {
     if (bodyId === 'mars') {
-      const s = this.jezero.sampleHeight(lat, lon);
+      const dtm = this.activeMarsRaster();
+      const s = dtm.sampleHeight(lat, lon);
       if (s.valid) {
-        return { valid: true, heightM: s.heightM, fidelity: 'measured-dem', sourceId: 'jezero-hirise-v1' };
+        return { valid: true, heightM: s.heightM, fidelity: 'measured-dem', sourceId: dtm.sourceId };
       }
       if (s.reason === 'not-loaded') {
         return { valid: false, heightM: 0, fidelity: null, sourceId: null, reason: 'not-loaded' };
@@ -113,7 +133,10 @@ export class TerrainHeightProvider {
   /** S4c：按天体路由的地形准入态（HUD 遥测如实标注；非落地天体报 unavailable） */
   public getAdmissionState(bodyId: BodyId): string {
     if (bodyId === 'moon') return this.activeMoonRaster().terrainAdmissionState;
-    if (bodyId === 'mars') return this.jezero.metaReady ? this.jezero.admissionState : 'unavailable';
+    if (bodyId === 'mars') {
+      const dtm = this.activeMarsRaster(); // S5-6：按激活站路由
+      return dtm.metaReady ? dtm.admissionState : 'unavailable';
+    }
     return 'unavailable';
   }
 
@@ -348,7 +371,7 @@ export class TerrainHeightProvider {
     const raster = this.activeMoonRaster();
     const wb =
       bodyId === 'mars'
-        ? this.jezero.windowBounds
+        ? this.activeMarsRaster().windowBounds // S5-6：按激活站（mars collar 走本站 DTM 窗）
         : raster.isReady
           ? raster.windowBounds
           : null;

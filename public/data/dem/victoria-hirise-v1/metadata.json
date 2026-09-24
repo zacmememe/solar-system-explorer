@@ -1,0 +1,98 @@
+{
+ "schemaVersion": 2,
+ "admissionState": "requires-source-and-registration-review",
+ "fidelityClaim": "measured-dem",
+ "sourceUrl": "https://uahirise.org/PDS/DTM/ESP/ORB_021700_021799/ESP_021747_1780_ESP_022380_1780/DTEEC_021747_1780_022380_1780_U01.IMG",
+ "orthoSourceUrl": "https://uahirise.org/PDS/DTM/ESP/ORB_021700_021799/ESP_021747_1780_ESP_022380_1780/ESP_021747_1780_RED_A_01_ORTHO.JP2",
+ "sourceFile": "DTEEC_021747_1780_022380_1780_U01.IMG",
+ "sourceFileSha256": "fff4d38a5aecde26a39a7762299fa42c7809963d6e4eff60c5e1eaa9def55f47",
+ "sourceVersion": "MRO-M-HIRISE-5-DTM-V1.0 attached PDS3 label",
+ "licenseNote": "NASA MRO HiRISE PDS 公共数据（University of Arizona / USGS-Astrogeology 制作）",
+ "verticalDatum": "Mars 2000 areoid（Smith et al. 2001），米；PC_REAL float32",
+ "nativeSpacingMeters": 1.0118528507,
+ "width": 2000,
+ "height": 2750,
+ "windowSizeM": [
+  4000,
+  5500
+ ],
+ "stepMeters": 2,
+ "projection": {
+  "type": "EQUIRECTANGULAR",
+  "coordinateSystem": "PLANETOCENTRIC",
+  "positiveLongitude": "EAST",
+  "referenceRadiusM": 3396190,
+  "centerLatitudeDeg": 0,
+  "centerLongitudeDeg": 354.52,
+  "note": "源像元映射（LBL 反解）：lat=(LPO−line)/RES，lon=CL+(sample−SPO)/(RES·cos0°)；LPO=-113232.50000001/SPO=3330.5/RES=58580.35334221 px/deg；打包网格为站点局部米制（经度按站点纬度 cos 收缩），首像素中心=窗口边界内缩半步"
+ },
+ "site": {
+  "centerLat": -2.06,
+  "centerLon": 354.5,
+  "name": "Victoria (Duck Bay)",
+  "flatPointSuggestion": {
+   "d": 100,
+   "lat": -2.061687,
+   "lon": 354.5,
+   "slope": 0.54,
+   "hM": -1376.1
+  }
+ },
+ "minimumHeightM": -1443.8,
+ "maximumHeightM": -1364.9,
+ "heightSha256": "05859abd2439fe7c67aba5c02fed7457ecd09175e8ff68fb57e469893c64fc88",
+ "validSha256": "56d077c3ed17c64a079fad26b5873fb09ac453e24a0469a865328145657870b1",
+ "orthoSha256": "50d5c5f74b2a42cacac24eec4b72c7d52ef1527ef73303193314aec379b13350",
+ "orthoEncoding": {
+  "format": "jpeg-gray",
+  "stepMeters": 1
+ },
+ "anchors": [
+  {
+   "name": "站点",
+   "lat": -2.06,
+   "lon": 354.5,
+   "hM": -1404.6
+  },
+  {
+   "name": "站点东 2km",
+   "lat": -2.06,
+   "lon": 354.53376302966905,
+   "hM": -1389.5
+  },
+  {
+   "name": "站点北 2km",
+   "lat": -2.0262587902837694,
+   "lon": 354.5,
+   "hM": -1375
+  }
+ ],
+ "missingDataNote": "有效掩码 850115 格无效（窗内实测 15.457%）；渲染高度场已对空洞做邻域扩散填充 850115 格（示意插值，valid.u8 仍标记实测格）",
+ "crosscheckMola": [
+  {
+   "name": "站点",
+   "lat": -2.06,
+   "lon": 354.5,
+   "hM": -1404.6,
+   "molaM": -1390.1,
+   "diffM": 14.5
+  },
+  {
+   "name": "站点东 2km",
+   "lat": -2.06,
+   "lon": 354.53376302966905,
+   "hM": -1389.5,
+   "molaM": -1378.7,
+   "diffM": 10.8
+  },
+  {
+   "name": "站点北 2km",
+   "lat": -2.0262587902837694,
+   "lon": 354.5,
+   "hM": -1375,
+   "molaM": -1379,
+   "diffM": -4
+  }
+ ],
+ "crosscheckNote": "标签反解映射 + MOLA MEGDR 128ppd 三锚点独立交叉（分片 megt00n270hb.img）；admission 待实机目视配准验收"
+}

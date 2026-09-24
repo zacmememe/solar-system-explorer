@@ -1,10 +1,12 @@
 /**
- * Jezero HiRISE 地形/影像源（P3-S4b，火星第一站）
+ * 火星 HiRISE 地形/影像源（P3-S4b 耶泽罗首站；S5-6 参数化多站）
  *
- * 数据：public/data/dem/jezero-hirise-v1/（离线打包自 MRO-M-HIRISE-5-DTM-V1.0
- * 受控立体 DTM+正射；见 metadata.json 全溯源与 crosscheckNote）。
- * 网格：站点居中局部米制（4×5.5km @2m，正射 1m），窗内 100% 有效。
- * 高程：Mars 2000 areoid（米）；datum 球半径 = 产品等距圆柱局部球 3394839.8133163m。
+ * 数据：public/data/dem/{jezero|victoria|gale}-hirise-v1/（离线打包自
+ * MRO-M-HIRISE-5-DTM-V1.0 受控立体 DTM+正射；见 metadata.json 全溯源）。
+ * 网格：站点居中局部米制（4×5.5km @2m，正射 1m）。
+ * 高程：Mars 2000 areoid（米）；datum 球半径 = 产品等距圆柱局部球
+ * （jezero 3394839.8m/CLAT15；S5-6 两站 3396190m/CLAT0）——装载时从
+ * metadata.projection.referenceRadiusM 读取，勿跨站混用。
  */
 import * as THREE from 'three';
 
@@ -16,6 +18,7 @@ interface JezeroMeta {
   sourceVersion: string;
   licenseNote: string;
   verticalDatum: string;
+  projection?: { referenceRadiusM?: number };
   width: number;
   height: number;
   windowSizeM: [number, number];
@@ -34,9 +37,19 @@ export class JezeroTerrainSource {
   public static readonly BASE_URL = '/data/dem/jezero-hirise-v1';
   public static readonly DATUM_RADIUS_M = 3394839.8133163;
   private static _instance: JezeroTerrainSource | null = null;
+
+  /** S5-6：多站实例（默认站 jezero 用单例；其他站 new 出独立实例） */
+  constructor(public readonly siteId: string = 'jezero', public readonly sourceId: string = 'jezero-hirise-v1') {}
+
   public static getInstance(): JezeroTerrainSource {
     if (!this._instance) this._instance = new JezeroTerrainSource();
     return this._instance;
+  }
+
+  /** 本站 datum 球半径（米）——装载前为 jezero 默认，装载后取 metadata 投影值 */
+  private datumRadiusM: number = JezeroTerrainSource.DATUM_RADIUS_M;
+  public get datumRadius(): number {
+    return this.datumRadiusM;
   }
 
   private loadPromise: Promise<void> | null = null;
@@ -69,7 +82,7 @@ export class JezeroTerrainSource {
   public get windowBounds(): { latMin: number; latMax: number; lonMin: number; lonMax: number } | null {
     if (!this.meta) return null;
     const { centerLat, centerLon } = this.meta.site;
-    const mPerDeg = JezeroTerrainSource.DATUM_RADIUS_M * Math.PI / 180;
+    const mPerDeg = this.datumRadiusM * Math.PI / 180;
     const cosLat = Math.cos((centerLat * Math.PI) / 180);
     return {
       latMin: centerLat - (this.meta.windowSizeM[1] / 2) / mPerDeg,
@@ -95,6 +108,9 @@ export class JezeroTerrainSource {
     if (hBuf.byteLength !== meta.width * meta.height * 4) throw new Error('height.f32 尺寸不符');
     if (vBuf.byteLength !== meta.width * meta.height) throw new Error('valid.u8 尺寸不符');
     this.meta = meta;
+    // S5-6：datum 球半径按站取（CLAT0 产品 3396190 ≠ jezero CLAT15 局部球）；
+    // 缺失时维持 jezero 默认（旧包兼容）
+    this.datumRadiusM = meta.projection?.referenceRadiusM ?? this.datumRadiusM;
     this.heights = new Float32Array(hBuf);
     this.valid = new Uint8Array(vBuf);
     this.orthoUrl = `${baseUrl}/ortho.jpg`;
@@ -119,7 +135,7 @@ export class JezeroTerrainSource {
   public sampleHeight(latDeg: number, lonDeg: number): { valid: boolean; heightM: number; reason?: string } {
     if (!this.meta || !this.heights || !this.valid) return { valid: false, heightM: 0, reason: 'not-loaded' };
     const { centerLat, centerLon } = this.meta.site;
-    const mPerDeg = JezeroTerrainSource.DATUM_RADIUS_M * Math.PI / 180;
+    const mPerDeg = this.datumRadiusM * Math.PI / 180;
     const cosLat = Math.cos((centerLat * Math.PI) / 180);
     const step = this.meta.stepMeters;
     const fx = ((lonDeg - centerLon) * mPerDeg * cosLat + this.meta.windowSizeM[0] / 2) / step;
@@ -144,14 +160,14 @@ export class JezeroTerrainSource {
   public buildDemWindowGeometry(baseRadius: number, maxSegments = 512): THREE.BufferGeometry | null {
     if (!this.meta || !this.heights) return null;
     const { centerLat, centerLon } = this.meta.site;
-    const mPerDeg = JezeroTerrainSource.DATUM_RADIUS_M * Math.PI / 180;
+    const mPerDeg = this.datumRadiusM * Math.PI / 180;
     const cosLat = Math.cos((centerLat * Math.PI) / 180);
     const W = this.meta.width, H = this.meta.height;
     const stepI = Math.max(1, Math.ceil(W / maxSegments));
     const stepJ = Math.max(1, Math.ceil(H / maxSegments));
     const cols = Math.floor((W - 1) / stepI) + 1;
     const rows = Math.floor((H - 1) / stepJ) + 1;
-    const scale = baseRadius / JezeroTerrainSource.DATUM_RADIUS_M;
+    const scale = baseRadius / this.datumRadiusM;
     const positions = new Float32Array(cols * rows * 3);
     const uvs = new Float32Array(cols * rows * 2);
     let p = 0, u = 0;

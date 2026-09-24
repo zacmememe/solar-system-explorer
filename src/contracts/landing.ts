@@ -207,4 +207,55 @@ export const LANDING_SITES: Record<string, LandingSite> = {
     // S4b 实测校准：1.7m 眼高可见需米级间距——450m 盘 30000 块 ≈ 1.45m 间距
     rockField: { count: 30000, radiusM: 450, sizeMaxM: 1.2, slopeWeight: 0.25 },
   },
+  /**
+   * S5-6：火星第二站（维多利亚撞击坑鸭湾，机遇号 2007 年探测区）。高程取自
+   * victoria-hirise-v1 包实测（2m/px HiRISE DTM；MOLA 三锚点交叉 +14.5/+10.8/−4m，
+   * 2026-09-24）。站心=坑缘鸭湾侧平坦点（坡度 0.54°）。窗内 15.5% DTM 立体
+   * 空洞已做邻域填充（metadata 如实记录）。
+   */
+  'victoria-duck-bay': {
+    id: 'victoria-duck-bay',
+    bodyId: 'mars',
+    name: '维多利亚撞击坑 · 鸭湾',
+    nameEn: 'Victoria Crater (Duck Bay)',
+    subtitle: '维多利亚坑缘鸭湾 · 真实 HiRISE 地表观察',
+    description:
+      '子午线平原上的维多利亚撞击坑边缘鸭湾，坑壁风蚀层序裸露、坑缘散布砂岩碎块。机遇号火星车曾于 2007 年抵达此处近距离考察坑内岩层。',
+    provenance:
+      'NASA MRO HiRISE 受控立体 DTM DTEEC_021747_1780_022380_1780 (1.01 m/px, PDS MRO-M-HIRISE-5-DTM-V1.0) + RED 正射 (0.25 m/px)',
+    centerLat: -2.061687,
+    centerLon: 354.5,
+    datumRadiusKm: 3396.19,
+    elevationDatumOffsetM: -1376.1, // 站心平坦点 HiRISE DTM 双线性值（Mars 2000 areoid，米）
+    elevationRangeM: [-1443.8, -1364.9], // 4×5.5km 窗实测范围
+    descentEnabled: true,
+    // 坑缘风蚀平原：子午线平原蓝莓岩屑平原 + 坑缘崩积砂岩块（机遇号实拍：
+    // 平坦基岩露头间散布浅风化小石），密度中等、坡度偏好中低
+    rockField: { count: 14000, radiusM: 500, sizeMaxM: 1.5, slopeWeight: 0.35 },
+  },
+  /**
+   * S5-6：火星第三站（盖尔撞击坑默里孤峰群，好奇号 2016 年穿越区）。高程取自
+   * gale-hirise-v1 包实测（2m/px HiRISE DTM，窗内 100% 有效；MOLA 三锚点交叉
+   * +61.8/+94.1/+114.2m——默里孤峰陡峭地形下 463m/px MOLA 平滑偏差的预期
+   * 特征，2026-09-24）。站心为孤峰间沙地平坦点（坡度 1.44°）。
+   */
+  'gale-murray-buttes': {
+    id: 'gale-murray-buttes',
+    bodyId: 'mars',
+    name: '盖尔撞击坑 · 默里孤峰群',
+    nameEn: 'Gale Crater (Murray Buttes)',
+    subtitle: '默里孤峰群 · 真实 HiRISE 地表观察',
+    description:
+      '盖尔撞击坑内夏普山山麓的侵蚀砂岩孤峰群，暗色风成沙地间矗立着棱角分明的层状岩塔。好奇号火星车曾于 2016 年穿越此区域并发回标志性孤峰影像。',
+    provenance:
+      'NASA MRO HiRISE 受控立体 DTM DTEEC_019698_1750_019988_1750 (1.01 m/px, PDS MRO-M-HIRISE-5-DTM-V1.0) + RED 正射 (0.25 m/px)',
+    centerLat: -4.944939,
+    centerLon: 137.388307,
+    datumRadiusKm: 3396.19,
+    elevationDatumOffsetM: -2745, // 站心平坦点 HiRISE DTM 双线性值（Mars 2000 areoid，米）
+    elevationRangeM: [-3188.4, -2275.4], // 4×5.5km 窗实测范围
+    descentEnabled: true,
+    // 孤峰间沙地：好奇号实拍显示碎屑富集于孤峰坡脚（坡度偏好高），沙地相对干净
+    rockField: { count: 20000, radiusM: 600, sizeMaxM: 1.8, slopeWeight: 0.55 },
+  },
 };
