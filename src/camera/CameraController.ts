@@ -632,7 +632,20 @@ export class CameraController {
     const minQ = Math.log(minClearance + this.shift);
     const maxQ = Math.log(maxClearance + this.shift);
 
-    this.qTarget = Math.max(minQ, Math.min(maxQ, this.qTarget + logDelta));
+    // S3b（Pro 260924 地球方向）：接近数据边界时输入步长平滑衰减——恒定对数
+    // 步速撞墙改为渐近减速（带宽=最后 4× 净空，步长∝剩余空间，下限 5%）。
+    // 边界值不变（数据支撑范围之外仍不可达），只改收敛方式：无突然停止感。
+    const BAND = Math.log(4);
+    let delta = logDelta;
+    if (delta < 0) {
+      const room = this.qTarget - minQ;
+      if (room < BAND) delta *= Math.max(0.05, room / BAND);
+    } else {
+      const room = maxQ - this.qTarget;
+      if (room < BAND) delta *= Math.max(0.05, room / BAND);
+    }
+
+    this.qTarget = Math.max(minQ, Math.min(maxQ, this.qTarget + delta));
   }
 
   /**

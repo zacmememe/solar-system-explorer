@@ -765,6 +765,7 @@ export class SolarEngine {
             // 按相机距离淡入（<6km 全显，>9km 隐藏）。
             try {
               const site = LANDING_SITES['taurus-littrow'];
+              const profile = site.rockField ?? { count: 400, radiusM: 1000, sizeMaxM: 2, slopeWeight: 0.3 };
               const sample = (lat: number, lon: number) => {
                 const s = rasterSource.sampleHeight(lat, lon);
                 return s.valid ? { heightM: s.heightM } : null;
@@ -772,10 +773,12 @@ export class SolarEngine {
               const placements = generateRockPlacements({
                 siteLat: site.centerLat,
                 siteLon: site.centerLon,
-                radiusM: 1200,
-                count: 500,
+                radiusM: profile.radiusM,
+                count: profile.count,
+                sizeMaxM: profile.sizeMaxM,
                 clearZoneM: 20,
                 maxSlopeDeg: 19,
+                slopeWeight: profile.slopeWeight,
                 sampleHeight: sample,
                 seed: 20260924,
               });

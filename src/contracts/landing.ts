@@ -63,6 +63,13 @@ export interface LandingSite {
   elevationDatumOffsetM: number; // 相对基准球的基础高程偏置 (m)
   elevationRangeM: [number, number]; // [最低海拔, 最高海拔] (m)
   lookTargetBodyId?: BodyId; // 在地面仰望的目标母星 (如地球)
+  /** S3b 地貌化碎石场参数（示意层）——缺省由引擎取保守默认 */
+  rockField?: {
+    count: number; // 块数
+    radiusM: number; // 分布半径（站点周边）
+    sizeMaxM: number; // 最大半尺度（幂律上界）
+    slopeWeight: number; // 0..1 坡度偏好：0=均匀分布，1=碎石显著富集于坡脚/坡面
+  };
 }
 
 /**
@@ -115,5 +122,8 @@ export const LANDING_SITES: Record<string, LandingSite> = {
     elevationDatumOffsetM: -2641.1, // 站点真实 DEM 双线性值 (2026-09-24 谷底平坦点)
     elevationRangeM: [-2746.5, -646.9], // 12×12 km 窗口实测范围
     lookTargetBodyId: 'earth',
+    // S3b：谷底碎石场——断块山崩积裙地貌，坡度偏好中等（碎石富集于山麓坡脚，
+    // 谷底中心相对干净——与阿波罗 17 实照的谷底景象一致）
+    rockField: { count: 500, radiusM: 1200, sizeMaxM: 2.5, slopeWeight: 0.55 },
   },
 };

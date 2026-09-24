@@ -38,10 +38,17 @@ export interface RockFieldOptions {
   /** 分布半径（米），站点周边 */
   radiusM: number;
   count: number;
+  /** 幂律尺寸上界（米） */
+  sizeMaxM: number;
   /** 触地净空区半径（米）：停驻点附近不布石 */
   clearZoneM: number;
   /** 坡度过滤：局部坡度超过该值（度）不放石（石块不会停在陡坡上） */
   maxSlopeDeg: number;
+  /**
+   * S3b 坡度偏好 0..1：接受概率 = 0.3 + slopeWeight·(局部坡度/最大坡度)·0.7。
+   * 0=均匀；1=碎石显著富集于坡面/坡脚（崩积裙地貌）。月海平原取低值，坑缘/山麓取高值。
+   */
+  slopeWeight: number;
   /** 地形采样（返回 null 表示窗外，跳过） */
   sampleHeight: (latDeg: number, lonDeg: number) => { heightM: number } | null;
   seed: number;
@@ -72,10 +79,14 @@ export function generateRockPlacements(opts: RockFieldOptions): RockPlacement[] 
     const hy = opts.sampleHeight(lat + d2 / M_PER_DEG_LAT, lon);
     if (!hx || !hy) continue;
     const slope = Math.atan(Math.max(Math.abs(hx.heightM - h.heightM), Math.abs(hy.heightM - h.heightM)) / d2);
-    if ((slope * 180) / Math.PI > opts.maxSlopeDeg) continue;
-    // 幂律尺寸：u^-0.9 归一到 [0.15, 2.5] m
+    const slopeDeg = (slope * 180) / Math.PI;
+    if (slopeDeg > opts.maxSlopeDeg) continue;
+    // S3b 坡度偏好：接受概率随局部坡度上升（崩积裙富集），平坦基线 30%
+    const acceptP = 0.3 + Math.max(0, Math.min(1, opts.slopeWeight)) * (slopeDeg / opts.maxSlopeDeg) * 0.7;
+    if (rng() > acceptP) continue;
+    // 幂律尺寸：u^-1.1 归一到 [0.15, sizeMax] m
     const u = rng();
-    const s = Math.min(2.5, 0.15 * Math.pow(1 - u, -1.1));
+    const s = Math.min(opts.sizeMaxM, 0.15 * Math.pow(1 - u, -1.1));
     out.push({
       latDeg: lat,
       lonDeg: lon,
