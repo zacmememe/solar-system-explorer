@@ -5,7 +5,6 @@
  */
 import puppeteer from 'puppeteer-core';
 import * as path from 'path';
-import * as fs from 'fs';
 
 const TARGET_URL = process.env.TEST_URL || 'http://localhost:4173';
 const EDGE_PATH = process.env.EDGE_PATH || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';

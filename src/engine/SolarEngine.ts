@@ -79,6 +79,11 @@ import {
 import { TerrainHeightProvider } from '../surface/TerrainHeightProvider';
 import { RasterTerrainSource } from '../surface/RasterTerrainSource';
 import { LolaRegionalSource } from '../surface/LolaRegionalSource';
+import {
+  generateRockPlacements,
+  buildRockGeometry,
+  rockScenePosition,
+} from '../surface/ProceduralRockField';
 import { focalPixelsPx, projectedTexelPx, terrainRevealOpacity } from '../world-support/screenSpaceMetrics';
 import productionAssetsData from '../../sources/production-assets.json';
 
@@ -231,6 +236,8 @@ export class SolarEngine {
   private lolaMaterial?: THREE.MeshStandardMaterial;
   private lolaMaterials: THREE.MeshStandardMaterial[] = [];
   private lolaWacTexture?: THREE.Texture;
+  /** S3a 程序碎石场（示意层）：材质驱动距离淡入 */
+  private rockFieldMaterial: THREE.MeshStandardMaterial | null = null;
   private moonMesh?: THREE.Mesh;
   // P3b-C：WAC EMP 区域反照率层（中远景影像；DTM 装载后创建，SSE 门控显隐）
   private regionalAlbedo: RegionalAlbedoLayer | null = null;
@@ -751,6 +758,55 @@ export class SolarEngine {
             valleyMesh.geometry.dispose();
             valleyMesh.geometry = geo;
             valleyMesh.visible = true;
+
+            // S3a：程序碎石场（示意层——尺度分布参考月面统计，位置为确定性随机
+            // 采样并贴合实测 DTM；不声称任何石块在历史准确位置。宏观地形与影像
+            // 均为实测，不因本层改变）。3 变体 InstancedMesh 共享材质，animate 内
+            // 按相机距离淡入（<6km 全显，>9km 隐藏）。
+            try {
+              const site = LANDING_SITES['taurus-littrow'];
+              const sample = (lat: number, lon: number) => {
+                const s = rasterSource.sampleHeight(lat, lon);
+                return s.valid ? { heightM: s.heightM } : null;
+              };
+              const placements = generateRockPlacements({
+                siteLat: site.centerLat,
+                siteLon: site.centerLon,
+                radiusM: 1200,
+                count: 500,
+                clearZoneM: 20,
+                maxSlopeDeg: 19,
+                sampleHeight: sample,
+                seed: 20260924,
+              });
+              const rockMat = new THREE.MeshStandardMaterial({
+                color: 0x9a9186,
+                roughness: 1,
+                metalness: 0,
+              });
+              this.rockFieldMaterial = rockMat;
+              const byVariant: typeof placements[] = [[], [], []];
+              for (const p of placements) byVariant[p.variant].push(p);
+              byVariant.forEach((list, v) => {
+                if (!list.length) return;
+                const inst = new THREE.InstancedMesh(buildRockGeometry(20260924, v), rockMat, list.length);
+                const m = new THREE.Matrix4();
+                const q = new THREE.Quaternion();
+                const up = new THREE.Vector3(0, 1, 0);
+                list.forEach((p, i) => {
+                  const pos = rockScenePosition(p.latDeg, p.lonDeg, p.heightM, satRadius);
+                  q.setFromAxisAngle(up, p.rotYRad);
+                  m.compose(pos, q, new THREE.Vector3(p.scaleM[0], p.scaleM[1], p.scaleM[2]));
+                  inst.setMatrixAt(i, m);
+                });
+                inst.instanceMatrix.needsUpdate = true;
+                inst.name = 'procedural-rockfield';
+                inst.frustumCulled = false; // 实例跨 2.4km，包围球逐实例剔除不适用
+                satMesh.add(inst);
+              });
+            } catch (e) {
+              console.warn('[SolarEngine] 碎石场构建失败（不影响主链路）:', e);
+            }
 
             // P3-T5：LOLA L1 中间层（236.9 m/px 真实区域地形）。就绪时球面孔扩大到
             // L1 裁窗边界、L1 网格成为该区域唯一有效不透明表面（Pro 260924 方向：
@@ -1916,6 +1972,73 @@ export class SolarEngine {
     return this.lunarValleyMesh;
   }
 
+  /**
+   * S3a 分层深度渲染（Pro 260924 方向）：一个权威相机姿态、两个派生 pass。
+   * 远 pass：星空 + 非锚定天体（近面按最近远天体距离自适应，图层间隔可分）；
+   * 清深度后近 pass：锚定天体系统（保持 P1 米制近面）。近物后画自然遮挡远物。
+   * 载具/相机附属物恒在近 pass。结束时恢复可见性，场景图不变。
+   */
+  private farCamera: THREE.PerspectiveCamera | null = null;
+
+  private renderLayered(): void {
+    const snap = this.cameraController.getSnapshot();
+    const anchorBodyId: BodyId | null =
+      snap.anchor?.kind === 'surface'
+        ? snap.anchor.bodyId
+        : snap.targetBodyId ?? null;
+
+    const nearNodes: BodyRenderNode[] = [];
+    const farNodes: BodyRenderNode[] = [];
+    let minFarDist = Infinity;
+    for (const [id, node] of this.bodyNodes) {
+      if (id === anchorBodyId) nearNodes.push(node);
+      else {
+        farNodes.push(node);
+        const wp = new THREE.Vector3();
+        node.systemGroup.getWorldPosition(wp);
+        minFarDist = Math.min(minFarDist, this.camera.position.distanceTo(wp) - node.displayRadius);
+      }
+    }
+
+    if (!farNodes.length || !Number.isFinite(minFarDist) || minFarDist <= 0.01) {
+      // 无远天体或锚定异常：退回单 pass（保持既有行为）
+      this.renderer.render(this.scene, this.camera);
+      return;
+    }
+
+    if (!this.farCamera) {
+      this.farCamera = new THREE.PerspectiveCamera(this.camera.fov, this.camera.aspect, 0.1, this.camera.far);
+    }
+    const fc = this.farCamera;
+    fc.fov = this.camera.fov;
+    fc.aspect = this.camera.aspect;
+    fc.near = Math.max(0.01, minFarDist * 0.5);
+    fc.far = this.camera.far;
+    fc.position.copy(this.camera.position);
+    fc.quaternion.copy(this.camera.quaternion);
+    fc.updateProjectionMatrix();
+    fc.updateMatrixWorld();
+
+    const prevAutoClear = this.renderer.autoClear;
+    this.renderer.autoClear = false;
+
+    // 远 pass
+    for (const n of nearNodes) n.poleFrame.visible = false;
+    if (this.currentVehicleMesh && this.vehicleGroup.parent === this.camera) this.currentVehicleMesh.visible = false;
+    this.renderer.clear(true, true, true);
+    this.renderer.render(this.scene, fc);
+    for (const n of nearNodes) n.poleFrame.visible = true;
+
+    // 近 pass（不清深度：远 pass 深度保留为遮挡器——近物更近恒通过测试，
+    // 星空/行星像素不受星空球覆盖；近物遮挡远物的正确性由此保证）
+    for (const n of farNodes) n.poleFrame.visible = false;
+    this.renderer.render(this.scene, this.camera);
+    for (const n of farNodes) n.poleFrame.visible = true;
+    if (this.currentVehicleMesh && this.vehicleGroup.parent === this.camera) this.currentVehicleMesh.visible = true;
+
+    this.renderer.autoClear = prevAutoClear;
+  }
+
   /** P3b-C：WAC 区域反照率层诊断（验收脚本/HUD 用，只读） */
   public getRegionalAlbedoStatus(): {
     ready: boolean;
@@ -2434,6 +2557,14 @@ export class SolarEngine {
           mat.transparent = l1Opacity < 1;
           mat.opacity = l1Opacity;
         }
+
+        // S3a 碎石场距离淡入：<6km 全显，6–9km smoothstep 渐隐（远距亚像素无意义）
+        if (this.rockFieldMaterial) {
+          const t = Math.min(1, Math.max(0, (9000 - siteDistM) / 3000));
+          const op = t * t * (3 - 2 * t);
+          this.rockFieldMaterial.transparent = op < 1;
+          this.rockFieldMaterial.opacity = op;
+        }
       }
     }
 
@@ -2447,8 +2578,12 @@ export class SolarEngine {
       this.emitSnapshot();
     }
 
-    // 6. 渲染一帧
-    this.renderer.render(this.scene, this.camera);
+    // 6. 渲染一帧（S3a 分层深度：Pro 260924——近地形与遥远天体各自深度处理）
+    // 单一权威相机姿态；远 pass 用同姿态派生相机（近面 = 最近远天体距离之半）。
+    // 顺序：先远 pass（星空+非锚定天体，含地球云/大气/瓦片分层），清深度后再
+    // 近 pass（锚定天体系统）——近物自然遮挡远物；远 pass 内部图层（云 0.012
+    // 单位间隔）在合理近面下深度可分，消除触地看地球的鳞片互抢。
+    this.renderLayered();
 
     this.emitHudFrame(now);
 
