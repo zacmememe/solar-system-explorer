@@ -861,9 +861,17 @@ export class CameraController {
         this.camera.lookAt(eyeWorldPos.clone().add(lookDir));
       }
 
-      // 地面停驻近裁剪面：0.1m 米制净空的场景等效 (P1 规范；1.7m 眼高 -> 0.1m，
-      // 不再把 1e-4 场景单位误注释为 0.1 毫米)
-      const nearScene = CameraController.SURFACE_NEAR_METERS * metricScale;
+      // 地面停驻近裁剪面 (P1 规范；1.7m 眼高 -> 0.1m)。S1（Pro 260924 定向）：
+      // 净空 ≥2m（高空停驻/下降）时近面按 1/4 净空动态放宽——恒 0.1m 近面 +
+      // 远面 8000 场景单位会把千米级高差压入深度量化，月面多层（地形/盖板/WAC）
+      // 与远处地球图层逐帧互抢显示（用户报告"亮片/黑片闪烁"）。1.7m 触地停驻
+      // 仍为 P1 的 0.1m，R5-04 锚点不变；≥2m 后近面放宽不裁任何合法几何
+      // （净空的 3/4 内无应见对象）。
+      const nearM =
+        eyeHeightM >= 2
+          ? Math.max(CameraController.SURFACE_NEAR_METERS, eyeHeightM * 0.25)
+          : CameraController.SURFACE_NEAR_METERS;
+      const nearScene = nearM * metricScale;
       if (Math.abs(this.camera.near - nearScene) > nearScene * 1e-6) {
         this.camera.near = nearScene;
         this.camera.updateProjectionMatrix();
@@ -890,7 +898,7 @@ export class CameraController {
         pitchDeg: this.surfacePitchDeg,
         metricScale,
         datumM,
-        nearM: CameraController.SURFACE_NEAR_METERS,
+        nearM,
       };
       return;
     }

@@ -232,6 +232,7 @@ export class SolarEngine {
   private landingController: LandingController = new LandingController('taurus-littrow');
   private lunarValleyMesh?: THREE.Mesh;
   private lunarValleyMaterial?: THREE.MeshStandardMaterial;
+  private moonHoleCapMesh?: THREE.Mesh;
   private moonMesh?: THREE.Mesh;
   // P3b-C：WAC EMP 区域反照率层（中远景影像；DTM 装载后创建，SSE 门控显隐）
   private regionalAlbedo: RegionalAlbedoLayer | null = null;
@@ -807,9 +808,12 @@ export class SolarEngine {
               // 远处视觉即"普通月面"，渐显过程中不露星空也不露黑。
               const capMesh = new THREE.Mesh(
                 new THREE.SphereGeometry(satRadius * (1 - 2900 / 1737400), 32, 24),
-                satMat
+                // 用月球网格"当前"材质（纹理/MoonMaterial 先后到达均正确）；
+                // 后续 MoonMaterial 换装时由 moonHoleCapMesh 同步跟随
+                satMesh.material
               );
               capMesh.name = 'moon-hole-cap';
+              this.moonHoleCapMesh = capMesh;
               satMesh.add(capMesh);
 
               // P3b-C：WAC EMP 区域反照率层——孔边界之外到裁窗边界的中远景实测影像。
@@ -967,6 +971,11 @@ export class SolarEngine {
         this.moonMaterial.uniforms.teachingLight.value = this.teachingLight ? 1.0 : 0.0;
         safeDisposeMaterial(moonNode.mesh.material);
         moonNode.mesh.material = this.moonMaterial;
+        // S1（Pro 260924）：挖孔底盖板同步换装——盖板若仍持旧 satMat（另一套
+        // 明暗模型），孔洞区域与四周月面亮度不同 + 深度精度不足时逐帧互抢，
+        // 表现为"黑色形状区域闪烁"。共享同一材质实例，明暗恒一致。
+        const cap = this.moonHoleCapMesh;
+        if (cap) cap.material = this.moonMaterial;
       }
     }).catch((e) => console.error('[Texture] Moon load failed:', e));
 

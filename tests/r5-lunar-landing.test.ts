@@ -234,6 +234,21 @@ describe('月球落地闭环测试 (真实 DTM 栅格后端)', () => {
       expect(camera.near).toBeCloseTo(expectedNearScene, 12);
       expect(camera.near).toBeLessThan(1e-4);
 
+      // S1（Pro 260924）：高空停驻近面按 1/4 净空动态放宽——恒 0.1m 近面 +
+      // far=8000 场景单位会使千米级高差落入深度量化，多层地表互抢闪面
+      controller.executeCommand({
+        type: 'enterSurfaceLook',
+        bodyId: 'moon',
+        lat: 20.2108,
+        lon: 30.7997,
+        eyeHeightM: 500000,
+        initialYawDeg: 0,
+        initialPitchDeg: 0,
+      });
+      controller.update(0.016, () => ({ pos: new THREE.Vector3(), quaternion: new THREE.Quaternion() }) as never);
+      const metricScale2 = 2.0 / TerrainHeightProvider.MOON_DATUM_RADIUS_M;
+      expect(camera.near).toBeCloseTo(500000 * 0.25 * metricScale2, 9);
+
       controller.executeCommand({
         type: 'lookAtSkyTarget',
         targetBodyId: 'earth',
