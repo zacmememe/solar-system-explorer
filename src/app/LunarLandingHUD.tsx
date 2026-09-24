@@ -109,7 +109,7 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine }) => {
             >
               {(LANDING_SITES[availability.siteId ?? 'taurus-littrow']?.bodyId === 'mars'
                 ? '2m HiRISE 真实地形'
-                : availability.siteId === 'hadley-rille'
+                : availability.siteId === 'hadley-rille' || availability.siteId === 'tranquility-base'
                   ? '2m DTM 真实地形'
                   : '5m DTM 真实地形')}
             </span>

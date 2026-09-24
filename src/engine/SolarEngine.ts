@@ -263,6 +263,7 @@ export class SolarEngine {
   private static readonly MOON_SITE_ASSET_URLS: Record<string, { dem?: string; l1?: string }> = {
     'taurus-littrow': {},
     'hadley-rille': { dem: '/data/dem/apollo15-v1', l1: '/data/dem/lola-l1-hadley-v1' },
+    'tranquility-base': { dem: '/data/dem/apollo11-v1', l1: '/data/dem/lola-l1-tranquility-v1' },
   };
 
   /**
@@ -492,7 +493,7 @@ export class SolarEngine {
 
         // P3b-E：孔底盖板——兜底面与本体共享材质；半径压到本站 DTM 窗最低高程
         // 以下留余量（taurus −4060.5m→−4200；hadley −2218.3m→−2350）
-        const capBelowM = stack.siteId === 'hadley-rille' ? 2350 : 4200;
+        const capBelowM = stack.siteId === 'hadley-rille' ? 2350 : stack.siteId === 'tranquility-base' ? 2100 : 4200;
         const capMesh = new THREE.Mesh(
           new THREE.SphereGeometry(satRadius * (1 - capBelowM / 1737400), 32, 24),
           satMesh.material

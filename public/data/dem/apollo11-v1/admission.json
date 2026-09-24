@@ -1,0 +1,33 @@
+{
+ "state": "admitted-2026-09-24-3point-remote-crosscheck",
+ "evidence": {
+  "points": [
+   {
+    "name": "着陆点",
+    "remoteM": -1927.466,
+    "localM": -1927.466,
+    "byteIdentical": true
+   },
+   {
+    "name": "着陆点西 1.5km",
+    "remoteM": -1925.597,
+    "localM": -1925.597,
+    "byteIdentical": true
+   },
+   {
+    "name": "着陆点北 2km",
+    "remoteM": -1945.435,
+    "localM": -1945.435,
+    "byteIdentical": true
+   }
+  ],
+  "heightSha256": "162ffb9ef9c7d482fe714ad80e760e1b0b0a04c6499ec1ff366aaee547a87022",
+  "validSha256": "14c003d131827727002d5946ebba61d0d56b151d3a1c4e476f379c8a761cc096",
+  "lolaCrosscheckNote": "LOLA LDEM_128 独立交叉：三锚点差 −7.4/+17.5/−0.3m（lola-l1-tranquility-v1 crosscheckNacDtm）",
+  "visualRegistrationScreenshots": [
+   "s54-hadley-touchdown.png",
+   "s54-hadley-west-rille.png"
+  ],
+  "note": "MCP 网关 Range 远程字节取回与本地裁窗 3/3 逐位一致；GeoTIFF tiepoint↔LBL 四角互核 ~1m；S5-4 实机下降流探针目视配准见截图；遥测 sourceId=NAC_DTM_APOLLO11。"
+ }
+}

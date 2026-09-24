@@ -160,6 +160,30 @@ export const LANDING_SITES: Record<string, LandingSite> = {
     // 山前平原碎石场：月溪陡坎崩积 + 斯旺山坡面碎屑，坡度偏好中等
     rockField: { count: 400, radiusM: 1000, sizeMaxM: 2, slopeWeight: 0.4 },
   },
+  /**
+   * S5-4：月面第三站（Apollo 11，静海基地）。高程取自 apollo11-v1 包实测
+   * （2m/px NAC DTM；MCP 远程字节校验 3/3、LOLA 交叉 −7.4/+17.5/−0.3m，
+   * 2026-09-24）。站心=真实着陆点（坡度 3.26°，静海局部起伏可接受）。
+   */
+  'tranquility-base': {
+    id: 'tranquility-base',
+    bodyId: 'moon',
+    name: '静海基地',
+    nameEn: 'Tranquility Base',
+    subtitle: '静海基地 · 真实 DTM 降落',
+    description:
+      '静海东南部的月海平原，人类首次登月着陆点——阿波罗 11 号的鹰号着陆舱在此降落，阿姆斯特朗与奥尔德林留下了最早的月面足迹。',
+    provenance: 'NASA LROC NAC DTM APOLLO11 v1.9 (2 m/px, PDS LRO-L-LROC-5-RDR-V1.0)',
+    centerLat: 0.6741,
+    centerLon: 23.473,
+    datumRadiusKm: 1737.4,
+    elevationDatumOffsetM: -1927.5,
+    elevationRangeM: [-1979.4, -1876.4],
+    lookTargetBodyId: 'earth',
+    descentEnabled: true,
+    // 月海平原碎石场：分布稀疏均匀、块体偏小
+    rockField: { count: 350, radiusM: 900, sizeMaxM: 1.8, slopeWeight: 0.2 },
+  },
   'jezero': {
     id: 'jezero',
     bodyId: 'mars',
