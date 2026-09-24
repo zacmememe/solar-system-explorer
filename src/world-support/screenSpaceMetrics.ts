@@ -66,3 +66,26 @@ export function imageryLayerGate(input: ImageryLayerGateInput): ImageryLayerGate
   const visible = layerTexelPx >= floorPx && (input.currentlyVisible || baseTexelPx >= IMAGERY_BASE_BLUR_TEXEL_PX);
   return { visible, layerTexelPx, baseTexelPx };
 }
+
+/**
+ * 地形块距离渐显（P3b-E，用户反馈 2026-09-24：远看闪烁小光点 + 方块突现）。
+ *
+ * DTM 窗口块是场景中唯一被物理照亮的几何，且此前无距离门控——远看是月盘中心
+ * 的亚像素亮点（走样闪烁），接近到几十像素时又"啪"地显出方块形状。此处按块
+ * 的屏幕张角（px）做 smoothstep 渐显：
+ * - 下限 8px：以下完全隐藏（亚像素走样区，纹理再真也只是噪声闪烁）；
+ * - 上限 36px：块在 WAC 影像门控开启距离处的张角（窗口 12000m / WAC 像元
+ *   99.75m × 进入阈值 0.30px ≈ 36px）——几何与影像在门控开启时同步就位，
+ *   此前几何先于影像逐渐显形。两个量同随焦距缩放，阈值与视口无关。
+ */
+export const TERRAIN_REVEAL_MIN_PX = 8;
+export const TERRAIN_REVEAL_FULL_PX = 36;
+
+export function terrainRevealOpacity(blockPx: number): number {
+  if (!Number.isFinite(blockPx) || blockPx <= 0) return 0;
+  const s = Math.min(
+    1,
+    Math.max(0, (blockPx - TERRAIN_REVEAL_MIN_PX) / (TERRAIN_REVEAL_FULL_PX - TERRAIN_REVEAL_MIN_PX))
+  );
+  return s * s * (3 - 2 * s);
+}

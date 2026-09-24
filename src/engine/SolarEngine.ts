@@ -79,6 +79,7 @@ import {
 } from '../world-support/descentCurve';
 import { TerrainHeightProvider } from '../surface/TerrainHeightProvider';
 import { RasterTerrainSource } from '../surface/RasterTerrainSource';
+import { focalPixelsPx, projectedTexelPx, terrainRevealOpacity } from '../world-support/screenSpaceMetrics';
 import productionAssetsData from '../../sources/production-assets.json';
 
 export interface WebGLDiagnosticInfo {
@@ -230,6 +231,7 @@ export class SolarEngine {
   // 批次 R5：着陆控制器与月表 3D 浮雕网格
   private landingController: LandingController = new LandingController('taurus-littrow');
   private lunarValleyMesh?: THREE.Mesh;
+  private lunarValleyMaterial?: THREE.MeshStandardMaterial;
   private moonMesh?: THREE.Mesh;
   // P3b-C：WAC EMP 区域反照率层（中远景影像；DTM 装载后创建，SSE 门控显隐）
   private regionalAlbedo: RegionalAlbedoLayer | null = null;
@@ -747,6 +749,7 @@ export class SolarEngine {
           metalness: 0.05,
           side: THREE.FrontSide,
         });
+        this.lunarValleyMaterial = valleyMat;
         const valleyMesh = new THREE.Mesh(new THREE.BufferGeometry(), valleyMat);
         valleyMesh.name = 'taurus-littrow-terrain';
         valleyMesh.visible = false;
@@ -797,6 +800,17 @@ export class SolarEngine {
                 collarMesh.receiveShadow = true;
                 satMesh.add(collarMesh);
               }
+
+              // P3b-E：孔底盖板——地形块远距渐显（见 animate 内 terrainRevealOpacity）
+              // 期间，透过挖孔看到的兜底面：与本体共享材质（同一全球图、同一照明），
+              // 半径压到窗内最低高程（−2746.5m）以下 150m，近处恒被地形遮挡、
+              // 远处视觉即"普通月面"，渐显过程中不露星空也不露黑。
+              const capMesh = new THREE.Mesh(
+                new THREE.SphereGeometry(satRadius * (1 - 2900 / 1737400), 32, 24),
+                satMat
+              );
+              capMesh.name = 'moon-hole-cap';
+              satMesh.add(capMesh);
 
               // P3b-C：WAC EMP 区域反照率层——孔边界之外到裁窗边界的中远景实测影像。
               // 就绪后裙边同步换装同源 WAC（窗口 NAC 5m → 裙边/环带 WAC 99.75m 同源衔接）；
@@ -2367,6 +2381,36 @@ export class SolarEngine {
         THREE.MathUtils.degToRad(this.camera.fov),
         deltaSec
       );
+    }
+
+    // P3b-E：DTM 地形块距离渐显（用户反馈 2026-09-24：远看亚像素闪烁光点 +
+    // 末段方块边缘突现）。块按自身屏幕张角 8→36px smoothstep 渐显；36px 为块在
+    // WAC 门控开启距离处的张角——几何与影像在门控开启时同步就位，此前几何先于
+    // 影像逐渐显形；<8px 隐藏，消除走样闪烁。挖孔底盖板（moon-hole-cap）兜底。
+    if (this.lunarValleyMesh && this.lunarValleyMaterial) {
+      const windowM = RasterTerrainSource.getInstance().demWindowMeters;
+      if (windowM) {
+        const moonPose = this.getBodyWorldPose('moon');
+        const moonNode = this.bodyNodes.get('moon');
+        const sceneRadius =
+          moonNode?.mesh ? moonNode.displayRadius * moonNode.mesh.scale.x : moonNode?.displayRadius ?? 0.368;
+        const metersPerScene = 1737400 / Math.max(1e-9, sceneRadius);
+        const site = LANDING_SITES['taurus-littrow'];
+        const siteWorld = new THREE.Vector3(...latLonDirection(site.centerLat, site.centerLon))
+          .applyQuaternion(moonPose.quaternion)
+          .multiplyScalar(sceneRadius)
+          .add(moonPose.pos);
+        const siteDistM = Math.max(1, this.camera.position.distanceTo(siteWorld) * metersPerScene);
+        this.renderer.getDrawingBufferSize(this.drawingBufferSizeTmp);
+        const blockPx = projectedTexelPx(
+          windowM,
+          focalPixelsPx(this.drawingBufferSizeTmp.y, THREE.MathUtils.degToRad(this.camera.fov)),
+          siteDistM
+        );
+        const opacity = terrainRevealOpacity(blockPx);
+        this.lunarValleyMaterial.transparent = opacity < 1;
+        this.lunarValleyMaterial.opacity = opacity;
+      }
     }
 
     // 5. 更新单一相机控制器

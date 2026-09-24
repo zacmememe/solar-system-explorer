@@ -10,6 +10,9 @@ import {
   focalPixelsPx,
   projectedTexelPx,
   imageryLayerGate,
+  terrainRevealOpacity,
+  TERRAIN_REVEAL_MIN_PX,
+  TERRAIN_REVEAL_FULL_PX,
 } from '../src/world-support/screenSpaceMetrics';
 import { RegionalAlbedoLayer, type AlbedoLayerMeta } from '../src/surface/RegionalAlbedoLayer';
 
@@ -47,6 +50,30 @@ describe('P3b-C：屏幕空间误差（SSE）纯函数', () => {
     expect(() => focalPixelsPx(100, 0)).toThrow();
     expect(() => focalPixelsPx(NaN, 1)).toThrow();
     expect(() => projectedTexelPx(100, 100, 0)).toThrow();
+  });
+
+  it('P3b-E 地形块渐显：8px 以下隐藏、36px 全显、单调 smoothstep、36px 与 WAC 门控开启距离锚定', () => {
+    expect(terrainRevealOpacity(0)).toBe(0);
+    expect(terrainRevealOpacity(TERRAIN_REVEAL_MIN_PX)).toBe(0);
+    expect(terrainRevealOpacity(TERRAIN_REVEAL_FULL_PX)).toBe(1);
+    expect(terrainRevealOpacity(1e6)).toBe(1);
+    expect(terrainRevealOpacity(NaN)).toBe(0);
+    // 中点 smoothstep = 0.5；单调递增
+    const mid = (TERRAIN_REVEAL_MIN_PX + TERRAIN_REVEAL_FULL_PX) / 2;
+    expect(terrainRevealOpacity(mid)).toBeCloseTo(0.5, 9);
+    let prev = -1;
+    for (let px = TERRAIN_REVEAL_MIN_PX; px <= TERRAIN_REVEAL_FULL_PX; px += 0.5) {
+      const o = terrainRevealOpacity(px);
+      expect(o).toBeGreaterThan(prev);
+      prev = o;
+    }
+    // 锚定：12km 窗口在 WAC 门控开启距离（WAC 像元 0.30px 处 ≈ 361km）的张角
+    // 应达到全显阈值——几何与影像同步就位；两量同随焦距缩放，与视口无关。
+    const fpx = focalPixelsPx(900, (45 * Math.PI) / 180);
+    const gateDistM = (99.75 * fpx) / 0.3; // WAC 像元 = 0.30px 的距离
+    const blockPxAtGate = projectedTexelPx(12000, fpx, gateDistM);
+    expect(blockPxAtGate).toBeGreaterThanOrEqual(TERRAIN_REVEAL_FULL_PX - 0.5);
+    expect(blockPxAtGate).toBeLessThanOrEqual(TERRAIN_REVEAL_FULL_PX + 0.5);
   });
 });
 

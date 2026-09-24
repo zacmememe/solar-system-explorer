@@ -130,6 +130,12 @@ export class RasterTerrainSource {
     return this.boundsCache;
   }
 
+  /** P3b-E：DTM 窗口边长（米，取宽高较大者）——地形块距离渐显的物理尺寸来源 */
+  public get demWindowMeters(): number | null {
+    if (!this.meta) return null;
+    return Math.max(this.meta.window.width, this.meta.window.height) * this.meta.nativeSpacingMeters;
+  }
+
   public async load(baseUrl: string = RasterTerrainSource.DEFAULT_BASE_URL): Promise<void> {
     if (this.loadPromise) return this.loadPromise;
     this.loadPromise = this.doLoad(baseUrl).catch((err: unknown) => {
