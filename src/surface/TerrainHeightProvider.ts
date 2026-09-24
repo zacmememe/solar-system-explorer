@@ -234,13 +234,14 @@ export class TerrainHeightProvider {
   public buildHoledMoonSphereGeometry(
     baseRadius: number,
     widthSegs = 128,
-    heightSegs = 64
+    heightSegs = 64,
+    holeBoundsOverride?: { latMin: number; latMax: number; lonMin: number; lonMax: number }
   ): {
     geometry: THREE.BufferGeometry;
     holeBounds: { latMin: number; latMax: number; lonMin: number; lonMax: number };
   } | null {
     if (!this.raster.isReady) return null;
-    const wb = this.raster.windowBounds;
+    const wb = holeBoundsOverride ?? this.raster.windowBounds;
     if (!wb) return null;
 
     const PAD_DEG = 0.35; // 裙带外扩（窗口边缘→孔边界的缓冲）

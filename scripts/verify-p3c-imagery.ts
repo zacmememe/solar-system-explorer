@@ -110,7 +110,11 @@ async function main() {
       st0.provenance.bounds.lonMin < site.centerLon && st0.provenance.bounds.lonMax > site.centerLon,
     st0
   );
-  record('C2 裙边已换装同源 WAC（全球等距 UV 逆映射）', st0.collarSwapped === true, { collarSwapped: st0.collarSwapped });
+  record(
+    'C2 WAC 影像就绪可换装（两级栈=裙边网格已换装；L1 模式=L1 表面已挂载且 WAC 纹理已备）',
+    st0.collarSwapped === true || (st0.l1TerrainAttached === true && st0.wacStagedOnL1 === true),
+    { collarSwapped: st0.collarSwapped, l1: st0.l1TerrainAttached, wacStaged: st0.wacStagedOnL1 }
+  );
 
   // ---- C3 SSE 门控：远关近开（真实相机距离驱动） ----
   const waitFrames = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -122,7 +126,8 @@ async function main() {
   });
   record(
     'C3a 远景（总览机位）SSE 门控关闭',
-    farStatus.status.meshVisible === false,
+    farStatus.status.meshVisible === false ||
+      (farStatus.status.meshVisible === null && farStatus.status.gate?.visible === false),
     { gate: farStatus.status.gate, meshVisible: farStatus.status.meshVisible }
   );
 
@@ -139,7 +144,8 @@ async function main() {
   const nearStatus = await page.evaluate(() => (window as any).__solarEngine.getRegionalAlbedoStatus());
   record(
     'C3b 站点上空 250km：SSE 门控开启（WAC ≥0.3px/源像元 且父级明显更糊）',
-    nearStatus.meshVisible === true && nearStatus.gate?.visible === true && nearStatus.gate?.layerTexelPx >= 0.3,
+    (nearStatus.meshVisible === true || nearStatus.collarSwapped === true) &&
+      nearStatus.gate?.visible === true && nearStatus.gate?.layerTexelPx >= 0.3,
     nearStatus.gate
   );
 
@@ -176,7 +182,8 @@ async function main() {
   const midFarStatus = await page.evaluate(() => (window as any).__solarEngine.getRegionalAlbedoStatus());
   record(
     'C3c 900km 眼高：门控再次关闭（迟滞带外）',
-    midFarStatus.meshVisible === false,
+    midFarStatus.meshVisible === false ||
+      (midFarStatus.meshVisible === null && midFarStatus.gate?.visible === false),
     midFarStatus.gate
   );
 
@@ -210,11 +217,13 @@ async function main() {
         const e = (window as any).__solarEngine;
         const tm = e.getLandingTelemetry();
         const albedo = e.getRegionalAlbedoStatus();
-        return {
-          tMs: Date.now(), state: tm.state, progress: tm.progress,
-          aglM: tm.altitudeAGLM, mslM: tm.altitudeMSLM,
-          wacVisible: albedo.meshVisible, layerTexelPx: albedo.gate?.layerTexelPx ?? null,
-        };
+      return {
+        tMs: Date.now(), state: tm.state, progress: tm.progress,
+        aglM: tm.altitudeAGLM, mslM: tm.altitudeMSLM,
+        // P3-T5 双模式：两级栈=抬升环带网格可见；L1 模式=门控开且 L1 表面已换装 WAC
+        wacVisible: albedo.meshVisible === true || (albedo.meshVisible === null && albedo.collarSwapped === true),
+        layerTexelPx: albedo.gate?.layerTexelPx ?? null,
+      };
       });
       timeline.push({ ...s, tMs: s.tMs - t0 });
       await waitFrames(200);

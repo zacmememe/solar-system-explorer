@@ -1,0 +1,65 @@
+{
+ "schemaVersion": 2,
+ "admissionState": "requires-source-and-registration-review",
+ "fidelityClaim": "measured-dem",
+ "sourceUrl": "https://imbrium.mit.edu/DATA/LOLA_GDR/CYLINDRICAL/IMG/LDEM_128.IMG",
+ "sourceLabelUrl": "https://imbrium.mit.edu/DATA/LOLA_GDR/CYLINDRICAL/IMG/LDEM_128.LBL",
+ "sourceFile": "LDEM_128.IMG",
+ "sourceFileSha256": "0ab81a3e8d20e5528a21bc6c994974726cb486198013085f4c423c86fbd1154b",
+ "sourceVersion": "V3.0 (PDS3 PRODUCT_VERSION_ID V3.0, PRODUCT_CREATION_TIME 2017-09-15, LRO_ES_52)",
+ "licenseNote": "NASA LRO LOLA PDS 公共数据 LRO-L-LOLA-4-GDR-V1.0，Goddard Space Flight Center 制作（MIT LOLA Data Node 分发）",
+ "verticalDatum": "相对参考球 1737400 m：height_m = DN × 0.5（LBL SCALING_FACTOR）",
+ "nativeSpacingMeters": 236.901,
+ "width": 2152,
+ "height": 1025,
+ "projection": {
+  "type": "SIMPLE_CYLINDRICAL",
+  "coordinateSystem": "PLANETOCENTRIC",
+  "positiveLongitude": "EAST",
+  "referenceRadiusM": 1737400,
+  "centerLatitudeDeg": 0,
+  "centerLongitudeDeg": 180,
+  "pixelsPerDegree": 128,
+  "note": "像素注册：lon = ((colStart+col)+0.5)/128 + LON_MIN_FLOOR… 由 window+PPD 反解；lat = ((rowStart+row)+0.5)/128 自 90N 递减（LBL LINE/SAMPLE_PROJECTION_OFFSET 11519.5/23039.5 反解核实）"
+ },
+ "window": {
+  "colStart": 2866,
+  "rowStart": 8415,
+  "width": 2152,
+  "height": 1025
+ },
+ "sourceNoDataValue": null,
+ "minimumHeightM": -4060.5,
+ "maximumHeightM": 823.5,
+ "heightSha256": "00055e9eb002f15a55f89fe374ed7fcf15876e60947828b9127020fabf44da0f",
+ "encoding": {
+  "dtype": "int16-le",
+  "scaleMetersPerDn": 0.5
+ },
+ "crosscheckNacDtm": [
+  {
+   "name": "站点",
+   "lat": 20.2108,
+   "lon": 30.7997,
+   "lolaM": -2640.2,
+   "nacM": -2641.1,
+   "diffM": 0.9
+  },
+  {
+   "name": "站点东 2km",
+   "lat": 20.2108,
+   "lon": 30.79977028147732,
+   "lolaM": -2640.3,
+   "nacM": -2641.2,
+   "diffM": 0.9
+  },
+  {
+   "name": "站点北 2km",
+   "lat": 20.21086595066231,
+   "lon": 30.7997,
+   "lolaM": -2640.2,
+   "nacM": -2641.1,
+   "diffM": 0.9
+  }
+ ]
+}

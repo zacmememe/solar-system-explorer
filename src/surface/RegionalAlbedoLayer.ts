@@ -56,14 +56,26 @@ export class RegionalAlbedoLayer {
 
   constructor(
     baseRadius: number,
-    holeBounds: { latMin: number; latMax: number; lonMin: number; lonMax: number }
+    holeBounds: { latMin: number; latMax: number; lonMin: number; lonMax: number },
+    opts?: { attachMesh?: boolean }
   ) {
     this.baseRadius = baseRadius;
     this.holeBounds = holeBounds;
+    // P3-T5：L1 模式下不建抬升环带网格——LOLA 网格是该区域唯一有效不透明
+    // 表面，本类退化为"WAC 纹理源 + SSE 门控"，影像经 collarTexture 直接
+    // 换装到 L1 材质（Pro 260924：单一表面换图，非叠加层）。
+    this.buildMesh = opts?.attachMesh !== false;
   }
 
+  private readonly buildMesh: boolean;
+
   public get isReady(): boolean {
-    return !!this.texture && !!this.mesh;
+    return !!this.texture && (this.buildMesh ? !!this.mesh : true);
+  }
+
+  /** SSE 门控当前状态（P3-T5：无网格模式下供 L1 影像换装消费） */
+  public get gateOpen(): boolean {
+    return this.visibleNow;
   }
 
   public get error(): string | null {
@@ -105,21 +117,23 @@ export class RegionalAlbedoLayer {
 
       this.texture = tex;
       this.meta = meta;
-      this.material = new THREE.MeshStandardMaterial({
-        map: tex,
-        color: 0xffffff,
-        roughness: 0.95,
-        metalness: 0.05,
-        side: THREE.FrontSide,
-        // 压过基准球面防 z-fighting（ε 半径 + 窗口空间偏移双保险）
-        polygonOffset: true,
-        polygonOffsetFactor: -2,
-        polygonOffsetUnits: -2,
-      });
-      this.mesh = new THREE.Mesh(this.buildAnnulusGeometry(meta.bounds), this.material);
-      this.mesh.name = 'wac-emp-regional-albedo';
-      this.mesh.visible = false;
-      this.mesh.receiveShadow = true;
+      if (this.buildMesh) {
+        this.material = new THREE.MeshStandardMaterial({
+          map: tex,
+          color: 0xffffff,
+          roughness: 0.95,
+          metalness: 0.05,
+          side: THREE.FrontSide,
+          // 压过基准球面防 z-fighting（ε 半径 + 窗口空间偏移双保险）
+          polygonOffset: true,
+          polygonOffsetFactor: -2,
+          polygonOffsetUnits: -2,
+        });
+        this.mesh = new THREE.Mesh(this.buildAnnulusGeometry(meta.bounds), this.material);
+        this.mesh.name = 'wac-emp-regional-albedo';
+        this.mesh.visible = false;
+        this.mesh.receiveShadow = true;
+      }
 
       // 裙边换装纹理：与 overlay 同图像，按全球等距圆柱 UV 逆映射取样
       // （裙边 u_g∈[u0,u0+du] → 裁影像元 [0,1]：repeat=1/du, offset=−u0/du）
@@ -139,10 +153,11 @@ export class RegionalAlbedoLayer {
     }
   }
 
-  /** 就绪后调用：把网格挂到月面（body-fixed 局部系），返回裙边换装纹理 */
+  /** 就绪后调用：把网格挂到月面（body-fixed 局部系），返回裙边换装纹理。
+   * P3-T5 无网格模式：不挂任何对象，仅返回换装纹理。 */
   public attach(parent: THREE.Object3D): THREE.Texture | null {
-    if (!this.isReady || !this.mesh) return null;
-    parent.add(this.mesh);
+    if (!this.isReady) return null;
+    if (this.buildMesh && this.mesh) parent.add(this.mesh);
     return this.collarTexture;
   }
 
@@ -156,7 +171,7 @@ export class RegionalAlbedoLayer {
     vFovRad: number,
     deltaSec: number
   ): void {
-    if (!this.isReady || !this.mesh || !this.material) return;
+    if (!this.isReady || !this.meta) return;
     const layerTexelM = this.meta?.nativeSpacingMeters ?? 99.75;
     const gate = imageryLayerGate({
       layerTexelM,
@@ -171,25 +186,27 @@ export class RegionalAlbedoLayer {
       if (!this.visibleNow) {
         this.visibleNow = true;
         this.fadeT = 0;
-        this.material.transparent = true;
-        this.material.opacity = 0;
+        if (this.material) {
+          this.material.transparent = true;
+          this.material.opacity = 0;
+        }
       }
       if (this.fadeT < 1) {
         this.fadeT = Math.min(1, this.fadeT + deltaSec / FADE_SEC);
         // smoothstep 成形：起止更缓，中间段亮起（线性不透明度对"逐渐变亮"观感偏生硬）
         const s = this.fadeT;
-        this.material.opacity = s * s * (3 - 2 * s);
-        if (this.fadeT >= 1) {
+        if (this.material) this.material.opacity = s * s * (3 - 2 * s);
+        if (this.fadeT >= 1 && this.material) {
           // 淡入完成回到不透明（Pro：同一不透明表面上混合）
           this.material.transparent = false;
           this.material.opacity = 1;
           this.material.needsUpdate = true;
         }
       }
-      this.mesh.visible = true;
+      if (this.mesh) this.mesh.visible = true;
     } else {
       this.visibleNow = false;
-      this.mesh.visible = false;
+      if (this.mesh) this.mesh.visible = false;
     }
   }
 
