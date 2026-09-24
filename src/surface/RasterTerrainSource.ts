@@ -337,6 +337,7 @@ export class RasterTerrainSource {
     tex.magFilter = THREE.LinearFilter;
     tex.minFilter = THREE.LinearMipmapLinearFilter;
     tex.generateMipmaps = true;
+    tex.anisotropy = 8; // 地表停驻为掠射视角：各向异性过滤显著降低斜视糊感（WAC 层同设 4）
     tex.wrapS = THREE.ClampToEdgeWrapping;
     tex.wrapT = THREE.ClampToEdgeWrapping;
     tex.flipY = false; // 窗口行 0 = 北；UV v 直接按行号方向（见网格构建）
