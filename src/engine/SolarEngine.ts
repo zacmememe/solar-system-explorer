@@ -10,7 +10,7 @@
  */
 
 import * as THREE from 'three';
-import { DepthSliceRenderer } from './DepthSliceRenderer';
+import { DepthSliceRenderer, VEHICLE_DISPLAY_LAYER } from './DepthSliceRenderer';
 import { projectDistantBody, discIsOccluded } from '../astronomy/observerProjection';
 import { CameraController } from '../camera/CameraController';
 import { normalizeWheelDelta, pinchLogDelta } from '../camera/inputKernels';
@@ -249,7 +249,12 @@ export class SolarEngine {
 
   // 航天器伴飞系统
   private currentVehicleId: VehicleId | null = null;
-  private vehicleGroup: THREE.Group = new THREE.Group();
+  /** F-VEHICLE-FOREGROUND-01：载具挂展示 layer，由 DepthSliceRenderer 末段独立 pass 绘制 */
+  private vehicleGroup: THREE.Group = (() => {
+    const g = new THREE.Group();
+    g.layers.set(VEHICLE_DISPLAY_LAYER);
+    return g;
+  })();
   private currentVehicleMesh: THREE.Group | null = null;
   private vehicleLoadGeneration: number = 0;
   private viewCameraMode: ViewCameraMode = 'PLANET_OBSERVE';
@@ -1106,6 +1111,12 @@ export class SolarEngine {
     this.cameraHeadlight.position.set(0.6, 0.8, 1.2);
     this.camera.add(this.cameraHeadlight);
     this.scene.add(this.camera);
+    // F-VEHICLE-FOREGROUND-01：灯光同步启用展示 layer——展示 pass 相机只收
+    // layer 1，灯若留在 layer 0 会把载具渲染成无光照黑剪影。灯掩码 0|1 对
+    // 世界 pass（相机掩码 1）的可见性判断无影响。
+    this.sunPointLight.layers.enable(VEHICLE_DISPLAY_LAYER);
+    this.ambientLight.layers.enable(VEHICLE_DISPLAY_LAYER);
+    this.cameraHeadlight.layers.enable(VEHICLE_DISPLAY_LAYER);
 
     // 5.1 载具航天器容器与初始载具
     this.scene.add(this.vehicleGroup);
@@ -2750,7 +2761,9 @@ export class SolarEngine {
     anchorDistOverRadius: number;
     farNearPlane: number | null;
     depthRanges?: Array<{near: number; far: number}>;
-  } = { layered: false, anchorBodyId: null, anchorDistOverRadius: Infinity, farNearPlane: null };
+    /** F-VEHICLE-FOREGROUND-01：本帧是否执行了载具独立展示 pass */
+    vehicleDisplayPass: boolean;
+  } = { layered: false, anchorBodyId: null, anchorDistOverRadius: Infinity, farNearPlane: null, vehicleDisplayPass: false };
 
   public renderFrame(): void {
     const snap = this.cameraController.getSnapshot();
@@ -2762,10 +2775,15 @@ export class SolarEngine {
       anchorDistOverRadius = this.camera.position.distanceTo(node.mesh.getWorldPosition(new THREE.Vector3()))
         / (node.displayRadius * scale);
     }
-    const ranges = this.depthRenderer.render(this.renderer, this.scene, this.camera);
+    // F-VEHICLE-FOREGROUND-01：可见载具挂展示 layer——世界（含分段深度）完成后
+    // 独立展示 pass 绘制；纯星球观察（visible=false）跳过该 pass。
+    const vehicleDisplayPass = this.vehicleGroup.visible && this.vehicleGroup.parent === this.camera;
+    const ranges = this.depthRenderer.render(this.renderer, this.scene, this.camera,
+      vehicleDisplayPass ? { displayLayer: VEHICLE_DISPLAY_LAYER } : undefined);
     this.lastFrameRenderInfo = {
       layered: ranges.length > 1, anchorBodyId, anchorDistOverRadius,
       farNearPlane: ranges.length > 1 ? ranges[0].near : null, depthRanges: ranges,
+      vehicleDisplayPass,
     };
   }
 
@@ -3025,6 +3043,8 @@ export class SolarEngine {
       if (!group) return;
 
       this.currentVehicleMesh = group;
+      // F-VEHICLE-FOREGROUND-01：模型全部节点迁到展示 layer（世界 pass 屏蔽）
+      group.traverse((o) => o.layers.set(VEHICLE_DISPLAY_LAYER));
       this.vehicleGroup.add(group);
     });
   }
@@ -3204,8 +3224,9 @@ export class SolarEngine {
         }
         this.vehicleGroup.visible = true;
 
-        // 伴飞视角：航天器稳固置于相机右前下方前景（视觉占比约 18%-22%）
-        const normScale = 0.85 / origDim;
+        // 伴飞视角：航天器稳固置于相机右前下方前景（0.85 缩 25% → 0.6375，
+        // F-VEHICLE-FOREGROUND-01 首个候选：伴飞占比过大被星球吞没的整改之一）
+        const normScale = 0.6375 / origDim;
         this.currentVehicleMesh.scale.setScalar(normScale);
 
         const bob = this.reduceMotion ? 0.0 : Math.sin(now * 0.002) * 0.012;
