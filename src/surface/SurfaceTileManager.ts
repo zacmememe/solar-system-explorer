@@ -341,23 +341,41 @@ export class SurfaceTileManager {
       }
     }
 
-    // 单一不透明叶子覆盖更新：若一个瓦片的所有 4 个子节点均已稳定呈现，隐藏其自身网格 (TILE-06)
+    // R2（260925 审计六）：单一不透明几何覆盖——4 子创建即隐藏父网格。
+    // 子瓦片初始显示祖先纹理的正确 UV 子窗口（createTileItem），自有纹理
+    // 到达后在同一子几何上混合（TILE-05 imageMix）——覆盖交接是原子的，
+    // 不存在"父级与子级同时绘制同一表面"的窗口。改前父级要等全部子瓦片
+    // ready+混合完成才隐藏，加载/混合期同区域 5 层几何同画（独立黑片来源）。
+    // unrequested（ROI 外）/failed 的子瓦片恒显示祖先纹理，语义不变。
     for (const tile of this.activeTiles.values()) {
-      if (tile.children && tile.children.length === 4) {
-        const allChildrenReady = tile.children.every(
-          (c) =>
-            (c.ioState === 'ready' && c.imageMix >= 1.0) ||
-            c.ioState === 'unrequested' ||
-            c.ioState === 'failed'
-        );
-        tile.mesh.visible = !allChildrenReady;
-      } else {
-        tile.mesh.visible = true;
-      }
+      tile.mesh.visible = !(tile.children && tile.children.length === 4);
     }
 
     // 执行 LRU 缓存预算与活跃瓦片硬限制检查 (TILE-08)
     this.trimCache();
+  }
+
+  /**
+   * R2 诊断（探针/验收只读）：覆盖唯一性违规计数。违规 = 拥有 4 子却仍可见
+   * 的父网格（父子同画同一表面）。修复后恒 0。
+   */
+  public coverageDiagnostic(): {
+    violations: number;
+    visibleMeshes: number;
+    loadingTiles: number;
+    fadingTiles: number;
+  } {
+    let violations = 0;
+    let visibleMeshes = 0;
+    let loadingTiles = 0;
+    let fadingTiles = 0;
+    for (const tile of this.activeTiles.values()) {
+      if (tile.children && tile.children.length === 4 && tile.mesh.visible) violations++;
+      if (tile.mesh.visible) visibleMeshes++;
+      if (tile.ioState === 'loading') loadingTiles++;
+      if (tile.loadState === 'fading-in') fadingTiles++;
+    }
+    return { violations, visibleMeshes, loadingTiles, fadingTiles };
   }
 
   /**
@@ -417,6 +435,7 @@ export class SurfaceTileManager {
 
         const childCoords = SurfaceTileScheme.getChildCoordinates(tile.coord);
         tile.children = childCoords.map((c) => this.createTileItem(c, tile));
+        tile.mesh.visible = false; // R2：分裂帧立即隐藏父（子已显示祖先纹理），消除同帧父子同画
         this.frameSplits++;
 
         for (const child of tile.children) {
