@@ -37,3 +37,19 @@ export function patchOpacityUniform(m: THREE.Material | THREE.Material[] | undef
   if (!u) return null;
   return u.uOpacity ?? u.layerOpacity ?? null;
 }
+
+/**
+ * F-SURFACE-BLEND-01：细层表面（L1/rim/skirt/DTM 窗）统一渐显门控。
+ * MoonMaterial 着色的层写 uOpacity uniform（同本体着色器契约）；
+ * 既有 MeshStandardMaterial 层保持 opacity 字段，行为不变。
+ */
+export function setSurfaceLayerOpacity(m: THREE.Material, o: number): void {
+  const u = (m as THREE.ShaderMaterial).uniforms;
+  if (u && u.uOpacity) {
+    u.uOpacity.value = o;
+    m.transparent = o < 0.999;
+  } else {
+    m.transparent = o < 0.999;
+    m.opacity = o;
+  }
+}

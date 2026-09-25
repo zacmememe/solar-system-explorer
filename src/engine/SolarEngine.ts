@@ -11,7 +11,7 @@
 
 import * as THREE from 'three';
 import { DepthSliceRenderer, VEHICLE_DISPLAY_LAYER } from './DepthSliceRenderer';
-import { makeHolePatchMaterial, patchOpacityUniform } from '../rendering/HolePatchMaterial';
+import { makeHolePatchMaterial, patchOpacityUniform, setSurfaceLayerOpacity } from '../rendering/HolePatchMaterial';
 import { projectDistantBody, discIsOccluded } from '../astronomy/observerProjection';
 import { CameraController } from '../camera/CameraController';
 import { normalizeWheelDelta, pinchLogDelta } from '../camera/inputKernels';
@@ -153,13 +153,14 @@ interface MoonSiteStack {
   lola: LolaRegionalSource;
   holedGeometry: THREE.BufferGeometry | null;
   valleyMesh?: THREE.Mesh;
-  valleyMaterial?: THREE.MeshStandardMaterial;
+  /** F-SURFACE-BLEND-01：静海原型换 MoonMaterial 着色，类型放宽为通用 Material */
+  valleyMaterial?: THREE.MeshStandardMaterial | THREE.ShaderMaterial;
   capMesh?: THREE.Mesh;
   /** F-LUNAR-LIMB-01：挖孔补片（细层渐显隐藏期间以原球面填孔，防斜视/球缘缺口） */
   patchMesh?: THREE.Mesh;
   /** R2：补片克隆材质（独立 uOpacity，随细层渐显连续淡出） */
   patchMaterial?: THREE.ShaderMaterial;
-  lolaMaterials: THREE.MeshStandardMaterial[];
+  lolaMaterials: (THREE.MeshStandardMaterial | THREE.ShaderMaterial)[];
   rockFieldMaterial: THREE.MeshStandardMaterial | null;
   collarMaterial: THREE.MeshStandardMaterial | null;
   loadStarted: boolean;
@@ -369,17 +370,50 @@ export class SolarEngine {
     const prevActiveSite = this.activeMoonSiteId;
     heightProvider.setActiveMoonSite(stack.siteId);
     try {
-      const valleyMat = new THREE.MeshStandardMaterial({
-        color: 0x94a3b8,
-        roughness: 0.95,
-        metalness: 0.05,
-        side: THREE.FrontSide,
-        // P3-T5：DTM 与 L1 同为实测地形（高差米级），近距叠显时以深度偏移
-        // 保证细级（5m）稳定胜出——LOD 层级排序，非掩盖缺陷
-        polygonOffset: true,
-        polygonOffsetFactor: -1,
-        polygonOffsetUnits: -1,
-      });
+      // F-SURFACE-BLEND-01（静海原型）：细层与本体同口径着色。诊断（raycast-v4，
+      // 295km 降落机位）确认矩形明暗带=外球 MoonMaterial 着色 ↔ L1/skirt
+      // MeshStandardMaterial 着色失配；静海站 valley/L1/rim 换 MoonMaterial，
+      // 光照 uniform（sunDirection/teachingLight）与本体共享同一对象，逐帧
+      // 自动同步；他站维持 MeshStandardMaterial 不动。
+      const isBlendSite = stack.siteId === 'tranquility-base';
+      const bodyShaderMat = satMesh.material as THREE.ShaderMaterial;
+      const sharedLight = isBlendSite && bodyShaderMat.uniforms
+        ? {
+            sunDirection: bodyShaderMat.uniforms.sunDirection,
+            teachingLight: bodyShaderMat.uniforms.teachingLight,
+          }
+        : undefined;
+      const valleyWin = rasterSource.windowBounds;
+      const valleyMat = isBlendSite
+        ? createMoonMaterial(null, {
+            shared: sharedLight,
+            blend: valleyWin ? {
+              loTexture: null,
+              uvRect: [
+                (valleyWin.lonMin + 180) / 360, (valleyWin.latMin + 90) / 180,
+                (valleyWin.lonMax + 180) / 360, (valleyWin.latMax + 90) / 180,
+              ],
+              bandFrac: 0.15, // 方案起点：10–20% 带宽取中值；核心权重 1 保留 NAC 原始高清
+            } : undefined,
+          })
+        : new THREE.MeshStandardMaterial({
+            color: 0x94a3b8,
+            roughness: 0.95,
+            metalness: 0.05,
+            side: THREE.FrontSide,
+            // P3-T5：DTM 与 L1 同为实测地形（高差米级），近距叠显时以深度偏移
+            // 保证细级（5m）稳定胜出——LOD 层级排序，非掩盖缺陷
+            polygonOffset: true,
+            polygonOffsetFactor: -1,
+            polygonOffsetUnits: -1,
+          });
+      if (isBlendSite) {
+        valleyMat.side = THREE.FrontSide;
+        // 同 MeshStandard 版语义：细级（5m）近距稳定胜出的深度偏移（LOD 排序）
+        valleyMat.polygonOffset = true;
+        valleyMat.polygonOffsetFactor = -1;
+        valleyMat.polygonOffsetUnits = -1;
+      }
       stack.valleyMaterial = valleyMat;
       const valleyMesh = new THREE.Mesh(new THREE.BufferGeometry(), valleyMat);
       valleyMesh.name = `${stack.siteId}-terrain`;
@@ -393,9 +427,15 @@ export class SolarEngine {
       const ortho = rasterSource.buildOrthoTexture();
       if (geo && ortho) {
         ortho.colorSpace = THREE.SRGBColorSpace; // I/F 影像产品按显示意图处理
-        valleyMat.map = ortho;
-        valleyMat.color.set(0xffffff);
-        valleyMat.needsUpdate = true;
+        const vu = (valleyMat as THREE.ShaderMaterial).uniforms;
+        if (isBlendSite && vu && vu.moonTexture) {
+          vu.moonTexture.value = ortho;
+        } else {
+          const std = valleyMat as THREE.MeshStandardMaterial;
+          std.map = ortho;
+          std.color.set(0xffffff);
+          std.needsUpdate = true;
+        }
         valleyMesh.geometry.dispose();
         valleyMesh.geometry = geo;
         valleyMesh.visible = true;
@@ -487,19 +527,37 @@ export class SolarEngine {
             : undefined;
           const lolaGeo = lola.buildRegionalGeometry(satRadius, 2, lolaHole);
           if (lolaGeo) {
-            const lolaMat = new THREE.MeshStandardMaterial({
-              color: 0xffffff,
-              roughness: 0.95,
-              metalness: 0.05,
-            });
+            // F-SURFACE-BLEND-01（静海原型）：L1/skirt 换 MoonMaterial 着色，
+            // 与本体同一光照模型（同图同着色，收敛矩形明暗带）；纹理初值取本体
+            // 已加载的全球图，迟到换装仍走下方回调。
+            const globalTex0 = bodyShaderMat.uniforms?.moonTexture?.value ?? null;
+            const lolaMat = isBlendSite
+              ? createMoonMaterial(globalTex0, { shared: sharedLight })
+              : new THREE.MeshStandardMaterial({
+                  color: 0xffffff,
+                  roughness: 0.95,
+                  metalness: 0.05,
+                });
             stack.lolaMaterials = [lolaMat];
             // L1 网格 UV=全球等距圆柱：2K 全球图直接可用（WAC 换装仅 taurus）
             new THREE.TextureLoader().load('/assets/textures/moon/lroc_color_2k.jpg', (tex) => {
               tex.colorSpace = THREE.SRGBColorSpace;
               for (const mat of stack.lolaMaterials) {
-                if (mat.map) continue;
-                mat.map = tex;
-                mat.needsUpdate = true;
+                const su = (mat as THREE.ShaderMaterial).uniforms;
+                if (su && su.moonTexture) {
+                  su.moonTexture.value = tex;
+                } else {
+                  const std = mat as THREE.MeshStandardMaterial;
+                  if (!std.map) {
+                    std.map = tex;
+                    std.needsUpdate = true;
+                  }
+                }
+              }
+              // 静海 valley 混合底图迟到补装（同一张全球 2K）
+              if (isBlendSite && stack.valleyMaterial) {
+                const vu = (stack.valleyMaterial as THREE.ShaderMaterial).uniforms;
+                if (vu && vu.uLoTexture) vu.uLoTexture.value = tex;
               }
             });
             const lolaMesh = new THREE.Mesh(lolaGeo, lolaMat);
@@ -520,7 +578,11 @@ export class SolarEngine {
               const rimGeo = lola.buildWindowRimSkirt(satRadius, nacWindow, nacHeightAt, 0.15);
               if (rimGeo) {
                 // 裙圈是窗缘细级：polygonOffset 压过 L1 挖孔锯齿边（LOD 排序）
-                const rimMat = lolaMat.clone();
+                const rimMat = isBlendSite
+                  ? createMoonMaterial(
+                      (lolaMat as THREE.ShaderMaterial).uniforms?.moonTexture?.value ?? null,
+                      { shared: sharedLight })
+                  : lolaMat.clone();
                 rimMat.polygonOffset = true;
                 rimMat.polygonOffsetFactor = -1;
                 rimMat.polygonOffsetUnits = -1;
@@ -530,7 +592,7 @@ export class SolarEngine {
                 stack.group.add(rimMesh);
               }
             }
-            stack.collarMaterial = lolaMat; // WAC 换装目标沿用字段语义（taurus）
+            stack.collarMaterial = isBlendSite ? null : (lolaMat as THREE.MeshStandardMaterial); // WAC 换装目标沿用字段语义（taurus）
           } else {
             console.warn('[SolarEngine] L1 网格构建失败（保持两级栈）');
             lolaReady = false;
@@ -985,10 +1047,10 @@ export class SolarEngine {
     return null;
   }
   private lunarValleyMesh?: THREE.Mesh;
-  private lunarValleyMaterial?: THREE.MeshStandardMaterial;
+  private lunarValleyMaterial?: THREE.MeshStandardMaterial | THREE.ShaderMaterial;
   private moonHoleCapMesh?: THREE.Mesh;
-  private lolaMaterial?: THREE.MeshStandardMaterial;
-  private lolaMaterials: THREE.MeshStandardMaterial[] = [];
+  private lolaMaterial?: THREE.MeshStandardMaterial | THREE.ShaderMaterial;
+  private lolaMaterials: (THREE.MeshStandardMaterial | THREE.ShaderMaterial)[] = [];
   private lolaWacTexture?: THREE.Texture;
   /** S3a 程序碎石场（示意层）：材质驱动距离淡入 */
   private rockFieldMaterial: THREE.MeshStandardMaterial | null = null;
@@ -2874,7 +2936,7 @@ export class SolarEngine {
       // P3-T5：L1 模式下"换装"语义 = L1 表面材质已由 2K 全球图换为 WAC
       //（同源影像、同一 UV 裁剪变换）；两级栈回退时沿用 NAC 裙边网格判定
       collarSwapped: this.lolaMaterial
-        ? this.lolaMaterial.map?.image?.width === layer.provenance?.width
+        ? (this.lolaMaterial as THREE.MeshStandardMaterial).map?.image?.width === layer.provenance?.width
         : collar
           ? !!collar.material &&
             (collar.material as THREE.MeshStandardMaterial).map?.image?.width === layer.provenance?.width
@@ -3416,9 +3478,10 @@ export class SolarEngine {
       // S5-3：WAC 资产仅 taurus 打包——非 taurus 激活站不得换装
       if (this.lolaWacTexture && this.activeMoonSiteId === 'taurus-littrow' && this.regionalAlbedo.gateOpen) {
         for (const mat of this.lolaMaterials) {
-          if (mat.map !== this.lolaWacTexture) {
-            mat.map = this.lolaWacTexture;
-            mat.needsUpdate = true;
+          const std = mat as THREE.MeshStandardMaterial; // 仅 taurus 走此路径，仍为标准材质
+          if (std.map !== this.lolaWacTexture) {
+            std.map = this.lolaWacTexture;
+            std.needsUpdate = true;
           }
         }
       }
@@ -3451,8 +3514,8 @@ export class SolarEngine {
           siteDistM
         );
         const opacity = terrainRevealOpacity(blockPx);
-        this.lunarValleyMaterial.transparent = opacity < 1;
-        this.lunarValleyMaterial.opacity = opacity;
+        // F-SURFACE-BLEND-01：静海 valley 已换 MoonMaterial——统一走 uOpacity 契约
+        setSurfaceLayerOpacity(this.lunarValleyMaterial, opacity);
 
         // P3-T5b：L1 同律渐显——按网格纹元屏幕张角（decimate 2 × 236.9m ≈ 474m）
         // 0.35→1.3px smoothstep（~1470km 起、~395km 全显，先于 WAC 门控 361km）。
@@ -3462,8 +3525,7 @@ export class SolarEngine {
         const cellPx = projectedTexelPx(lolaCellM, focalPixelsPx(this.drawingBufferSizeTmp.y, THREE.MathUtils.degToRad(this.camera.fov)), siteDistM);
         const l1Opacity = terrainRevealOpacity(cellPx, 0.35, 1.3);
         for (const mat of this.lolaMaterials) {
-          mat.transparent = l1Opacity < 1;
-          mat.opacity = l1Opacity;
+          setSurfaceLayerOpacity(mat, l1Opacity);
         }
 
         // F-LUNAR-LIMB-01/R2：挖孔补片连续淡出——透明度=1−max(DTM,L1)，
