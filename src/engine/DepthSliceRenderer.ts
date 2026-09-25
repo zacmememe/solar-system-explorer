@@ -29,12 +29,20 @@ type Renderer = Pick<THREE.WebGLRenderer, 'autoClear' | 'clear' | 'clearDepth' |
 
 export class DepthSliceRenderer {
   private readonly passCamera = new THREE.PerspectiveCamera();
+  private readonly tmpMat4 = new THREE.Matrix4();
+  private readonly tmpVec3 = new THREE.Vector3();
 
   render(
     renderer: Renderer,
     scene: THREE.Scene,
     camera: THREE.PerspectiveCamera,
-    options?: { displayLayer?: number }
+    options?: {
+      displayLayer?: number;
+      /** 展示内容的世界空间包围球（R1）：展示投影按它取有限 near/far */
+      displaySphere?: { center: THREE.Vector3; radius: number };
+      /** 输出：展示 pass 实际使用的投影范围（诊断/验收取证） */
+      displayRangeOut?: { near: number; far: number };
+    }
   ): DepthSlice[] {
     const displayLayer = options?.displayLayer;
     const slices = depthSlices(camera.near, camera.far);
@@ -61,8 +69,29 @@ export class DepthSliceRenderer {
       if (displayLayer != null) {
         // 独立展示 pass：世界深度完成后只清深度；世界颜色不被清空，
         // 载具不被世界深度吞没，也不重复出现在世界 pass 中。
+        // R1：投影范围不得继承世界最近切片——月面量级下末段 far 可为 2e-4，
+        // 会整体裁掉相机前 ~2 单位的载具。有包围球时按其相机空间深度取
+        // 有限 near/far（余量 10%），否则回退权威相机全范围。
+        let dNear = camera.near;
+        let dFar = camera.far;
+        const sphere = options?.displaySphere;
+        if (sphere && sphere.radius > 0 && Number.isFinite(sphere.radius)) {
+          this.tmpMat4.copy(camera.matrixWorld).invert();
+          const camSpaceZ = this.tmpVec3.copy(sphere.center).applyMatrix4(this.tmpMat4).z;
+          const dist = Math.max(0, -camSpaceZ);
+          const margin = sphere.radius * 1.1;
+          dNear = THREE.MathUtils.clamp(dist - margin, camera.near, camera.far);
+          dFar = THREE.MathUtils.clamp(dist + margin, Math.min(dNear * 2, camera.far), camera.far);
+        }
         renderer.clearDepth();
         this.passCamera.layers.set(displayLayer);
+        this.passCamera.near = dNear;
+        this.passCamera.far = dFar;
+        this.passCamera.updateProjectionMatrix();
+        if (options?.displayRangeOut) {
+          options.displayRangeOut.near = dNear;
+          options.displayRangeOut.far = dFar;
+        }
         renderer.render(scene, this.passCamera);
       }
     } finally {

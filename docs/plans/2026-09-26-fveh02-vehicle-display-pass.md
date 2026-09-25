@@ -2,6 +2,8 @@
 
 任务/作者：F-VEHICLE-FOREGROUND-01 / zcode sess_625dc0df。分支 `codex/restore-observation-experience`，基于项 1 commit（721f8b4）之上。证据目录 `D:\solar-evidence\F-VEHICLE-FOREGROUND-01\`。
 
+> **勘误（2026-09-26，bdac3bc 复核 R1）**：本文初版声称展示 pass 使载具"不被世界 near/far 裁掉"——该声明在月面量级下不成立：展示 pass 当时继承世界分段最近切片的 near/far（near=2e-8 时末段 far≈2e-4），相机前 ~2 单位的载具整体在锥外，Codex 已用投影反例复现。修复见后续 R1 提交（展示 pass 独立投影范围 + 包围球视锥测试）；本节其余描述仍准确。原第 1 条中"不被世界 near/far 裁掉"以 R1 修复为准。
+
 ## 方案（layer 隔离 + 独立展示 pass）
 
 展示载具（伴飞/随船）迁入专属 `VEHICLE_DISPLAY_LAYER`（layer 1）：
