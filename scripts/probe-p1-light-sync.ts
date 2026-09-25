@@ -55,7 +55,7 @@ async function main() {
   await new Promise((r) => setTimeout(r, 900));
 
   const report: any = { url: TARGET_URL, checks: [] };
-  const snap = () => page.evaluate(`(() => {
+  const snap = async (): Promise<any> => page.evaluate<any>(`(() => {
     const e = window.__solarEngine;
     const st = e.moonSiteStacks.get('tranquility-base');
     const body = e.moonMaterial.uniforms;
