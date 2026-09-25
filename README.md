@@ -8,6 +8,10 @@
 
 ## 本地开发
 
+日常游玩只需双击根目录的 **`启动太阳系漫游.bat`**。每次启动先执行当前项目的 `npm run build`，成功后才打开新生成的版本；无需选择模式。首次出现页面前请等待构建完成。构建失败会停在窗口显示错误，不启动旧包。端口被占用时自动使用下一个可用端口，并打开对应的新地址。
+
+`双击启动.bat` 重复入口已移除。`导出Pro审查材料.bat` 仅导出审查材料，不启动游戏。这里的“最新”指当前本地文件；启动器不会自动拉取 GitHub 或改动尚未提交的代码。
+
 项目继续在原来的 D 盘目录中使用 Antigravity 开发，GitHub 保存提交后的版本。
 
 ```powershell
@@ -20,7 +24,7 @@ npm run dev
 - `npm run build`：TypeScript 检查和生产构建。
 - `npm test`：Vitest 单元与回归测试。
 - `npm run preview`：预览生产构建，默认端口 4173。
-- `npm run launch`：现有交互式本地启动器。
+- `npm run launch`：与唯一启动 BAT 相同，构建最新本地源码后打开预览。
 - `npm run review:export`：导出 HEAD 提交的审查材料，不提交、不推送、不部署。
 
 现有 `npm run test:e2e` 默认访问线上地址。测试当前本地构建时，先运行 build 和 preview，再设置 `$env:TEST_URL = 'http://localhost:4173'`。该脚本使用本机已有 Chrome / Edge，浏览器测试前应检查脚本配置。`verify-assets` 涉及外部资产下载；它不是离线检查命令。
