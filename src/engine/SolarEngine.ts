@@ -1871,13 +1871,24 @@ export class SolarEngine {
     }
   };
 
+  /** R4：可见链检查——Three Raycaster 不检查祖先 visible（260925 审计七：
+   * 隐藏的旧系统/站点组/父瓦片不该抢点击或挡住后方可见天体的射线交点） */
+  private isObjectVisible(o: THREE.Object3D): boolean {
+    for (let p: THREE.Object3D | null = o; p; p = p.parent) {
+      if (!p.visible) return false;
+    }
+    return true;
+  }
+
   private onDoubleClick = (e: MouseEvent): void => {
     const rect = this.canvas.getBoundingClientRect();
     this.pointerNdc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     this.pointerNdc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
     this.raycaster.setFromCamera(this.pointerNdc, this.camera);
-    const intersects = this.raycaster.intersectObjects(this.pickableMeshes);
+    const intersects = this.raycaster.intersectObjects(
+      this.pickableMeshes.filter((m) => this.isObjectVisible(m))
+    );
     if (intersects.length > 0) {
       const hit = intersects[0].object;
       const bodyId = hit.userData.bodyId as BodyId;
@@ -1914,7 +1925,9 @@ export class SolarEngine {
       this.pointerNdc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       this.pointerNdc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
       this.raycaster.setFromCamera(this.pointerNdc, this.camera);
-      const hits = this.raycaster.intersectObjects(this.pickableMeshes);
+      const hits = this.raycaster.intersectObjects(
+        this.pickableMeshes.filter((m) => this.isObjectVisible(m))
+      );
       this.canvas.style.cursor = hits.length > 0 ? 'pointer' : 'default';
       return;
     }
@@ -1986,11 +1999,13 @@ export class SolarEngine {
     this.pointerNdc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
 
     this.raycaster.setFromCamera(this.pointerNdc, this.camera);
-    const pickables: THREE.Object3D[] = [...this.pickableMeshes];
+    const pickables: THREE.Object3D[] = this.pickableMeshes.filter((m) => this.isObjectVisible(m));
     if (this.earthTileManager) {
       pickables.push(this.earthTileManager.group);
     }
-    const intersects = this.raycaster.intersectObjects(pickables, true);
+    const intersects = this.raycaster
+      .intersectObjects(pickables, true)
+      .filter((i) => this.isObjectVisible(i.object)); // 递归结果里跳过隐藏瓦片/子网格命中
 
     if (intersects.length > 0) {
       const hit = intersects[0].object;
@@ -2011,6 +2026,22 @@ export class SolarEngine {
   }
 
   public executeCameraCommand(cmd: CameraCommand): void {
+    // R4（260925 审计七）：用户明确前往新目标（旅行类命令）→ 撤销旧下降/返轨
+    // 任务及准备/导引许可，从当前真实机位开始新旅程。改前 flyTo 不终止
+    // DESCENDING，animate 下一帧继续 applyLandingFrame 把相机抢回——两套
+    // 任务轮流写相机。仅 select 不在此列（选中不移镜，仍走下方准备收回）
+    const isTravelCommand =
+      cmd.type === 'flyTo' || cmd.type === 'overview' ||
+      cmd.type === 'restoreBookmark' || cmd.type === 'focusRegion';
+    if (isTravelCommand) {
+      const st = this.landingController.getState();
+      if (st !== 'ORBIT' || this.landingPrep) {
+        this.landingPrep = null;
+        this.landingGuideActive = false;
+        this.landingGuidedQuat = null;
+        this.landingController.cancel((scale) => this.setTimeScale(scale));
+      }
+    }
     // P2：用户改选其它天体时收回过期的着陆准备（不自动重发；S4c 按活动站点判）
     if (cmd.type === 'select' && cmd.bodyId !== this.activeLandingBodyId) {
       this.landingController.cancelPreparation();
