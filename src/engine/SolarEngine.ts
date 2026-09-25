@@ -11,7 +11,7 @@
 
 import * as THREE from 'three';
 import { DepthSliceRenderer } from './DepthSliceRenderer';
-import { projectDistantBody } from '../astronomy/observerProjection';
+import { projectDistantBody, discIsOccluded } from '../astronomy/observerProjection';
 import { CameraController } from '../camera/CameraController';
 import { normalizeWheelDelta, pinchLogDelta } from '../camera/inputKernels';
 import {
@@ -59,6 +59,7 @@ import type { CameraCommand, CameraStateSnapshot } from '../contracts/camera';
 import type { HudFrame } from '../contracts/hud';
 import type { VehicleId, ViewCameraMode } from '../contracts/vehicle';
 import type { BookmarkItemV3 } from '../contracts/bookmark';
+import { normalizeObservationIntent } from '../contracts/bookmark';
 import type { PhysicalSystemSnapshot } from '../contracts/physics';
 import type { ObservationMode } from '../world-support/visibility';
 import {
@@ -87,6 +88,7 @@ import {
   generateRockPlacements,
   buildRockGeometry,
   sampleRenderedTerrain,
+  renderedTerrainBounds,
   rockScenePosition,
 } from '../surface/ProceduralRockField';
 import { focalPixelsPx, projectedTexelPx, terrainRevealOpacity } from '../world-support/screenSpaceMetrics';
@@ -772,12 +774,13 @@ export class SolarEngine {
               stack.group.add(skirtMesh);
             }
             if (wb) {
+              const renderedBounds = renderedTerrainBounds(geo);
               const dtmHeightAt = (lat: number, lon: number): number => {
-                const cl = Math.max(wb.latMin, Math.min(wb.latMax, lat));
-                const co = Math.max(wb.lonMin, Math.min(wb.lonMax, lon));
-                return dtm.sampleHeight(cl, co).heightM;
+                const point = sampleRenderedTerrain(geo, lat, lon);
+                if (!point) throw new Error('Mars terrain seam lies outside its displayed grid');
+                return (point.length() / satRadius - 1) * dtm.datumRadius;
               };
-              const rimGeo = mola.buildWindowRimSkirt(satRadius, wb, dtmHeightAt, 0.15);
+              const rimGeo = mola.buildWindowRimSkirt(satRadius, renderedBounds, dtmHeightAt, 0.15);
               if (rimGeo) {
                 // 裙圈是窗缘细级：polygonOffset 压过 L1 挖孔锯齿边（LOD 排序）。
                 // 饱和度渐变（展示层，不改动源影像）：内缘接灰度 HiRISE 正射、
@@ -894,6 +897,24 @@ export class SolarEngine {
    * S5-3：同天体多站时按相机星下点与站点方向点积取最近（点积排序同时给出
    * 半球可见性与角距序——可见半球站优先，均在背面时取最近者走 travel-to-site）。
    */
+  private preferredLandingSites = new Map<BodyId, string>();
+
+  public getLandingSiteChoices(): LandingSite[] {
+    const snap = this.cameraController.getSnapshot();
+    if (this.landingController.getState() !== 'ORBIT' || snap.isTransitioning || snap.mode === 'SURFACE_LOOK') return [];
+    return Object.values(LANDING_SITES).filter(s => s.bodyId === snap.targetBodyId && s.descentEnabled !== false);
+  }
+
+  public selectLandingSite(siteId: string): boolean {
+    const site = this.getLandingSiteChoices().find(s => s.id === siteId);
+    if (!site) return false;
+    this.navigationRevision++;
+    this.preferredLandingSites.set(site.bodyId, site.id);
+    if (site.bodyId === 'moon') this.ensureMoonSiteAssets(site.id);
+    else this.ensureMarsSiteAssets(site.id);
+    return true;
+  }
+
   private resolveLandingSiteForCamera(camSnap: CameraStateSnapshot): { bodyId: BodyId; site: LandingSite } | null {
     for (const id of [camSnap.targetBodyId, camSnap.selectedBodyId]) {
       if (!id) continue;
@@ -901,6 +922,8 @@ export class SolarEngine {
         (s) => s.bodyId === id && s.descentEnabled !== false
       );
       if (!candidates.length) continue;
+      const preferred = candidates.find(s => s.id === this.preferredLandingSites.get(id));
+      if (preferred) return {bodyId:id, site:preferred};
       if (candidates.length === 1) return { bodyId: id, site: candidates[0] };
       const pose = this.getBodyWorldPose(id);
       const rel = this.camera.position
@@ -1575,6 +1598,7 @@ export class SolarEngine {
       const earthNode = this.bodyNodes.get('earth');
       if (earthNode && dayTex && nightTex) {
         this.earthMaterial = createEarthSurfaceMaterial(dayTex, nightTex);
+        this.earthMaterial.uniforms.observationMode.value = this.observationMode === 'terrain-study' ? 1 : 0;
         const sunDir = earthNode.systemGroup.position.clone().negate().normalize();
         this.earthMaterial.uniforms.sunDirection.value.copy(sunDir);
         this.earthMaterial.uniforms.teachingLight.value = this.teachingLight ? 1.0 : 0.0;
@@ -1863,6 +1887,7 @@ export class SolarEngine {
     // 忽略鼠标非左键点击，且不记入 activePointers
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     this.activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    this.canvas.setPointerCapture(e.pointerId);
 
     if (this.activePointers.size === 1) {
       this.isPointerDown = true;
@@ -1964,6 +1989,7 @@ export class SolarEngine {
   };
 
   private onPointerUp = (e: PointerEvent): void => {
+    if (!this.activePointers.has(e.pointerId)) return;
     this.activePointers.delete(e.pointerId);
 
     if (this.activePointers.size === 1) {
@@ -1979,7 +2005,7 @@ export class SolarEngine {
       if (this.isPointerDown) {
         this.isPointerDown = false;
         // 若未发生拖拽位移，视为一次精准点击拾取
-        if (!this.hasDragged) {
+        if (!this.hasDragged && e.type === 'pointerup') {
           this.handlePick(e.clientX, e.clientY);
         }
       }
@@ -2033,6 +2059,7 @@ export class SolarEngine {
   }
 
   public executeCameraCommand(cmd: CameraCommand): void {
+    if (['flyTo', 'overview', 'restoreBookmark', 'focusRegion'].includes(cmd.type)) this.navigationRevision++;
     if ((cmd.type === 'flyTo' && !cmd.exact) || cmd.type === 'overview') {
       // Travel is an explicit presentation transition, not a physical flight.
       // Capture the visible scene so switching local systems does not pop bodies.
@@ -2128,7 +2155,13 @@ export class SolarEngine {
   }
 
   public setTimeScale(scale: number): void {
-    this.timeScale = scale;
+    if (Number.isFinite(scale) && scale >= 0) this.timeScale = scale;
+  }
+
+  public setUserTimeScale(scale: number): void {
+    if (!Number.isFinite(scale) || scale < 0) return;
+    this.landingController.releaseTimeScaleOverride();
+    this.setTimeScale(scale);
   }
 
   public getTimeScale(): number {
@@ -2947,7 +2980,9 @@ export class SolarEngine {
     this.currentVehicleId = id;
     if (!id) return;
 
-    VehicleLoader.loadVehicle(id, gen).then((group) => {
+    // Hangar preview owns VehicleLoader's legacy global generation. The main
+    // scene has its own generation and checks it below; do not compare the two.
+    VehicleLoader.loadVehicle(id).then((group) => {
       if (gen !== this.vehicleLoadGeneration || this.currentVehicleId !== id) {
         if (group) {
           VehicleLoader.disposeVehicleObject(group);
@@ -2966,7 +3001,7 @@ export class SolarEngine {
   }
 
   public setViewCameraMode(mode: ViewCameraMode): void {
-    this.viewCameraMode = mode;
+    this.viewCameraMode = this.currentVehicleId ? mode : 'PLANET_OBSERVE';
     this.updateLightingState();
   }
 
@@ -3239,6 +3274,13 @@ export class SolarEngine {
       });
       this.landingGuideActive = false;
     }
+    if (landingState === 'SURFACE_LOOK') {
+      const anchor=this.cameraController.getSnapshot().anchor;
+      if (anchor?.kind==='surface') {
+        const orientation=this.extractMoonSurfaceOrientation(anchor.lat,anchor.lon);
+        this.landingController.setSurfaceOrientation(orientation.yawDeg,orientation.pitchDeg);
+      }
+    }
     this.prevLandingState = landingState;
     if (landingState !== 'PREPARING' && this.landingPrep) {
       // 准备被取消（HUD 取消按钮等）或已开始下降：清理引擎侧准备上下文，
@@ -3471,29 +3513,8 @@ export class SolarEngine {
         const screenX = ((projected.x + 1) / 2) * width;
         const screenY = ((-projected.y + 1) / 2) * height - screenRadius - 8;
 
-        // 视线遮挡剔除：如果卫星在母星背后，且屏幕投影落在母星盘面内部，则绝不在母星正面虚假投射
-        if (node.data.type === 'moon' && targetSystemPlanet && targetSystemPlanet !== id) {
-          const parentNode = this.bodyNodes.get(targetSystemPlanet);
-          if (parentNode) {
-            const parentWorldPos = new THREE.Vector3();
-            parentNode.mesh.getWorldPosition(parentWorldPos);
-            const distToParent = camPos.distanceTo(parentWorldPos);
-            if (dist > distToParent) {
-              const parentProjected = parentWorldPos.project(this.camera);
-              const parentScreenX = ((parentProjected.x + 1) / 2) * width;
-              const parentScreenY = ((-parentProjected.y + 1) / 2) * height;
-              let parentEffectiveR = this.getBodyWorldPose(targetSystemPlanet).surfaceRadius;
-              if (parentNode.ringMesh && parentNode.data.ringConfig) {
-                parentEffectiveR *= (parentNode.data.ringConfig.outerRadiusRatio * 0.72);
-              }
-              const parentScreenRadius = (parentEffectiveR / Math.max(0.1, distToParent)) * (height / (2.0 * Math.tan(fovRad / 2.0)));
-              const distToParentCenterPx = Math.hypot(screenX - parentScreenX, ((-projected.y + 1) / 2) * height - parentScreenY);
-              if (distToParentCenterPx < parentScreenRadius * 1.05) {
-                continue; // 卫星被母星遮挡在背面，跳过标签展示
-              }
-            }
-          }
-        }
+        const targetPose=this.getBodyWorldPose(id);
+        if ([...this.bodyNodes.keys()].some(other=>other!==id && discIsOccluded(camPos,targetPose,this.getBodyWorldPose(other)))) continue;
 
         labels.push({
           id,
@@ -3521,6 +3542,7 @@ export class SolarEngine {
    */
   public setObservationMode(mode: ObservationMode): void {
     this.observationMode = mode;
+    if (this.earthMaterial) this.earthMaterial.uniforms.observationMode.value = mode === 'terrain-study' ? 1 : 0;
     if (this.earthTileManager) {
       this.earthTileManager.setObservationMode(mode);
     }
@@ -3894,6 +3916,7 @@ export class SolarEngine {
    * 严格遵循 V3 与 R3 规范：捕获真实模拟时钟、展示策略、相机机位与 lookTarget、图层开关、载具、多重观察模式与地表站点
    */
   public captureObservationSnapshot(title = '当前观察点'): BookmarkItemV3 {
+    if (!this.canCaptureObservation()) throw new Error('请等镜头到达或地表停驻后收藏；取消转场后可先重新取景');
     const camSnap = this.cameraController.getSnapshot();
     const currentTargetId = camSnap.targetBodyId || camSnap.selectedBodyId || 'earth';
     const policy = this.bodyPoseProvider.getPolicy();
@@ -3901,7 +3924,8 @@ export class SolarEngine {
 
     // V3 地表站点：来自 CameraController 权威米制站点状态 (真实 body-fixed 坐标/法线/地面高程/眼高/朝向)，
     // 不再使用零坐标与固定法线占位
-    const surfaceStation = this.cameraController.getSurfaceStationPose()?.station;
+    const rawStation = this.cameraController.getSurfaceStationPose()?.station;
+    const surfaceStation = rawStation ? {...rawStation, lonDeg:THREE.MathUtils.euclideanModulo(rawStation.lonDeg + 180,360)-180} : undefined;
 
     return {
       id: `bm-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
@@ -3920,6 +3944,7 @@ export class SolarEngine {
       observationMode: this.observationMode,
       quality: 'analytic-approximation',
       sourceVersion: '2026.09-P2-DTM', // P2 起站点高程来自真实 NAC DTM
+      simulation: {isPaused:this.isPaused,timeScale:this.timeScale},
       viewCameraMode: this.viewCameraMode,
       vehicleId: this.currentVehicleId,
       layers: {
@@ -3932,6 +3957,78 @@ export class SolarEngine {
       simTimeHours: this.simTimeHours,
       createdAtIso: new Date().toISOString(),
     };
+  }
+
+  private navigationRevision = 0;
+
+  public canCaptureObservation(): boolean {
+    const camera=this.cameraController.getSnapshot(), state=this.landingController.getState();
+    return !camera.isTransitioning && camera.anchor?.kind!=='free' && (state==='ORBIT' || state==='SURFACE_LOOK');
+  }
+
+  /** Restore only after matching terrain is ready; later navigation/input revokes this request. */
+  public async restoreObservationSnapshot(bm: BookmarkItemV3): Promise<boolean> {
+    const revision = ++this.navigationRevision;
+    const inputRevision = this.cameraController.getUserInputRevision();
+    const station = bm.surfaceStation;
+    let site: LandingSite | undefined;
+    let longitude = station?.lonDeg ?? 0;
+    if (station) {
+      if (!Number.isFinite(station.latDeg) || Math.abs(station.latDeg)>90 || !Number.isFinite(longitude) || !Number.isFinite(station.eyeHeightM) || station.eyeHeightM<=0) throw new Error('书签地表坐标无效');
+      site = Object.values(LANDING_SITES).find(s => s.bodyId===station.bodyId && Math.abs(s.centerLat-station.latDeg)<1 && Math.abs(THREE.MathUtils.euclideanModulo(longitude-s.centerLon+180,360)-180)<1);
+      if (!site) throw new Error('该书签不在已有真实地形站点内，请选择一个着陆地点');
+      longitude = site.centerLon + THREE.MathUtils.euclideanModulo(longitude-site.centerLon+180,360)-180;
+      if (site.bodyId==='moon') this.ensureMoonSiteAssets(site.id); else this.ensureMarsSiteAssets(site.id);
+      const start=performance.now();
+      while (true) {
+        if (revision!==this.navigationRevision || inputRevision!==this.cameraController.getUserInputRevision()) return false;
+        const stack=site.bodyId==='moon' ? this.moonSiteStacks.get(site.id) : this.marsSiteStacks.get(site.id);
+        if (stack?.built) break;
+        const error = site.bodyId==='moon' ? this.moonSiteStacks.get(site.id)?.raster.error : this.marsSiteStacks.get(site.id)?.dtm.error;
+        if (error) throw new Error('书签地形加载失败，请刷新重试或选择其他站点；已保留当前视角');
+        if (performance.now()-start>45000) throw new Error('书签地形未能就绪，已保留当前视角');
+        await new Promise(resolve=>setTimeout(resolve,100));
+      }
+      const sample=site.bodyId==='moon' ? this.moonSiteStacks.get(site.id)!.raster.sampleHeight(station.latDeg,longitude) : this.marsSiteStacks.get(site.id)!.dtm.sampleHeight(station.latDeg,longitude);
+      if (!sample.valid) throw new Error('书签位置超出该站有效地形范围，已保留当前视角');
+    }
+    if (revision!==this.navigationRevision || inputRevision!==this.cameraController.getUserInputRevision()) return false;
+    this.landingPrep=null;
+    this.landingGuideActive=false;
+    this.landingGuidedQuat=null;
+    this.landingController.cancel(scale=>this.setTimeScale(scale));
+    this.presentationTravel=null;
+    const target=station?.bodyId ?? bm.targetBodyId;
+    const body=BODIES[target];
+    this.cameraController.executeCommand({type:'cancelFlight'});
+    // Set the camera target before refreshing poses; it owns physical reference selection.
+    this.cameraController.executeCommand({type:'restoreBookmark',targetBodyId:target,spherical:bm.spherical,lookTarget:bm.lookTarget,durationSec:this.reduceMotion?0.15:1.2});
+    this.bodyPoseProvider.setPhysicalReferenceBody(body.type==='moon' ? body.parentId! : target);
+    this.setPresentationPolicy(station?'PHYSICAL_OBSERVATION':bm.presentationPolicy,0);
+    this.setSimTimeHours(bm.simTimeHours);
+    if (bm.simulation) {
+      this.setPaused(bm.simulation.isPaused);
+      this.setTimeScale(bm.simulation.timeScale);
+    }
+    this.setVehicle(bm.vehicleId ?? null);
+    this.setViewCameraMode(bm.vehicleId ? bm.viewCameraMode : 'PLANET_OBSERVE');
+    this.setShowClouds(bm.layers.showClouds);
+    this.setShowAtmosphere(bm.layers.showAtmosphere);
+    this.setTeachingLight(bm.layers.teachingLight);
+    this.setShowVenusSurface(bm.layers.venusRadarMode);
+    this.setObservationMode(normalizeObservationIntent(bm.observationMode));
+    if (station && site) {
+      if (site.bodyId==='moon') this.activateMoonSite(site.id); else this.activateMarsSite(site.id);
+      this.preferredLandingSites.set(site.bodyId,site.id);
+      this.landingController.restoreSurfaceStation(site.id,station.latDeg,longitude,station.eyeHeightM);
+      this.cameraController.executeCommand({type:'enterSurfaceLook',bodyId:site.bodyId,lat:station.latDeg,lon:longitude,eyeHeightM:station.eyeHeightM,initialYawDeg:station.orientationDeg?.yawDeg ?? 0,initialPitchDeg:station.orientationDeg?.pitchDeg ?? 0});
+      this.cameraController.update(0,id=>this.getBodyWorldPose(id));
+      if (bm.lookTarget?.kind==='body') this.cameraController.executeCommand({type:'lookAtSkyTarget',targetBodyId:bm.lookTarget.bodyId});
+      this.prevLandingState='SURFACE_LOOK';
+    }
+    this.callbacks.onSelectBody?.(target);
+    this.emitSnapshot();
+    return true;
   }
 
   /**
@@ -3966,6 +4063,7 @@ export class SolarEngine {
 
 
   public dispose(): void {
+    this.navigationRevision++;
     this.isRunning = false;
     cancelAnimationFrame(this.animFrameId);
     window.removeEventListener('resize', this.onResize);

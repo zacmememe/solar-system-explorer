@@ -313,6 +313,7 @@ export function importBookmarksJson(jsonStr: string): {
  * 严格校验书签合法性（支持 V1、V2 和 V3，使用 Number.isFinite 防御 Infinity 与非法数值）
  */
 export function isValidBookmarkAnyVersion(obj: any): boolean {
+  if (obj?.simulation !== undefined && (!obj.simulation || typeof obj.simulation.isPaused !== 'boolean' || !Number.isFinite(obj.simulation.timeScale) || obj.simulation.timeScale < 0)) return false;
   if (!obj || typeof obj !== 'object') return false;
   if (typeof obj.id !== 'string' || !obj.id) return false;
   if (obj.schemaVersion !== 1 && obj.schemaVersion !== 2 && obj.schemaVersion !== 3) return false;

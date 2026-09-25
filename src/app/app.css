@@ -1,4 +1,8 @@
 /* Application shell and navigation bar styling */
+.landing-site-picker { position: absolute; bottom: 234px; left: 50%; transform: translateX(-50%); z-index: 35; display: flex; align-items: center; gap: 10px; color: #cbd5e1; font-size: 12px; padding: 7px 12px; background: rgba(8,14,24,.88); border: 1px solid #334155; border-radius: 12px; max-width: calc(100vw - 24px); }
+.landing-site-picker select { min-width: 0; color: #f8fafc; background: #111d2b; border: 1px solid #475569; border-radius: 6px; padding: 6px; }
+@media (max-width: 760px) { .landing-telemetry { top: 150px !important; right: 8px !important; width: min(300px, calc(100vw - 16px)) !important; max-height: calc(100vh - 360px) !important; } }
+@media (max-height: 500px) { .landing-telemetry { top: 82px !important; max-height: calc(100vh - 150px) !important; } }
 .app-top-container {
   position: absolute;
   top: 12px;
@@ -259,10 +263,11 @@
   }
 
   .app-satellite-bar {
-    position: static;
-    transform: none;
-    margin: 2px auto 0;
-    max-width: 100%;
+    position: absolute;
+    top: 112px;
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: calc(100vw - 16px);
   }
 
   .app-satellite-btn {

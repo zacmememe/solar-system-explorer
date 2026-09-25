@@ -20,6 +20,7 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine }) => {
   const [telemetry, setTelemetry] = useState<LandingTelemetry | null>(null);
   const [availability, setAvailability] = useState<LandingAvailability | null>(null);
   const [prepStatus, setPrepStatus] = useState<ReturnType<SolarEngine['getLandingPreparationStatus']> | null>(null);
+  const [sites, setSites] = useState<ReturnType<SolarEngine['getLandingSiteChoices']>>([]);
 
   useEffect(() => {
     if (!engine) return;
@@ -36,6 +37,7 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine }) => {
     const tick = () => {
       setAvailability(engine.getLandingAvailability());
       setPrepStatus(engine.getLandingPreparationStatus());
+      setSites(engine.getLandingSiteChoices());
     };
     tick();
     const id = window.setInterval(tick, 300);
@@ -51,17 +53,26 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine }) => {
     if (meters >= 1000) {
       return `${(meters / 1000).toFixed(2)} km`;
     }
-    return `${Math.round(meters)} m`;
+    return `${meters < 10 ? meters.toFixed(1) : Math.round(meters)} m`;
   };
 
   return (
     <>
+      {state === 'ORBIT' && sites.length > 0 && availability?.siteId && (
+        <label className="landing-site-picker">
+          着陆地点
+          <select data-testid="landing-site-select" aria-label="选择着陆地点" value={availability.siteId}
+            onChange={event => { engine.selectLandingSite(event.target.value); setAvailability(engine.getLandingAvailability()); }}>
+            {sites.map(site => <option key={site.id} value={site.id}>{site.name}</option>)}
+          </select>
+        </label>
+      )}
       {/* 1. P3b-A：入口按权威可用性分派——先到达，再降落（S4c：文案/徽章按站点） */}
       {state === 'ORBIT' && availability?.action === 'land' && (
         <div
           style={{
             position: 'absolute',
-            bottom: 84,
+            bottom: 180,
             left: '50%',
             transform: 'translateX(-50%)',
             zIndex: 35,
@@ -122,7 +133,7 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine }) => {
         <div
           style={{
             position: 'absolute',
-            bottom: 84,
+            bottom: 180,
             left: '50%',
             transform: 'translateX(-50%)',
             zIndex: 35,
@@ -159,7 +170,7 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine }) => {
         <div
           style={{
             position: 'absolute',
-            bottom: 84,
+            bottom: 180,
             left: '50%',
             transform: 'translateX(-50%)',
             zIndex: 35,
@@ -196,7 +207,7 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine }) => {
           data-testid="lunar-landing-wait"
           style={{
             position: 'absolute',
-            bottom: 84,
+            bottom: 180,
             left: '50%',
             transform: 'translateX(-50%)',
             zIndex: 35,
@@ -217,11 +228,14 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine }) => {
       {state !== 'ORBIT' && telemetry && (
         <div
           data-testid="lunar-landing-telemetry-hud"
+          className="landing-telemetry"
           style={{
             position: 'absolute',
-            top: 72,
+            top: 104,
             right: 20,
             width: 320,
+            maxHeight: 'calc(100vh - 290px)',
+            overflowY: 'auto',
             background: 'rgba(15, 23, 42, 0.88)',
             backdropFilter: 'blur(16px)',
             border: '1px solid rgba(56, 189, 248, 0.3)',
@@ -256,7 +270,7 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine }) => {
                   : state === 'HOLD'
                   ? '下降已暂停 · 悬停检查'
                   : state === 'SURFACE_LOOK'
-                  ? '月表停驻 · 原地环顾'
+                  ? '地表停驻 · 原地环顾'
                   : '升空返轨中'}
               </span>
             </div>
@@ -329,7 +343,7 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine }) => {
             <div style={{ background: 'rgba(255, 255, 255, 0.04)', padding: '8px 10px', borderRadius: 8 }}>
               <div style={{ fontSize: 10, color: '#94a3b8' }}>表面经纬度</div>
               <div data-testid="telemetry-coord-value" style={{ fontSize: 11, fontWeight: 600, color: '#cbd5e1', marginTop: 3 }}>
-                {telemetry.currentLat.toFixed(2)}°N, {telemetry.currentLon.toFixed(2)}°E
+                {Math.abs(telemetry.currentLat).toFixed(2)}°{telemetry.currentLat < 0 ? 'S' : 'N'}, {Math.abs(((telemetry.currentLon + 180) % 360 + 360) % 360 - 180).toFixed(2)}°{((telemetry.currentLon + 180) % 360 + 360) % 360 - 180 < 0 ? 'W' : 'E'}
               </div>
             </div>
 
@@ -379,7 +393,7 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine }) => {
             )}
             {state === 'DESCENDING' && '💡 提示：按住鼠标拖拽画面可随时暂停位移进行悬停检查。'}
             {state === 'HOLD' && '⏸ 悬停保持：位移已停驻，可自由拖拽环顾山谷；需要时可点"恢复导引视线"平滑转回地平线构图。'}
-            {state === 'SURFACE_LOOK' && `👀 位于${telemetry.site.name} 1.7m 人眼视高，可 360° 原地转头与仰望天空。`}
+            {state === 'SURFACE_LOOK' && `👀 位于${telemetry.site.name}，眼高 ${formatAltitude(telemetry.altitudeAGLM)}，可原地转头与仰望天空。`}
           </div>
 
           {/* 操作行动按钮栏 */}
@@ -499,7 +513,7 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine }) => {
                     cursor: 'pointer',
                   }}
                 >
-                  🌍 仰望母星地球 (53.7° 仰角 · 1.90° 视圆盘)
+                  🌍 仰望地球
                 </button>
                 )}
                 <button

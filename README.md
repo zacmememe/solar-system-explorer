@@ -23,6 +23,8 @@ npm run dev
 
 - `npm run build`：TypeScript 检查和生产构建。
 - `npm test`：Vitest 单元与回归测试。
+- `npm run verify:foundations`：已有交互、书签/载具、六站地表 UI 回归（需先启动本地预览并设置 TEST_URL）。
+- `npm run verify:observation`：普通观星空间比例与代表下降 UI 回归。
 - `npm run preview`：预览生产构建，默认端口 4173。
 - `npm run launch`：与唯一启动 BAT 相同，构建最新本地源码后打开预览。
 - `npm run review:export`：导出 HEAD 提交的审查材料，不提交、不推送、不部署。
@@ -48,6 +50,8 @@ npm run dev
 `前置方案打磨/` 包含早期讨论和交接材料，不能当作当前实现的事实。当前代码、实际测试和已确认的任务方案优先。
 
 ## Pro 审视 → Antigravity 执行
+
+后续作者先读 [体验底线与执行边界](docs/experience-foundations.md)，包含 zcode/Anti 的职责、常见反例和最小交接格式。
 
 操作方法和 ChatGPT 连接验证见 [协作流程](docs/review-workflow.md)。可直接复用 [审查提示词](docs/review-prompt.md) 和 [执行计划模板](docs/implementation-plan-template.md)。
 

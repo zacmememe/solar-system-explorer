@@ -17,14 +17,29 @@ import * as THREE from 'three';
 export function sampleRenderedTerrain(geometry: THREE.BufferGeometry, lat: number, lon: number): THREE.Vector3 | null {
   const grid = geometry.userData.surfaceGrid;
   if (!grid) return null;
-  const x = (lon-grid.lon0)/grid.dLon, y = (lat-grid.lat0)/grid.dLat;
-  const col=Math.floor(x), row=Math.floor(y);
-  if(col<0||row<0||col>=grid.cols-1||row>=grid.rows-1) return null;
+  let x = (lon-grid.lon0)/grid.dLon, y = (lat-grid.lat0)/grid.dLat;
+  // Closed mesh boundary: the last vertex belongs to the preceding triangle.
+  // Allow only coordinate round-off, never extrapolate outside the mesh.
+  const epsilon = 1e-7;
+  if (!Number.isFinite(x) || !Number.isFinite(y) || x < -epsilon || y < -epsilon ||
+      x > grid.cols-1+epsilon || y > grid.rows-1+epsilon) return null;
+  x=Math.max(0,Math.min(grid.cols-1,x)); y=Math.max(0,Math.min(grid.rows-1,y));
+  const col=Math.min(grid.cols-2,Math.floor(x)), row=Math.min(grid.rows-2,Math.floor(y));
   const u=x-col, v=y-row, a=row*grid.cols+col, p=geometry.getAttribute('position');
   const read=(i:number)=>new THREE.Vector3().fromBufferAttribute(p,i);
   return u+v<=1
     ? read(a).multiplyScalar(1-u-v).addScaledVector(read(a+1),u).addScaledVector(read(a+grid.cols),v)
     : read(a+grid.cols+1).multiplyScalar(u+v-1).addScaledVector(read(a+1),1-v).addScaledVector(read(a+grid.cols),1-u);
+}
+
+/** Bounds of the displayed grid, which can end before the source raster bounds
+ * after decimation. Skirts must meet these vertices, not sample past the DEM. */
+export function renderedTerrainBounds(geometry: THREE.BufferGeometry) {
+  const g = geometry.userData.surfaceGrid;
+  if (!g) throw new Error('Terrain grid metadata is required for a continuous seam');
+  const latEnd=g.lat0+(g.rows-1)*g.dLat, lonEnd=g.lon0+(g.cols-1)*g.dLon;
+  return {latMin:Math.min(g.lat0,latEnd),latMax:Math.max(g.lat0,latEnd),
+    lonMin:Math.min(g.lon0,lonEnd),lonMax:Math.max(g.lon0,lonEnd)};
 }
 
 export interface RockPlacement {

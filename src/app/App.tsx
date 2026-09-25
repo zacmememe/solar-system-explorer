@@ -13,7 +13,6 @@ import { LunarLandingHUD } from './LunarLandingHUD';
 import { createHudStore } from './hud/store';
 import './app.css';
 import type { BookmarkItem } from '../contracts/bookmark';
-import { normalizeObservationIntent } from '../contracts/bookmark';
 import type { ObservationMode } from '../world-support/visibility';
 import { generateDiscoveryPostcard } from '../utils/postcard';
 import {
@@ -61,8 +60,6 @@ export const App: React.FC = () => {
   const [selectedBodyId, setSelectedBodyId] = useState<BodyId>('earth');
   const [cameraSnapshot, setCameraSnapshot] = useState<CameraStateSnapshot | null>(null);
   const [webglInfo, setWebglInfo] = useState<WebGLDiagnosticInfo | null>(null);
-  const [isPaused, setIsPaused] = useState<boolean>(false);
-  const [timeScale, setTimeScale] = useState<number>(50.0); // 太阳系行星默认 50x 便于观察公转动态
 
   // 观察模式开关
   const [showClouds, setShowClouds] = useState<boolean>(true);
@@ -155,14 +152,12 @@ export const App: React.FC = () => {
   };
 
   const togglePause = () => {
-    const next = !isPaused;
-    setIsPaused(next);
+    const next = !hudStore.getSnapshot()?.isPaused;
     engineRef.current?.setPaused(next);
   };
 
   const changeSpeed = (scale: number) => {
-    setTimeScale(scale);
-    engineRef.current?.setTimeScale(scale);
+    engineRef.current?.setUserTimeScale(scale);
   };
 
   const toggleClouds = () => {
@@ -265,90 +260,21 @@ export const App: React.FC = () => {
     showToast('🪐 已结束伴飞，切回行星自由观察');
   };
 
-  const handleRestoreBookmark = (bm: BookmarkItem) => {
-    setSelectedBodyId(bm.targetBodyId);
-    const nextVeh = bm.vehicleId ?? null;
-    setCurrentVehicleId(nextVeh);
-    engineRef.current?.setVehicle(nextVeh);
-    setViewCameraMode(bm.viewCameraMode);
-    engineRef.current?.setViewCameraMode(bm.viewCameraMode);
-
-    // 同步展示策略（V2 规范：NAV_SCHEMATIC 导航示意 或 PHYSICAL_OBSERVATION 物理真实尺度）
-    const policy = (bm as any).presentationPolicy || 'NAV_SCHEMATIC';
-    engineRef.current?.setPresentationPolicy(policy, 1.2);
-
-    // 恢复权威时间标尺 (simTimeHours)
-    if (typeof (bm as any).simTimeHours === 'number' && Number.isFinite((bm as any).simTimeHours)) {
-      engineRef.current?.setSimTimeHours((bm as any).simTimeHours);
-    }
-
-    setShowClouds(bm.layers.showClouds);
-    engineRef.current?.setShowClouds(bm.layers.showClouds);
-
-    setShowAtmosphere(bm.layers.showAtmosphere);
-    engineRef.current?.setShowAtmosphere(bm.layers.showAtmosphere);
-
-    setTeachingLight(bm.layers.teachingLight);
-    engineRef.current?.setTeachingLight(bm.layers.teachingLight);
-
-    // S2：轨迹线已移除——旧书签的 showOrbits 字段不再消费（引擎入口为惰性空操作）
-
-    setVenusRadarMode(bm.layers.venusRadarMode);
-    engineRef.current?.setShowVenusSurface(bm.layers.venusRadarMode);
-
-    // 同步多重观察模式 (V3 规范：physical / terrain-study 统一语义，遗留标签在加载时已归一)
-    if (bm.observationMode) {
-      engineRef.current?.setObservationMode(normalizeObservationIntent(bm.observationMode));
-    }
-
-    // 若包含地表米制站点，优先切入站心观察 (V3 规范)：
-    // 使用保存的眼高与朝向；非法站点安全回退球坐标恢复，不 clamp 掩盖
-    const station = bm.surfaceStation;
-    const stationValid =
-      station &&
-      BODIES[station.bodyId] &&
-      Number.isFinite(station.latDeg) &&
-      Math.abs(station.latDeg) <= 90 &&
-      Number.isFinite(station.lonDeg) &&
-      Math.abs(station.lonDeg) <= 180 &&
-      Array.isArray(station.bodyFixedPosM) &&
-      station.bodyFixedPosM.length === 3 &&
-      station.bodyFixedPosM.every(Number.isFinite) &&
-      Number.isFinite(station.eyeHeightM) &&
-      station.eyeHeightM > 0;
-
-    if (stationValid) {
-      // 数据版本变化时明确提示，不静默按旧地形恢复
-      if (station.bodyId === 'moon' && bm.sourceVersion && bm.sourceVersion !== '2026.09-P1-V3') {
-        showToast('⚠️ 书签数据版本已变化，按当前地形数据恢复站点');
-      }
-      engineRef.current?.executeCameraCommand({
-        type: 'enterSurfaceLook',
-        bodyId: station.bodyId,
-        lat: station.latDeg,
-        lon: station.lonDeg,
-        eyeHeightM: station.eyeHeightM,
-        initialYawDeg: station.orientationDeg?.yawDeg,
-        initialPitchDeg: station.orientationDeg?.pitchDeg,
-      });
-      if (bm.lookTarget?.kind === 'body') {
-        engineRef.current?.executeCameraCommand({
-          type: 'lookAtSkyTarget',
-          targetBodyId: bm.lookTarget.bodyId,
-        });
-      }
-    } else {
-      if (station) {
-        showToast('⚠️ 书签地表站点数据不合法，已回退到轨道观察恢复');
-      }
-      const lookTarget = (bm as any).lookTarget;
-      engineRef.current?.executeCameraCommand({
-        type: 'restoreBookmark',
-        targetBodyId: bm.targetBodyId,
-        spherical: bm.spherical,
-        lookTarget,
-      });
-    }
+  const handleRestoreBookmark = async (bm: BookmarkItem) => {
+    const engine=engineRef.current;
+    if (!engine) return;
+    showToast('正在恢复观察点，地表书签会先准备对应地形…');
+    try {
+      if (!await engine.restoreObservationSnapshot(bm)) return;
+      setSelectedBodyId(bm.surfaceStation?.bodyId ?? bm.targetBodyId);
+      setCurrentVehicleId(engine.getCurrentVehicle());
+      setViewCameraMode(engine.getViewCameraMode());
+      setShowClouds(bm.layers.showClouds);
+      setShowAtmosphere(bm.layers.showAtmosphere);
+      setTeachingLight(bm.layers.teachingLight);
+      setVenusRadarMode(bm.layers.venusRadarMode);
+      showToast('已恢复观察点');
+    } catch(error) { showToast(error instanceof Error ? error.message : '恢复失败，已保留当前视角'); }
   };
 
   const showToast = (msg: string) => {
@@ -529,7 +455,7 @@ export const App: React.FC = () => {
           {PLANET_ORDER.map((id) => {
             const body = BODIES[id];
             if (!body) return null;
-            const isSelected = selectedBodyId === id || (activeBody.parentId === id);
+            const isSelected = selectedBodyId === id || (activeBody.type === 'moon' && activeBody.parentId === id);
 
             return (
               <button
@@ -682,7 +608,7 @@ export const App: React.FC = () => {
 
       <MissionHUD
         store={hudStore} selectedBodyId={selectedBodyId}
-        isPaused={isPaused} timeScale={timeScale} viewCameraMode={viewCameraMode}
+        viewCameraMode={viewCameraMode}
         showClouds={showClouds} showAtmosphere={showAtmosphere}
         showLabels={showLabels} teachingLight={teachingLight} reduceMotion={reduceMotion}
         venusRadarMode={venusRadarMode} titanInfraredMode={titanInfraredMode}
@@ -733,6 +659,7 @@ export const App: React.FC = () => {
         onClose={() => setShowBookmarkModal(false)}
         onRestoreBookmark={handleRestoreBookmark}
         onCaptureSnapshot={(title) => engineRef.current?.captureObservationSnapshot(title) as BookmarkItem}
+        canCapture={engineRef.current?.canCaptureObservation() ?? false}
         currentSnapshot={cameraSnapshot}
         currentBodyId={selectedBodyId}
         currentVehicleId={currentVehicleId}

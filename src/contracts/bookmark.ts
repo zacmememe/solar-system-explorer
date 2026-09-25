@@ -105,6 +105,8 @@ export interface BookmarkItemV3 {
   observationMode?: ObservationIntent;
   quality?: PoseQuality;
   sourceVersion?: string;
+  /** Optional V3 extension. Old bookmarks preserve the current playback controls. */
+  simulation?: { isPaused: boolean; timeScale: number };
   viewCameraMode: ViewCameraMode;
   vehicleId: VehicleId | null;
   layers: BookmarkLayers;

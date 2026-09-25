@@ -40,6 +40,7 @@ interface BookmarkModalProps {
   onClose: () => void;
   onRestoreBookmark: (bookmark: BookmarkItem) => void;
   onCaptureSnapshot?: (title?: string) => BookmarkItem;
+  canCapture?: boolean;
   currentSnapshot: CameraStateSnapshot | null;
   currentBodyId: BodyId;
   currentVehicleId: VehicleId | null;
@@ -61,6 +62,7 @@ export const BookmarkModal: React.FC<BookmarkModalProps> = ({
   onClose,
   onRestoreBookmark,
   onCaptureSnapshot,
+  canCapture = true,
   currentSnapshot,
   currentBodyId,
   currentVehicleId,
@@ -106,7 +108,8 @@ export const BookmarkModal: React.FC<BookmarkModalProps> = ({
 
     let newBm: BookmarkItem;
     if (onCaptureSnapshot) {
-      newBm = onCaptureSnapshot(newTitle.trim());
+      try { newBm = onCaptureSnapshot(newTitle.trim()); }
+      catch(error) { onToast(error instanceof Error ? error.message : '当前视角无法保存'); return; }
       if (newNotes.trim()) {
         newBm.notes = newNotes.trim();
       }
@@ -157,7 +160,6 @@ export const BookmarkModal: React.FC<BookmarkModalProps> = ({
   const handleRestore = (item: BookmarkItem) => {
     onRestoreBookmark(item);
     onClose();
-    onToast(`🚀 正在飞往观察点：“${item.title}”`);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -328,6 +330,8 @@ export const BookmarkModal: React.FC<BookmarkModalProps> = ({
             <button
               onClick={() => setShowAddForm(!showAddForm)}
               data-testid="bookmark-btn-add"
+              disabled={!canCapture}
+              title={canCapture ? '保存当前观察点' : '请等镜头到达或地表停驻后收藏'}
               style={{
                 display: 'flex',
                 alignItems: 'center',

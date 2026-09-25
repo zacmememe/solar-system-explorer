@@ -205,6 +205,17 @@ export class CameraController {
           const dPhi = Number.isFinite(command.deltaPhi) ? command.deltaPhi : 0;
           if (this.mode === 'SURFACE_LOOK') {
             // 地表第一人称视线环顾：水平拖拽转动 yaw (360°)，垂直拖拽调整 pitch (±85°)
+            if ((this.surfaceQuatOverride || this.lookTarget.kind === 'body') && this.anchor.kind === 'surface') {
+              // Start from what is on screen, including guided/sky-target poses.
+              const lat=THREE.MathUtils.degToRad(this.anchor.lat), lon=THREE.MathUtils.degToRad(this.anchor.lon);
+              const bodyQuat=this.latestGetBodyPos?.(this.anchor.bodyId).quaternion ?? new THREE.Quaternion();
+              const up=new THREE.Vector3(Math.cos(lat)*Math.cos(lon),Math.sin(lat),-Math.cos(lat)*Math.sin(lon));
+              const east=new THREE.Vector3(-Math.sin(lon),0,-Math.cos(lon));
+              const north=new THREE.Vector3().crossVectors(up,east);
+              const forward=this.camera.getWorldDirection(new THREE.Vector3()).applyQuaternion(bodyQuat.clone().invert());
+              this.surfaceYawDeg=THREE.MathUtils.radToDeg(Math.atan2(forward.dot(east),forward.dot(north)));
+              this.surfacePitchDeg=THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(forward.dot(up),-1,1)));
+            }
             this.surfaceQuatOverride = null; // 用户接管视线 → 解除导引四元数覆盖
             this.surfaceYawDeg = THREE.MathUtils.euclideanModulo(
               this.surfaceYawDeg - dTheta * (180 / Math.PI),

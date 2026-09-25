@@ -11,8 +11,6 @@ type Panel = 'time' | 'observe' | 'details' | null;
 export interface MissionHUDProps {
   store: HudStore;
   selectedBodyId: BodyId;
-  isPaused: boolean;
-  timeScale: number;
   viewCameraMode: ViewCameraMode;
   showClouds: boolean;
   showAtmosphere: boolean;
@@ -89,6 +87,8 @@ export function MissionHUD(props: MissionHUDProps) {
   const system = parentSystem(body.id);
   const center = solarScope || !hasMoons(system) ? 'sun' : system;
   const ready = frame !== null;
+  const isPaused = frame?.isPaused ?? false;
+  const timeScale = frame?.timeScale ?? 50;
   const transitioning = !!frame?.camera.isTransitioning;
   const orbit = orbitMetric(body.id);
   const closePanel = (restoreFocus = false) => {
@@ -126,13 +126,13 @@ export function MissionHUD(props: MissionHUDProps) {
         <section className="hud-flight" aria-label="时间与观测控制">
           <div className="hud-eyebrow">模拟时间</div>
           <div className="hud-time-line">
-            <button className="hud-pause" aria-label={props.isPaused ? '继续模拟' : '暂停模拟'} onClick={props.onPause} disabled={!ready}>
-              {props.isPaused ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5L19 12L8 19Z" fill="currentColor" /></svg>
+            <button className="hud-pause" aria-label={isPaused ? '继续模拟' : '暂停模拟'} onClick={props.onPause} disabled={!ready}>
+              {isPaused ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5L19 12L8 19Z" fill="currentColor" /></svg>
                 : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5V19M17 5V19" stroke="currentColor" strokeWidth="3" /></svg>}
             </button>
             <button className="hud-rate" aria-label="调整时间流速" aria-expanded={panel === 'time'} aria-controls="hud-time-panel"
               onClick={e => openPanel('time', e)} disabled={!ready}>
-              <span className={props.timeScale > 1000 ? 'hud-rate-large' : ''}>{props.timeScale.toLocaleString('en-US')}</span><small>×</small>
+              <span className={timeScale > 1000 ? 'hud-rate-large' : ''}>{timeScale.toLocaleString('en-US')}</span><small>×</small>
             </button>
           </div>
           <div className="hud-flight-actions">
@@ -168,14 +168,14 @@ export function MissionHUD(props: MissionHUDProps) {
           <button aria-label="关闭面板" onClick={() => closePanel(true)}>×</button></div>
         {panel === 'time' && <>
           <p>只改变天体运动与自转的时间流速；镜头转场速度不变。</p>
-          <div className="hud-speed-grid">{SPEEDS.map(speed => <button key={speed} data-speed={speed} aria-pressed={speed === props.timeScale}
+          <div className="hud-speed-grid">{SPEEDS.map(speed => <button key={speed} data-speed={speed} aria-pressed={speed === timeScale}
             onClick={() => props.onSpeed(speed)} disabled={!ready}>{speedLabel(speed)}</button>)}</div>
-          {frame && <p>模拟已推进 {(frame.simTimeHours / 24).toFixed(2)} 天{props.isPaused ? ' · 已暂停' : ''}。初始方位为演示设定，不对应今天的真实星空。</p>}
+          {frame && <p>模拟已推进 {(frame.simTimeHours / 24).toFixed(2)} 天{isPaused ? ' · 已暂停' : ''}。初始方位为演示设定，不对应今天的真实星空。</p>}
         </>}
         {panel === 'observe' && <>
           <div className="hud-view-modes">{([
             ['PLANET_OBSERVE', '观星'], ['VEHICLE_FORMATION', '伴飞'], ['VEHICLE_ONBOARD', '随船'],
-          ] as const).map(([mode, label]) => <button key={mode} disabled={!ready} aria-pressed={props.viewCameraMode === mode}
+          ] as const).map(([mode, label]) => <button key={mode} disabled={!ready || (mode !== 'PLANET_OBSERVE' && !props.vehicleName)} aria-pressed={props.viewCameraMode === mode}
             onClick={() => props.onViewMode(mode)}>{label}</button>)}</div>
           <p>载具：{props.vehicleName || '未选择'}。伴飞模型是视觉呈现；下方三角指示观察机位，不冒充独立航天器轨道。</p>
           <div className="hud-settings-grid">

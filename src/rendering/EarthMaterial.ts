@@ -30,6 +30,7 @@ export function createEarthSurfaceMaterial(
     nightTexture: { value: nightTex },
     sunDirection: { value: new THREE.Vector3(500, 50, 300).normalize() },
     teachingLight: { value: 0.0 },
+    observationMode: { value: 0.0 },
   };
 
   return new THREE.ShaderMaterial({
@@ -54,6 +55,7 @@ export function createEarthSurfaceMaterial(
       uniform sampler2D nightTexture;
       uniform vec3 sunDirection;
       uniform float teachingLight;
+      uniform float observationMode;
 
       varying vec2 vUv;
       varying vec3 vNormal;
@@ -89,6 +91,10 @@ export function createEarthSurfaceMaterial(
 
         vec3 finalColor = mix(litNightColor + teachingBase, litDayColor, dayFactor);
         finalColor += atmosphereRim * dayFactor; // 大气散射主要在被光照侧显现
+        if (observationMode > 0.5) {
+          vec3 referenceDirection = normalize(vec3(0.4, 0.8, 0.5));
+          finalColor = dayColor * (max(dot(vNormal, referenceDirection), 0.0) * 0.35 + 0.65);
+        }
 
         gl_FragColor = vec4(finalColor, 1.0);
         #include <tonemapping_fragment>

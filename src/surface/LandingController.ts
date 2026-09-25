@@ -45,7 +45,7 @@ export class LandingController {
   private lastTangentHeadingDeg: number = 225;
 
   private readonly ORBIT_ALTITUDE_M = 50000.0; // 近月下降段上限
-  private readonly SURFACE_EYE_HEIGHT_M = 1.7; // 默认人眼视高（可调）
+  private SURFACE_EYE_HEIGHT_M = 1.7; // 默认人眼视高；地表书签可恢复保存的眼高
 
   private targetLat: number;
   private targetLon: number;
@@ -94,6 +94,16 @@ export class LandingController {
     return this.state;
   }
 
+  public restoreSurfaceStation(siteId: string, lat: number, lon: number, eyeHeight: number): boolean {
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || !Number.isFinite(eyeHeight) || eyeHeight <= 0 || !this.switchSite(siteId)) return false;
+    this.targetLat = lat;
+    this.targetLon = lon;
+    this.SURFACE_EYE_HEIGHT_M = eyeHeight;
+    this.state = 'SURFACE_LOOK';
+    this.notifyTelemetry();
+    return true;
+  }
+
   public getSite(): LandingSite {
     return this.site;
   }
@@ -112,6 +122,7 @@ export class LandingController {
   }
 
   public setSurfaceOrientation(yawDeg: number, pitchDeg: number): void {
+    if (Math.abs(this.surfaceYawDeg-yawDeg)<0.001 && Math.abs(this.surfacePitchDeg-pitchDeg)<0.001) return;
     this.surfaceYawDeg = ((yawDeg % 360) + 360) % 360;
     this.surfacePitchDeg = Math.max(-85, Math.min(85, pitchDeg));
     this.notifyTelemetry();
@@ -157,6 +168,9 @@ export class LandingController {
     setTimeScale?: (scale: number) => void,
     startPose?: DescentStartPose
   ): void {
+    this.SURFACE_EYE_HEIGHT_M = 1.7;
+    this.targetLat = this.site.centerLat;
+    this.targetLon = this.site.centerLon;
     // 天文时间协同：临时下调到 1x
     if (getTimeScale && setTimeScale) {
       const cur = getTimeScale();
@@ -252,6 +266,11 @@ export class LandingController {
     const a = latLonDir(latA, lonA);
     const b = latLonDir(latB, lonB);
     return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  }
+
+  /** A deliberate user speed choice revokes the temporary landing override. */
+  public releaseTimeScaleOverride(): void {
+    this.simTimeAdjusted = false;
   }
 
   public cancel(setTimeScale?: (scale: number) => void): void {
