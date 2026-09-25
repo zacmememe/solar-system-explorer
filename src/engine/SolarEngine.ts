@@ -11,6 +11,7 @@
 
 import * as THREE from 'three';
 import { DepthSliceRenderer, VEHICLE_DISPLAY_LAYER } from './DepthSliceRenderer';
+import { makeHolePatchMaterial, patchOpacityUniform } from '../rendering/HolePatchMaterial';
 import { projectDistantBody, discIsOccluded } from '../astronomy/observerProjection';
 import { CameraController } from '../camera/CameraController';
 import { normalizeWheelDelta, pinchLogDelta } from '../camera/inputKernels';
@@ -574,7 +575,7 @@ export class SolarEngine {
         // 深度），低于 datum 的细地形在交接带逐渐显现，消除补片消失瞬间的跳变。
         const patchGeo = heightProvider.buildSphereHolePatchGeometry(satRadius, 128, 64, holed.holeBounds);
         if (patchGeo) {
-          const patchMat = this.makeHolePatchMaterial(satMesh.material as THREE.ShaderMaterial);
+          const patchMat = makeHolePatchMaterial(satMesh.material as THREE.ShaderMaterial);
           const patchMesh = new THREE.Mesh(patchGeo, patchMat);
           patchMesh.name = `${stack.siteId}-hole-patch`;
           stack.patchMaterial = patchMat;
@@ -887,7 +888,7 @@ export class SolarEngine {
         // R2：克隆材质+独立 layerOpacity，随细层渐显连续淡出。
         const marsPatchGeo = heightProvider.buildSphereHolePatchGeometry(satRadius, 128, 64, holed.holeBounds);
         if (marsPatchGeo) {
-          const marsPatchMat = this.makeHolePatchMaterial(satMesh.material as THREE.ShaderMaterial);
+          const marsPatchMat = makeHolePatchMaterial(satMesh.material as THREE.ShaderMaterial);
           const marsPatchMesh = new THREE.Mesh(marsPatchGeo, marsPatchMat);
           marsPatchMesh.name = `${stack.siteId}-hole-patch`;
           stack.patchMaterial = marsPatchMat;
@@ -1679,9 +1680,15 @@ export class SolarEngine {
         // 表现为"黑色形状区域闪烁"。共享同一材质实例，明暗恒一致。
         const cap = this.moonHoleCapMesh;
         if (cap) cap.material = this.moonMaterial;
-        // F-LUNAR-LIMB-01：挖孔补片与盖板同律——材质换装时保持与本体一致
+        // F-LUNAR-LIMB-01：挖孔补片与盖板同律——材质换装时保持与本体一致。
+        // P1：换装重建克隆时释放旧克隆材质（uniform 与本体共享，纹理不受 dispose 影响）。
         for (const s of this.moonSiteStacks.values()) {
-          if (s.patchMesh) s.patchMesh.material = this.makeHolePatchMaterial(this.moonMaterial);
+          if (s.patchMesh) {
+            const old = s.patchMesh.material;
+            s.patchMesh.material = makeHolePatchMaterial(this.moonMaterial);
+            if (Array.isArray(old)) old.forEach((m) => m.dispose());
+            else if (old) old.dispose();
+          }
         }
       }
     }).catch((e) => console.error('[Texture] Moon load failed:', e));
@@ -1813,9 +1820,14 @@ export class SolarEngine {
         // 明暗恒一致，避免孔洞区域色差闪烁）
         const cap = this.marsHoleCapMesh;
         if (cap) cap.material = this.marsMaterial;
-        // F-LUNAR-LIMB-01：火星挖孔补片同律换装
+        // F-LUNAR-LIMB-01：火星挖孔补片同律换装（P1：释放旧克隆，纹理共享不受影响）
         for (const s of this.marsSiteStacks.values()) {
-          if (s.patchMesh) s.patchMesh.material = this.makeHolePatchMaterial(this.marsMaterial);
+          if (s.patchMesh) {
+            const old = s.patchMesh.material;
+            s.patchMesh.material = makeHolePatchMaterial(this.marsMaterial);
+            if (Array.isArray(old)) old.forEach((m) => m.dispose());
+            else if (old) old.dispose();
+          }
         }
       }
     }).catch((e) => console.error('[Texture] Mars load failed:', e));
@@ -2764,15 +2776,6 @@ export class SolarEngine {
   /** One render path for animation and captures, partitioned by view depth only. */
   private readonly depthRenderer = new DepthSliceRenderer();
 
-  /** R2：挖孔补片专用材质——本体克隆+独立透明度 uniform（uOpacity/layerOpacity）；
-   *  transparent+不写深度，细层地形渐显时不被 datum 平面遮挡。 */
-  private makeHolePatchMaterial(src: THREE.Material): THREE.ShaderMaterial {
-    const m = src.clone() as THREE.ShaderMaterial;
-    m.transparent = true;
-    m.depthWrite = false;
-    return m;
-  }
-
   public lastFrameRenderInfo: {
     layered: boolean;
     anchorBodyId: BodyId | null;
@@ -3469,8 +3472,9 @@ export class SolarEngine {
         const patch = activeMoonStack.patchMesh;
         if (patch) {
           const patchOpacity = 1 - Math.max(opacity, l1Opacity);
-          (patch.material as THREE.ShaderMaterial).uniforms.uOpacity.value = patchOpacity;
-          patch.visible = patchOpacity > 0.001;
+          const patchU = patchOpacityUniform(patch.material);
+          if (patchU) patchU.value = patchOpacity;
+          patch.visible = patchU ? patchOpacity > 0.001 : true;
         }
 
         // S3a 碎石场距离淡入：<6km 全显，6–9km smoothstep 渐隐（远距亚像素无意义）
@@ -3532,8 +3536,9 @@ export class SolarEngine {
         // F-LUNAR-LIMB-01/R2：火星挖孔补片连续淡出（镜像月面；layerOpacity）
         if (activeMarsStack.patchMesh) {
           const patchOpacity = 1 - Math.max(opacity, l1Opacity);
-          (activeMarsStack.patchMesh.material as THREE.ShaderMaterial).uniforms.layerOpacity.value = patchOpacity;
-          activeMarsStack.patchMesh.visible = patchOpacity > 0.001;
+          const patchU = patchOpacityUniform(activeMarsStack.patchMesh.material);
+          if (patchU) patchU.value = patchOpacity;
+          activeMarsStack.patchMesh.visible = patchU ? patchOpacity > 0.001 : true;
         }
         if (this.marsRockFieldMaterial) {
           const t = Math.min(1, Math.max(0, (9000 - siteDistM) / 3000));
