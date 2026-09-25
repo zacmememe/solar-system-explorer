@@ -236,7 +236,7 @@ async function runP1Verification() {
     const pixelProbe = await page.evaluate(() => {
       const engine = (window as any).__solarEngine;
       const r = engine.renderer;
-      r.render(engine.scene, engine.camera);
+      engine.renderFrame(); // R1：同上
       const gl = r.getContext();
       const W = gl.drawingBufferWidth;
       const H = gl.drawingBufferHeight;

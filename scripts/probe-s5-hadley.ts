@@ -174,7 +174,7 @@ async function main() {
     page.evaluate(`(() => {
       const e = window.__solarEngine;
       const renderer = e.renderer;
-      renderer.render(e.scene, e.camera);
+      e.renderFrame(); // R1：与实时主循环同一完整帧入口
       const gl = renderer.getContext();
       const W = gl.drawingBufferWidth, H = gl.drawingBufferHeight;
       const buf = new Uint8Array(W * H * 4);

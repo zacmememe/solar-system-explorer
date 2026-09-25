@@ -2612,35 +2612,77 @@ export class SolarEngine {
   }
 
   /**
-   * S3a 分层深度渲染（Pro 260924 方向）：一个权威相机姿态、两个派生 pass。
-   * 远 pass：星空 + 非锚定天体（近面按最近远天体距离自适应，图层间隔可分）；
-   * 清深度后近 pass：锚定天体系统（保持 P1 米制近面）。近物后画自然遮挡远物。
-   * 载具/相机附属物恒在近 pass。结束时恢复可见性，场景图不变。
+   * R1（260925 基础体验恢复）：统一完整帧渲染入口——实时主循环、截图与
+   * 明信片共用本方法，画面由同一条管线产生（审计：探针曾用单遍
+   * renderer.render 另画一张图，验收与实机不是同一管线）。
+   *
+   * 分层条件（审计修复）：仅当相机贴近锚定天体（距其中心 < 1.5×当前世界
+   * 有效半径——SURFACE_LOOK/下降近段）才分远/近两 pass，且两 pass 之间
+   * clearDepth：不同 near 的投影深度数值不可比，也不得混合比较（改前近
+   * pass 不清深度，普通浏览即出现黑片/穿插）。贴近表面时锚定系统几何必然
+   * 整体位于其他天体之前（其他天体 ≥ 轨道距离），先远后近+清深度的语义
+   * 成立。普通轨道浏览恒单 pass 一致投影——月球在地球前方就由深度测试
+   * 天然正确遮挡，不按"目标名称"分层（改前按锚定分组，普通浏览下分组
+   * 本身即错误）。载具恒在近 pass；全部暂改状态 finally 恢复。
    */
   private farCamera: THREE.PerspectiveCamera | null = null;
+  /** 上一帧分层诊断（探针/验收读取：触发条件与远近深度区间） */
+  public lastFrameRenderInfo: {
+    layered: boolean;
+    anchorBodyId: BodyId | null;
+    anchorDistOverRadius: number;
+    farNearPlane: number | null;
+  } = { layered: false, anchorBodyId: null, anchorDistOverRadius: Infinity, farNearPlane: null };
 
-  private renderLayered(): void {
+  public renderFrame(): void {
     const snap = this.cameraController.getSnapshot();
     const anchorBodyId: BodyId | null =
       snap.anchor?.kind === 'surface'
         ? snap.anchor.bodyId
         : snap.targetBodyId ?? null;
 
-    const nearNodes: BodyRenderNode[] = [];
-    const farNodes: BodyRenderNode[] = [];
-    let minFarDist = Infinity;
-    for (const [id, node] of this.bodyNodes) {
-      if (id === anchorBodyId) nearNodes.push(node);
-      else {
-        farNodes.push(node);
-        const wp = new THREE.Vector3();
-        node.systemGroup.getWorldPosition(wp);
-        minFarDist = Math.min(minFarDist, this.camera.position.distanceTo(wp) - node.displayRadius);
-      }
+    // 世界有效半径（卫星物理过渡随 mesh.scale 插值；行星恒 scale 1——
+    // 与 computeGroundPose 同口径，不用初始导航半径估深度边界）
+    const worldRadiusOf = (node: BodyRenderNode): number => {
+      const s = node.mesh.scale.x;
+      return node.displayRadius * (Number.isFinite(s) && s > 0 ? s : 1);
+    };
+
+    const anchorNode = anchorBodyId ? this.bodyNodes.get(anchorBodyId) : undefined;
+    let anchorDistOverRadius = Infinity;
+    if (anchorNode) {
+      const wp = new THREE.Vector3();
+      anchorNode.mesh.getWorldPosition(wp);
+      const r = worldRadiusOf(anchorNode);
+      if (r > 0) anchorDistOverRadius = this.camera.position.distanceTo(wp) / r;
+    }
+    const layered = anchorDistOverRadius < 1.5;
+
+    if (!layered) {
+      this.lastFrameRenderInfo = {
+        layered: false, anchorBodyId, anchorDistOverRadius, farNearPlane: null,
+      };
+      this.renderer.render(this.scene, this.camera);
+      return;
     }
 
-    if (!farNodes.length || !Number.isFinite(minFarDist) || minFarDist <= 0.01) {
-      // 无远天体或锚定异常：退回单 pass（保持既有行为）
+    // ---- 近表面双 pass：远（星空+非锚定天体）→ clearDepth → 近（锚定+载具） ----
+    // 只统计实际参与渲染的远层天体（物理观察下被隐藏的系统不进深度边界估计）
+    const farVisible: BodyRenderNode[] = [];
+    let minFarDist = Infinity;
+    for (const [id, node] of this.bodyNodes) {
+      if (id === anchorBodyId || !node.systemGroup.visible) continue;
+      const wp = new THREE.Vector3();
+      node.systemGroup.getWorldPosition(wp);
+      minFarDist = Math.min(minFarDist, this.camera.position.distanceTo(wp) - worldRadiusOf(node));
+      farVisible.push(node);
+    }
+
+    if (!farVisible.length || !Number.isFinite(minFarDist) || minFarDist <= 0.01) {
+      // 无远天体或锚定异常：退回单 pass
+      this.lastFrameRenderInfo = {
+        layered: false, anchorBodyId, anchorDistOverRadius, farNearPlane: null,
+      };
       this.renderer.render(this.scene, this.camera);
       return;
     }
@@ -2659,23 +2701,45 @@ export class SolarEngine {
     fc.updateMatrixWorld();
 
     const prevAutoClear = this.renderer.autoClear;
+    const vehicleOnCamera = !!(this.currentVehicleMesh && this.vehicleGroup.parent === this.camera);
+    const hiddenPoles: BodyRenderNode[] = [];
     this.renderer.autoClear = false;
+    try {
+      // 远 pass：锚定系统与载具暂隐（结束即恢复——载具必须在近 pass 有机会绘制，
+      // 改前两遍都隐藏导致贴相机载具整帧消失）
+      for (const n of this.bodyNodes.values()) {
+        if (n === anchorNode) {
+          n.poleFrame.visible = false;
+          hiddenPoles.push(n);
+        }
+      }
+      if (vehicleOnCamera) this.currentVehicleMesh!.visible = false;
+      this.renderer.clear(true, true, true);
+      this.renderer.render(this.scene, fc);
+      for (const n of hiddenPoles) n.poleFrame.visible = true;
+      if (vehicleOnCamera) this.currentVehicleMesh!.visible = true;
 
-    // 远 pass
-    for (const n of nearNodes) n.poleFrame.visible = false;
-    if (this.currentVehicleMesh && this.vehicleGroup.parent === this.camera) this.currentVehicleMesh.visible = false;
-    this.renderer.clear(true, true, true);
-    this.renderer.render(this.scene, fc);
-    for (const n of nearNodes) n.poleFrame.visible = true;
+      // 近 pass：清深度后绘制锚定系统——"锚定几何整体在远层之前"由贴面
+      // 前提保证；地形正确遮挡星空与远方天体（月面看地球方向不受影响）
+      this.renderer.clearDepth();
+      for (const n of farVisible) {
+        n.poleFrame.visible = false;
+        hiddenPoles.push(n);
+      }
+      this.renderer.render(this.scene, this.camera);
+    } finally {
+      for (const n of hiddenPoles) n.poleFrame.visible = true;
+      this.renderer.autoClear = prevAutoClear;
+    }
 
-    // 近 pass（不清深度：远 pass 深度保留为遮挡器——近物更近恒通过测试，
-    // 星空/行星像素不受星空球覆盖；近物遮挡远物的正确性由此保证）
-    for (const n of farNodes) n.poleFrame.visible = false;
-    this.renderer.render(this.scene, this.camera);
-    for (const n of farNodes) n.poleFrame.visible = true;
-    if (this.currentVehicleMesh && this.vehicleGroup.parent === this.camera) this.currentVehicleMesh.visible = true;
+    this.lastFrameRenderInfo = {
+      layered: true, anchorBodyId, anchorDistOverRadius, farNearPlane: fc.near,
+    };
+  }
 
-    this.renderer.autoClear = prevAutoClear;
+  /** 兼容旧内部名（animate 主循环调用） */
+  private renderLayered(): void {
+    this.renderFrame();
   }
 
   /** P3b-C：WAC 区域反照率层诊断（验收脚本/HUD 用，只读） */
@@ -2948,8 +3012,12 @@ export class SolarEngine {
     return this.canvas;
   }
 
+  /**
+   * R1：即时渲染（明信片/截图等）——与实时主循环同一完整帧入口
+   * （renderFrame），不再单独走单遍渲染产生另一条管线的画面。
+   */
   public renderImmediate(): void {
-    this.renderer.render(this.scene, this.camera);
+    this.renderFrame();
   }
 
   /**
