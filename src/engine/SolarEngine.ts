@@ -2044,6 +2044,15 @@ export class SolarEngine {
     }
     if (cmd.type === 'flyTo' || cmd.type === 'overview' || cmd.type === 'restoreBookmark') {
       soundEffects.playWarp();
+      // R3-a（260925 审计七）：全景 = 显式导航示意域——物理观察残留（下降/
+      // 返轨后未回导航）时恢复 NAV，否则太阳保持物理模式隐藏、全景无太阳
+      if (
+        cmd.type === 'overview' &&
+        this.bodyPoseProvider.getPolicy() === 'PHYSICAL_OBSERVATION' &&
+        this.landingController.getState() === 'ORBIT'
+      ) {
+        this.setPresentationPolicy('NAV_SCHEMATIC');
+      }
     } else if (cmd.type === 'select') {
       soundEffects.playClick();
       if (this.callbacks.onSelectBody) {
@@ -3657,14 +3666,31 @@ export class SolarEngine {
       const focusData = BODIES[focusId];
       if (focusData?.type === 'moon' && focusData.parentId) {
         this.bodyPoseProvider.setPhysicalReferenceBody(focusData.parentId);
-      } else if (focusData?.type === 'planet') {
+      } else if (focusData?.type === 'planet' || focusData?.type === 'star') {
+        // R3-a（260925 审计七）：太阳也可作为物理参考——观察太阳时它作为基准
+        // 标尺保持 NAV 形态正常显示（改前 star 无分支，reference 残留旧值，
+        // 物理模式下前往太阳仍被强制隐藏）
         this.bodyPoseProvider.setPhysicalReferenceBody(focusId);
       }
     }
     const referenceBodyId = this.bodyPoseProvider.getPhysicalReferenceBody();
     const sunNode = this.bodyNodes.get('sun');
     if (sunNode) {
-      sunNode.systemGroup.visible = !isPhysicalObservation;
+      if (!isPhysicalObservation || referenceBodyId === 'sun') {
+        // R3-a：导航示意域，或物理模式且太阳即参考天体（作基准标尺）——NAV 形态
+        sunNode.systemGroup.visible = true;
+        sunNode.systemGroup.scale.setScalar(1);
+      } else {
+        // R3-b：物理模式下从其他天体看太阳——按真实角尺寸渲染（0.267° 太阳角
+        // 半径；NAV 放大球不进入局部物理观看空间——审计五/七）。方向即相机到
+        // 原点方向（近似星历下正确）；仅整体缩放，不改位置
+        sunNode.systemGroup.visible = true;
+        const dist = this.camera.position.length();
+        const sunAngularRadius = Math.atan(696000 / 149597870);
+        const navRadius = sunNode.displayRadius;
+        const scale = Math.max(1e-6, (dist * Math.tan(sunAngularRadius)) / navRadius);
+        sunNode.systemGroup.scale.setScalar(scale);
+      }
     }
 
     for (const [id, node] of this.bodyNodes.entries()) {

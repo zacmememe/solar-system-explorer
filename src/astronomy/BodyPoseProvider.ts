@@ -513,11 +513,13 @@ export class BodyPoseProvider {
     // 物理观察策略：以参考行星系统为局部基准标尺线性化（P1 泛化：地月/木星系/土星系等同一规则）
     if (id === this.physicalReferenceBodyId) {
       // 参考行星本尊保持导航位置与半径，作为本系统局部物理坐标系的基准标尺
+      // （R3-b：framingRadius 保留星环构图范围——改前参考行星丢环，土星作参考
+      // 时相机按本体取景会把环裁掉）
       return {
         position: navPos,
         displayRadius: navRadius,
         renderSurfaceRadius: navRadius,
-        renderFramingRadius: navRadius,
+        renderFramingRadius: framingRadius,
         policy: this.currentPolicy,
         policyTransitionProgress: this.transitionProgress,
         physicalSunDirection: physSunDir,

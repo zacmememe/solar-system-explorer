@@ -398,19 +398,26 @@ export class CameraController {
     const hFovRad = 2 * Math.atan(Math.tan(vFovRad / 2) * Math.max(0.2, this.camera.aspect));
     const limitingFovRad = Math.min(vFovRad, hFovRad);
 
+    // R3-b（260925 审计五）：构图基准用当前 pose 的实际取景半径（随物理观察
+    // 过渡插值；卫星物理尺寸/参考行星含环范围都由 getBodyWorldPose 提供），
+    // 静态 NAV 表仅作无 pose 时兜底——改前恒用 NAV 半径 + 0.8 最小构图半径，
+    // 天体已切成物理小尺寸时相机仍按旧"示意大球"取景（观感为远近失真）
+    const poseInfo = this.latestGetBodyPos ? this.latestGetBodyPos(targetId) : null;
     const body = BODIES[targetId];
     let baseRadius = 1.4;
-    if (body) {
-      if (body.type === 'star') {
-        baseRadius = 7.0; // 太阳特写尺寸
-      } else {
-        baseRadius = getNavDisplayRadius(body.radiusKm, body.type);
-        if (body.ringConfig) {
-          baseRadius *= body.ringConfig.outerRadiusRatio;
-        }
+    if (body?.type === 'star') {
+      baseRadius = poseInfo?.framingRadius && poseInfo.framingRadius > 0 ? poseInfo.framingRadius : 7.0; // 太阳特写尺寸
+    } else if (poseInfo && (poseInfo.framingRadius ?? poseInfo.radius) > 0) {
+      baseRadius = poseInfo.framingRadius ?? poseInfo.radius;
+    } else if (body) {
+      baseRadius = getNavDisplayRadius(body.radiusKm, body.type);
+      if (body.ringConfig) {
+        baseRadius *= body.ringConfig.outerRadiusRatio;
       }
     }
-    baseRadius = Math.max(0.8, baseRadius);
+    // 小天体允许近距特写（物理尺度下 0.8 抬升会把火卫一类目标推远成小点）；
+    // 仅保留防零防贴模下限
+    baseRadius = Math.max(0.1, baseRadius);
 
     const framingFactor = body?.type === 'moon' ? 1.40 : 1.65;
     const targetDist = Math.max(
