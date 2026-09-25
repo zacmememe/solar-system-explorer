@@ -88,6 +88,7 @@ export const App: React.FC = () => {
   const [postcardDataUrl, setPostcardDataUrl] = useState<string>('');
   const [isGeneratingPostcard, setIsGeneratingPostcard] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
 
   // 地貌观察 / 物理观测模式 (P0 核心体验)
   const [observationMode, setObservationMode] = useState<ObservationMode>('physical');
@@ -279,7 +280,11 @@ export const App: React.FC = () => {
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => {
+      toastTimerRef.current = null;
+      setToastMessage(null);
+    }, 3500);
   };
 
   const activeBody = BODIES[selectedBodyId] || BODIES.sun;
@@ -677,7 +682,7 @@ export const App: React.FC = () => {
         onToast={showToast}
       />
 
-      {/* 交互提示气泡 Toast */}
+      {/* 交互提示气泡 Toast（纯提示，不拦截指针——避免盖住顶部导航；3.5s 自动消失） */}
       {toastMessage && (
         <div
           style={{
@@ -698,6 +703,7 @@ export const App: React.FC = () => {
             display: 'flex',
             alignItems: 'center',
             gap: 8,
+            pointerEvents: 'none',
           }}
         >
           <span>{toastMessage}</span>
