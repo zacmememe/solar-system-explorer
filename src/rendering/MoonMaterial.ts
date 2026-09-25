@@ -14,6 +14,8 @@ export interface MoonMaterialUniforms {
   moonTexture: { value: THREE.Texture | null };
   sunDirection: { value: THREE.Vector3 };
   teachingLight: { value: number };
+  /** R2：整体透明度（挖孔补片克隆体渐显用；本体恒 1 不受影响） */
+  uOpacity: { value: number };
 }
 
 export function createMoonMaterial(moonTex: THREE.Texture): THREE.ShaderMaterial {
@@ -21,6 +23,7 @@ export function createMoonMaterial(moonTex: THREE.Texture): THREE.ShaderMaterial
     moonTexture: { value: moonTex },
     sunDirection: { value: new THREE.Vector3(1, 0, 0).normalize() },
     teachingLight: { value: 0.0 },
+    uOpacity: { value: 1.0 },
   };
 
   return new THREE.ShaderMaterial({
@@ -44,6 +47,7 @@ export function createMoonMaterial(moonTex: THREE.Texture): THREE.ShaderMaterial
       uniform sampler2D moonTexture;
       uniform vec3 sunDirection;
       uniform float teachingLight;
+      uniform float uOpacity;
 
       varying vec2 vUv;
       varying vec3 vNormal;
@@ -98,7 +102,7 @@ export function createMoonMaterial(moonTex: THREE.Texture): THREE.ShaderMaterial
 
         vec3 finalColor = litColor * terminator + ambientTerm * (1.0 - terminator * 0.85);
 
-        gl_FragColor = vec4(finalColor, 1.0);
+        gl_FragColor = vec4(finalColor, uOpacity);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }

@@ -156,6 +156,8 @@ interface MoonSiteStack {
   capMesh?: THREE.Mesh;
   /** F-LUNAR-LIMB-01：挖孔补片（细层渐显隐藏期间以原球面填孔，防斜视/球缘缺口） */
   patchMesh?: THREE.Mesh;
+  /** R2：补片克隆材质（独立 uOpacity，随细层渐显连续淡出） */
+  patchMaterial?: THREE.ShaderMaterial;
   lolaMaterials: THREE.MeshStandardMaterial[];
   rockFieldMaterial: THREE.MeshStandardMaterial | null;
   collarMaterial: THREE.MeshStandardMaterial | null;
@@ -174,6 +176,7 @@ interface MarsSiteStack {
   terrainMaterial?: THREE.MeshStandardMaterial;
   capMesh?: THREE.Mesh;
   patchMesh?: THREE.Mesh;
+  patchMaterial?: THREE.ShaderMaterial;
   l1Materials: THREE.ShaderMaterial[];
   rockFieldMaterial: THREE.MeshStandardMaterial | null;
   collarMaterial: THREE.MeshStandardMaterial | null;
@@ -565,14 +568,16 @@ export class SolarEngine {
         stack.capMesh = capMesh;
         stack.group.add(capMesh);
 
-        // F-LUNAR-LIMB-01：挖孔补片——保留被挖掉的原球面三角形，与本体共享材质
-        //（同一 shader/光照/UV）。可见性由 animate 渐显门控驱动：细级覆盖层
-        //（L1/裙边/DTM）隐藏期间显示，填补孔洞，消除斜视/球缘矩形缺口
-        //（用户反馈 2026-09-25：着陆区转到球缘出现凹陷）。盖板继续作深层兜底。
+        // F-LUNAR-LIMB-01：挖孔补片——保留被挖掉的原球面三角形，消除斜视/球缘
+        // 矩形缺口（用户反馈 2026-09-25：着陆区转到球缘出现凹陷）。盖板继续作深层兜底。
+        // R2：补片用本体克隆材质+独立 uOpacity 随细层渐显连续淡出（淡出期不写
+        // 深度），低于 datum 的细地形在交接带逐渐显现，消除补片消失瞬间的跳变。
         const patchGeo = heightProvider.buildSphereHolePatchGeometry(satRadius, 128, 64, holed.holeBounds);
         if (patchGeo) {
-          const patchMesh = new THREE.Mesh(patchGeo, satMesh.material);
+          const patchMat = this.makeHolePatchMaterial(satMesh.material as THREE.ShaderMaterial);
+          const patchMesh = new THREE.Mesh(patchGeo, patchMat);
           patchMesh.name = `${stack.siteId}-hole-patch`;
+          stack.patchMaterial = patchMat;
           stack.patchMesh = patchMesh;
           stack.group.add(patchMesh);
         }
@@ -879,10 +884,13 @@ export class SolarEngine {
 
         // F-LUNAR-LIMB-01：火星挖孔补片（镜像月面）——细级覆盖层渐显隐藏期间
         // 以原球面填孔，消除斜视/球缘矩形缺口；盖板继续作深层兜底。
+        // R2：克隆材质+独立 layerOpacity，随细层渐显连续淡出。
         const marsPatchGeo = heightProvider.buildSphereHolePatchGeometry(satRadius, 128, 64, holed.holeBounds);
         if (marsPatchGeo) {
-          const marsPatchMesh = new THREE.Mesh(marsPatchGeo, satMesh.material);
+          const marsPatchMat = this.makeHolePatchMaterial(satMesh.material as THREE.ShaderMaterial);
+          const marsPatchMesh = new THREE.Mesh(marsPatchGeo, marsPatchMat);
           marsPatchMesh.name = `${stack.siteId}-hole-patch`;
+          stack.patchMaterial = marsPatchMat;
           stack.patchMesh = marsPatchMesh;
           stack.group.add(marsPatchMesh);
         }
@@ -1673,7 +1681,7 @@ export class SolarEngine {
         if (cap) cap.material = this.moonMaterial;
         // F-LUNAR-LIMB-01：挖孔补片与盖板同律——材质换装时保持与本体一致
         for (const s of this.moonSiteStacks.values()) {
-          if (s.patchMesh) s.patchMesh.material = this.moonMaterial;
+          if (s.patchMesh) s.patchMesh.material = this.makeHolePatchMaterial(this.moonMaterial);
         }
       }
     }).catch((e) => console.error('[Texture] Moon load failed:', e));
@@ -1807,7 +1815,7 @@ export class SolarEngine {
         if (cap) cap.material = this.marsMaterial;
         // F-LUNAR-LIMB-01：火星挖孔补片同律换装
         for (const s of this.marsSiteStacks.values()) {
-          if (s.patchMesh) s.patchMesh.material = this.marsMaterial;
+          if (s.patchMesh) s.patchMesh.material = this.makeHolePatchMaterial(this.marsMaterial);
         }
       }
     }).catch((e) => console.error('[Texture] Mars load failed:', e));
@@ -2755,6 +2763,16 @@ export class SolarEngine {
 
   /** One render path for animation and captures, partitioned by view depth only. */
   private readonly depthRenderer = new DepthSliceRenderer();
+
+  /** R2：挖孔补片专用材质——本体克隆+独立透明度 uniform（uOpacity/layerOpacity）；
+   *  transparent+不写深度，细层地形渐显时不被 datum 平面遮挡。 */
+  private makeHolePatchMaterial(src: THREE.Material): THREE.ShaderMaterial {
+    const m = src.clone() as THREE.ShaderMaterial;
+    m.transparent = true;
+    m.depthWrite = false;
+    return m;
+  }
+
   public lastFrameRenderInfo: {
     layered: boolean;
     anchorBodyId: BodyId | null;
@@ -2763,7 +2781,13 @@ export class SolarEngine {
     depthRanges?: Array<{near: number; far: number}>;
     /** F-VEHICLE-FOREGROUND-01：本帧是否执行了载具独立展示 pass */
     vehicleDisplayPass: boolean;
-  } = { layered: false, anchorBodyId: null, anchorDistOverRadius: Infinity, farNearPlane: null, vehicleDisplayPass: false };
+    /** R1：展示 pass 实际投影范围（月面量级下必须有限且覆盖载具包围体） */
+    vehicleDisplayRange: { near: number; far: number } | null;
+  } = { layered: false, anchorBodyId: null, anchorDistOverRadius: Infinity, farNearPlane: null, vehicleDisplayPass: false, vehicleDisplayRange: null };
+
+  private vehicleDisplayBox = new THREE.Box3();
+  private vehicleDisplaySphere = new THREE.Sphere(new THREE.Vector3(), 0);
+  private vehicleDisplayRangeOut = { near: 0, far: 0 };
 
   public renderFrame(): void {
     const snap = this.cameraController.getSnapshot();
@@ -2778,12 +2802,29 @@ export class SolarEngine {
     // F-VEHICLE-FOREGROUND-01：可见载具挂展示 layer——世界（含分段深度）完成后
     // 独立展示 pass 绘制；纯星球观察（visible=false）跳过该 pass。
     const vehicleDisplayPass = this.vehicleGroup.visible && this.vehicleGroup.parent === this.camera;
+    // R1：展示投影按载具包围球取有限 near/far——不继承世界最近切片
+    //（月面量级下末段 far≈2e-4 会整体裁掉相机前 2.1/1.35 单位的载具）。
+    let displaySphere: { center: THREE.Vector3; radius: number } | undefined;
+    if (vehicleDisplayPass && this.currentVehicleMesh) {
+      this.vehicleGroup.updateWorldMatrix(true, true);
+      this.vehicleDisplayBox.setFromObject(this.vehicleGroup);
+      if (!this.vehicleDisplayBox.isEmpty()) {
+        this.vehicleDisplayBox.getBoundingSphere(this.vehicleDisplaySphere);
+        displaySphere = this.vehicleDisplaySphere;
+      }
+    }
+    const displayRange = this.vehicleDisplayRangeOut;
+    displayRange.near = 0;
+    displayRange.far = 0;
     const ranges = this.depthRenderer.render(this.renderer, this.scene, this.camera,
-      vehicleDisplayPass ? { displayLayer: VEHICLE_DISPLAY_LAYER } : undefined);
+      vehicleDisplayPass
+        ? { displayLayer: VEHICLE_DISPLAY_LAYER, displaySphere, displayRangeOut: displayRange }
+        : undefined);
     this.lastFrameRenderInfo = {
       layered: ranges.length > 1, anchorBodyId, anchorDistOverRadius,
       farNearPlane: ranges.length > 1 ? ranges[0].near : null, depthRanges: ranges,
       vehicleDisplayPass,
+      vehicleDisplayRange: vehicleDisplayPass ? { near: displayRange.near, far: displayRange.far } : null,
     };
   }
 
@@ -3422,12 +3463,14 @@ export class SolarEngine {
           mat.opacity = l1Opacity;
         }
 
-        // F-LUNAR-LIMB-01：挖孔补片可见性——细级覆盖层（DTM/L1+裙边）任一未全显
-        // 时显示补片，以原球面填住孔洞；两者全显时隐藏让位真实地形。补片不透明
-        // 且与本体共享材质（同 shader/光照），避免透明排序与明暗不一致。
+        // F-LUNAR-LIMB-01/R2：挖孔补片连续淡出——透明度=1−max(DTM,L1)，
+        // 细级覆盖层渐显的同时补片渐隐（不写深度），低于 datum 的细地形随
+        // 之逐渐显现；不再有 0.999 阈值处的整体消失跳变。
         const patch = activeMoonStack.patchMesh;
         if (patch) {
-          patch.visible = opacity < 0.999 || l1Opacity < 0.999;
+          const patchOpacity = 1 - Math.max(opacity, l1Opacity);
+          (patch.material as THREE.ShaderMaterial).uniforms.uOpacity.value = patchOpacity;
+          patch.visible = patchOpacity > 0.001;
         }
 
         // S3a 碎石场距离淡入：<6km 全显，6–9km smoothstep 渐隐（远距亚像素无意义）
@@ -3486,9 +3529,11 @@ export class SolarEngine {
           mat.opacity = l1Opacity;
           mat.uniforms.layerOpacity.value = l1Opacity;
         }
-        // F-LUNAR-LIMB-01：火星挖孔补片可见性（镜像月面，同款门控语义）
+        // F-LUNAR-LIMB-01/R2：火星挖孔补片连续淡出（镜像月面；layerOpacity）
         if (activeMarsStack.patchMesh) {
-          activeMarsStack.patchMesh.visible = opacity < 0.999 || l1Opacity < 0.999;
+          const patchOpacity = 1 - Math.max(opacity, l1Opacity);
+          (activeMarsStack.patchMesh.material as THREE.ShaderMaterial).uniforms.layerOpacity.value = patchOpacity;
+          activeMarsStack.patchMesh.visible = patchOpacity > 0.001;
         }
         if (this.marsRockFieldMaterial) {
           const t = Math.min(1, Math.max(0, (9000 - siteDistM) / 3000));
