@@ -20,6 +20,8 @@ export interface MissionHUDProps {
   venusRadarMode: boolean;
   titanInfraredMode: boolean;
   vehicleName: string;
+  /** F-LANDING-HUD-01：着陆选择+前往/降落单行（LunarLandingHUD 提供，仅着陆型天体有值） */
+  landingSlot?: React.ReactNode;
   onPause(): void;
   onSpeed(speed: number): void;
   onViewMode(mode: ViewCameraMode): void;
@@ -155,6 +157,7 @@ export function MissionHUD(props: MissionHUDProps) {
         <section className="hud-target" aria-label="当前天体">
           <div className="hud-target-heading"><strong>{body.name}</strong><span>{body.nameEn}</span></div>
           <div className="hud-radius"><span>{Math.round(body.radiusKm).toLocaleString('en-US')}</span><small>km</small></div>
+          {props.landingSlot}
           <div className="hud-target-footer"><span>平均半径</span>
             <button onClick={e => openPanel('details', e)} aria-expanded={panel === 'details'} aria-controls="hud-details-panel">了解这颗天体 ↗</button>
           </div>

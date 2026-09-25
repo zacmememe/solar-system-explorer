@@ -48,6 +48,22 @@
 .hud-radius small { font-size: 13px; color: var(--hud-muted); }
 .hud-target-footer { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 5px; color: var(--hud-muted); }
 .hud-target-footer button { padding-right: 0; padding-left: 8px; }
+/* F-LANDING-HUD-01：底部 HUD 当前天体区的紧凑着陆行（选择+前往/降落/等待） */
+.hud-landing-row { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 6px;
+  padding: 6px 0 2px; pointer-events: auto; }
+.hud-landing-label { color: var(--hud-muted); }
+.hud-landing-row select { pointer-events: auto; max-width: 168px; min-height: 32px; padding: 2px 6px;
+  color: var(--hud-text); font: inherit; background: rgb(9 12 17 / .72); border: 1px solid var(--hud-rule);
+  border-radius: 6px; cursor: pointer; }
+.hud-landing-row select:focus-visible { outline: 2px solid #f5f5f5; outline-offset: 2px; }
+.hud-landing-action { min-height: 32px; padding: 2px 12px !important; border: 1px solid var(--hud-rule);
+  font-size: 12px; color: var(--hud-text); }
+.hud-landing-action.is-primary { border-color: rgb(56 189 248 / .6);
+  background: linear-gradient(135deg, rgb(14 165 233 / .28), rgb(2 132 199 / .16)); font-weight: 600; }
+.hud-landing-wait { pointer-events: none; display: inline-flex; align-items: center; gap: 4px;
+  max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--hud-muted); font-size: 11px; padding: 4px 8px; border: 1px solid rgb(148 163 184 / .3);
+  border-radius: 10px; }
 .hud-no-data { display: grid; place-items: center; min-height: 105px; color: var(--hud-muted); }
 .hud-transfer { min-height: 105px; padding-top: 12px; }
 .hud-transfer-label, .hud-transfer-caption { display: flex; justify-content: space-between; gap: 12px; }
@@ -80,6 +96,7 @@
 @media (max-width: 1100px) {
   .hud-layout { grid-template-columns: 160px minmax(280px, 1fr) 200px; gap: 16px; padding-left: 20px; padding-right: 20px; }
   .hud-target-footer { gap: 0; } .hud-target-footer > span { display: none; }
+  .hud-landing-row select { max-width: 130px; }
 }
 @media (max-width: 760px) {
   .hud-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: 'context context' 'flight target'; gap: 4px 10px; padding: 0 14px max(8px, env(safe-area-inset-bottom)); }
@@ -91,6 +108,11 @@
   .hud-radius > span { font-size: 26px; } .hud-target-heading > span { display: none; }
   .hud-flight-actions { gap: 0; } .hud-flight-actions button { padding: 0 7px; }
   .hud-target-footer button { padding-left: 0; }
+  /* F-LANDING-HUD-01：窄屏着陆行整行换行、左对齐，按钮保持可点高度 */
+  .hud-landing-row { justify-content: flex-start; flex-wrap: wrap; row-gap: 4px; }
+  .hud-landing-row select { max-width: min(200px, 52vw); min-height: 36px; }
+  .hud-landing-action { min-height: 36px; }
+  .hud-landing-wait { max-width: 100%; white-space: normal; }
   .hud-popover-time, .hud-popover-observe, .hud-popover-details { left: 12px; right: 12px; width: auto; }
   .hud-transfer { min-height: 92px; padding-top: 3px; }
   .hud-scrim { top: -20px; }

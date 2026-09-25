@@ -5,18 +5,20 @@
  * 2. 实时显示 AGL 离地真高、MSL 基准高程、垂直速度与表面坐标；
  * 3. 支持随时暂停 (HOLD)、继续 (RESUME)、仰望地球与返回轨道；
  * 4. 具备清晰的科学标注（陶拉斯—利特罗山谷 · 虚拟降落，NASA LROC DTM 5m 剖面标定）。
+ * F-LANDING-HUD-01：ORBIT 态着陆选择+前往/降落/等待合并为单行
+ * LandingDockRow，经 App 传入底部 MissionHUD 当前天体区；中央不再有悬浮面板。
  */
 
 import React, { useEffect, useState } from 'react';
 import type { LandingTelemetry, LandingAvailability } from '../contracts/landing';
-import { LANDING_SITES } from '../contracts/landing';
 import type { SolarEngine } from '../engine/SolarEngine';
 
 interface LunarLandingHUDProps {
   engine: SolarEngine | null;
 }
 
-export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine }) => {
+/** 着陆可用性轮询（300ms，引擎权威）——LandingDockRow 与遥测面板共用 */
+function useLandingEngineState(engine: SolarEngine | null) {
   const [telemetry, setTelemetry] = useState<LandingTelemetry | null>(null);
   const [availability, setAvailability] = useState<LandingAvailability | null>(null);
   const [prepStatus, setPrepStatus] = useState<ReturnType<SolarEngine['getLandingPreparationStatus']> | null>(null);
@@ -44,6 +46,77 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine }) => {
     return () => window.clearInterval(id);
   }, [engine]);
 
+  return { telemetry, availability, prepStatus, sites };
+}
+
+/**
+ * F-LANDING-HUD-01：底部 HUD 当前天体区的紧凑着陆行。
+ * `着陆：陶拉斯—利特罗山谷 ▾ [前往/降落]`——选择（原生 select）+ 动作/等待态
+ * 合成一行；长英文名/数据徽章/出处说明不进入常驻行。语义与原悬浮入口一致。
+ */
+export const LandingDockRow: React.FC<LunarLandingHUDProps> = ({ engine }) => {
+  const { telemetry, availability, sites } = useLandingEngineState(engine);
+  if (!engine) return null;
+  const state = telemetry?.state || 'ORBIT';
+  const inOrbitLandingFlow = state === 'ORBIT' || availability?.action === 'exit-observe';
+  if (!inOrbitLandingFlow || !availability) return null;
+
+  return (
+    <div className="hud-landing-row" data-testid="hud-landing-row">
+      {state === 'ORBIT' && sites.length > 0 && availability?.siteId && (
+        <>
+          <span className="hud-landing-label">着陆：</span>
+          <select
+            data-testid="landing-site-select"
+            aria-label="选择着陆地点"
+            value={availability.siteId}
+            onChange={event => { engine.selectLandingSite(event.target.value); }}
+          >
+            {sites.map(site => <option key={site.id} value={site.id}>{site.name}</option>)}
+          </select>
+        </>
+      )}
+      {state === 'ORBIT' && availability?.action === 'land' && (
+        <button
+          data-testid="lunar-landing-start-btn"
+          className="hud-landing-action is-primary"
+          onClick={() => engine.startLunarLanding()}
+        >
+          🚀 降落
+        </button>
+      )}
+      {state === 'ORBIT' && availability?.action === 'travel-to-site' && (
+        <button
+          data-testid="lunar-landing-travel-site-btn"
+          className="hud-landing-action"
+          onClick={() => engine.travelToLandingSite()}
+          title="着陆区在天体背面，先绕行前往着陆区上空"
+        >
+          🧭 前往
+        </button>
+      )}
+      {state === 'ORBIT' && availability?.action === 'wait' && (
+        <span data-testid="lunar-landing-wait" className="hud-landing-wait" title={availability.detail ?? undefined}>
+          ⏳ {availability.detail ?? '准备中…'}
+        </span>
+      )}
+      {/* 1a-S4b. 火星地表观察（observe 快捷路径/探针进入）兜底入口 */}
+      {availability?.action === 'exit-observe' && (
+        <button
+          data-testid="mars-observe-exit-btn"
+          className="hud-landing-action"
+          onClick={() => engine.exitJezeroSurfaceObserve()}
+        >
+          🚀 返回火星轨道
+        </button>
+      )}
+    </div>
+  );
+};
+
+export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine }) => {
+  const { telemetry, prepStatus } = useLandingEngineState(engine);
+
   if (!engine) return null;
 
   const state = telemetry?.state || 'ORBIT';
@@ -58,172 +131,6 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine }) => {
 
   return (
     <>
-      {state === 'ORBIT' && sites.length > 0 && availability?.siteId && (
-        <label className="landing-site-picker">
-          着陆地点
-          <select data-testid="landing-site-select" aria-label="选择着陆地点" value={availability.siteId}
-            onChange={event => { engine.selectLandingSite(event.target.value); setAvailability(engine.getLandingAvailability()); }}>
-            {sites.map(site => <option key={site.id} value={site.id}>{site.name}</option>)}
-          </select>
-        </label>
-      )}
-      {/* 1. P3b-A：入口按权威可用性分派——先到达，再降落（S4c：文案/徽章按站点） */}
-      {state === 'ORBIT' && availability?.action === 'land' && (
-        <div
-          style={{
-            position: 'absolute',
-            bottom: 180,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            zIndex: 35,
-            pointerEvents: 'auto',
-          }}
-        >
-          <button
-            data-testid="lunar-landing-start-btn"
-            onClick={() => engine.startLunarLanding()}
-            style={{
-              padding: '10px 20px',
-              borderRadius: 24,
-              border: '1px solid rgba(56, 189, 248, 0.6)',
-              background: 'linear-gradient(135deg, rgba(14, 165, 233, 0.28), rgba(2, 132, 199, 0.16))',
-              backdropFilter: 'blur(12px)',
-              color: '#ffffff',
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              boxShadow: '0 8px 24px rgba(2, 132, 199, 0.25)',
-              transition: 'all 0.2s ease',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-2px)';
-              e.currentTarget.style.borderColor = '#38bdf8';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.borderColor = 'rgba(56, 189, 248, 0.6)';
-            }}
-          >
-            <span style={{ fontSize: 16 }}>🚀</span>
-            <span>降落 {LANDING_SITES[availability.siteId ?? 'taurus-littrow']?.nameEn ?? '着陆区'}</span>
-            <span
-              style={{
-                fontSize: 10,
-                color: '#bae6fd',
-                background: 'rgba(56, 189, 248, 0.2)',
-                padding: '2px 6px',
-                borderRadius: 10,
-              }}
-            >
-              {(LANDING_SITES[availability.siteId ?? 'taurus-littrow']?.bodyId === 'mars'
-                ? '2m HiRISE 真实地形'
-                : availability.siteId === 'hadley-rille' || availability.siteId === 'tranquility-base'
-                  ? '2m DTM 真实地形'
-                  : '5m DTM 真实地形')}
-            </span>
-          </button>
-        </div>
-      )}
-
-      {/* 1b. 落区在背面：前往着陆区（球外绕行到达，不穿球不改落区） */}
-      {state === 'ORBIT' && availability?.action === 'travel-to-site' && (
-        <div
-          style={{
-            position: 'absolute',
-            bottom: 180,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            zIndex: 35,
-            pointerEvents: 'auto',
-          }}
-        >
-          <button
-            data-testid="lunar-landing-travel-site-btn"
-            onClick={() => engine.travelToLandingSite()}
-            style={{
-              padding: '10px 20px',
-              borderRadius: 24,
-              border: '1px solid rgba(148, 163, 184, 0.5)',
-              background: 'rgba(15, 23, 42, 0.6)',
-              backdropFilter: 'blur(12px)',
-              color: '#e2e8f0',
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-            }}
-          >
-            <span style={{ fontSize: 16 }}>🧭</span>
-            <span>前往着陆区（背面）</span>
-          </button>
-        </div>
-      )}
-
-      {/* 1a-S4b. 火星地表观察中（observe 快捷路径/探针进入）：返回轨道入口。
-          S4c 起正常用户路径走完整下降流（遥测面板内返回），本入口仅兜底 */}
-      {availability?.action === 'exit-observe' && (
-        <div
-          style={{
-            position: 'absolute',
-            bottom: 180,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            zIndex: 35,
-            pointerEvents: 'auto',
-          }}
-        >
-          <button
-            data-testid="mars-observe-exit-btn"
-            onClick={() => engine.exitJezeroSurfaceObserve()}
-            style={{
-              padding: '10px 20px',
-              borderRadius: 24,
-              border: '1px solid rgba(148, 163, 184, 0.4)',
-              background: 'rgba(15, 23, 42, 0.6)',
-              backdropFilter: 'blur(12px)',
-              color: '#e2e8f0',
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-            }}
-          >
-            <span style={{ fontSize: 16 }}>🚀</span>
-            <span>离开耶泽罗地表 · 返回火星轨道</span>
-          </button>
-        </div>
-      )}
-
-      {/* 1c. 到达但未就绪：显示有原因的不可执行状态 */}
-      {state === 'ORBIT' && availability?.action === 'wait' && (
-        <div
-          data-testid="lunar-landing-wait"
-          style={{
-            position: 'absolute',
-            bottom: 180,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            zIndex: 35,
-            pointerEvents: 'none',
-            padding: '8px 16px',
-            borderRadius: 20,
-            border: '1px solid rgba(148, 163, 184, 0.3)',
-            background: 'rgba(15, 23, 42, 0.6)',
-            color: '#94a3b8',
-            fontSize: 12,
-          }}
-        >
-          ⏳ {availability.detail ?? '准备中…'}
-        </div>
-      )}
-
       {/* 2. 下降、悬停、停驻与升空时的全局遥测仪表板 */}
       {state !== 'ORBIT' && telemetry && (
         <div
