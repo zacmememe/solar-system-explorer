@@ -23,8 +23,13 @@ export function focalPixelsPx(drawingBufferHeightPx: number, vFovRad: number): n
 
 /** 正下视中心近似：源像元投影到屏幕的尺寸（px） */
 export function projectedTexelPx(texelMeters: number, focalPx: number, viewDepthM: number): number {
+  // R6-b：非有限输入（相机矩阵 NaN 等上游故障的下游症状）返回 0 而非抛错——
+  // 改前 RangeError 会中断 animate 当帧（渐显门控/雾等后续步骤被跳过）
+  if (!Number.isFinite(texelMeters) || !Number.isFinite(focalPx) || !Number.isFinite(viewDepthM)) {
+    return 0;
+  }
   if (!(texelMeters > 0) || !(focalPx > 0) || !(viewDepthM > 0)) {
-    throw new RangeError('Invalid projected texel input');
+    return 0;
   }
   return (texelMeters * focalPx) / viewDepthM;
 }

@@ -196,25 +196,31 @@ export class CameraController {
         if (this.isTransitioning) {
           this.cancelFlight();
         }
-        if (this.mode === 'SURFACE_LOOK') {
-          // 地表第一人称视线环顾：水平拖拽转动 yaw (360°)，垂直拖拽调整 pitch (±85°)
-          this.surfaceQuatOverride = null; // 用户接管视线 → 解除导引四元数覆盖
-          this.surfaceYawDeg = THREE.MathUtils.euclideanModulo(
-            this.surfaceYawDeg - command.deltaTheta * (180 / Math.PI),
-            360
-          );
-          this.surfacePitchDeg = Math.max(
-            -85,
-            Math.min(85, this.surfacePitchDeg - command.deltaPhi * (180 / Math.PI))
-          );
-          this.lookTarget = { kind: 'center' }; // 用户手动环顾时解除特定天体视线锁定
+        // R6-b：参数防御——字段缺失/非有限时 NaN 会经 spherical.phi 污染相机
+        // 矩阵（orbit 只传 deltaTheta 曾使相机全 NaN、渲染崩坏，260925 排查实测）
+        {
+          const dTheta = Number.isFinite(command.deltaTheta) ? command.deltaTheta : 0;
+          const dPhi = Number.isFinite(command.deltaPhi) ? command.deltaPhi : 0;
+          if (this.mode === 'SURFACE_LOOK') {
+            // 地表第一人称视线环顾：水平拖拽转动 yaw (360°)，垂直拖拽调整 pitch (±85°)
+            this.surfaceQuatOverride = null; // 用户接管视线 → 解除导引四元数覆盖
+            this.surfaceYawDeg = THREE.MathUtils.euclideanModulo(
+              this.surfaceYawDeg - dTheta * (180 / Math.PI),
+              360
+            );
+            this.surfacePitchDeg = Math.max(
+              -85,
+              Math.min(85, this.surfacePitchDeg - dPhi * (180 / Math.PI))
+            );
+            this.lookTarget = { kind: 'center' }; // 用户手动环顾时解除特定天体视线锁定
+            this.updateCameraTransform();
+            break;
+          }
+          this.spherical.theta -= dTheta;
+          this.spherical.phi = Math.max(0.01, Math.min(Math.PI - 0.01, this.spherical.phi - dPhi));
+          this.spherical.makeSafe();
           this.updateCameraTransform();
-          break;
         }
-        this.spherical.theta -= command.deltaTheta;
-        this.spherical.phi = Math.max(0.01, Math.min(Math.PI - 0.01, this.spherical.phi - command.deltaPhi));
-        this.spherical.makeSafe();
-        this.updateCameraTransform();
         break;
 
       case 'zoomInput':

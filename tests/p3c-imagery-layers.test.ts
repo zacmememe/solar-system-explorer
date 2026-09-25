@@ -46,10 +46,15 @@ describe('P3b-C：屏幕空间误差（SSE）纯函数', () => {
     expect(enter.visible).toBe(false);
   });
 
-  it('非法输入拒绝（NaN/非正 FOV/非正深度）', () => {
+  it('非法输入拒绝/降级（NaN/非正 FOV 抛错；非正深度 R6 起降级为 0 不中断 animate）', () => {
     expect(() => focalPixelsPx(100, 0)).toThrow();
     expect(() => focalPixelsPx(NaN, 1)).toThrow();
-    expect(() => projectedTexelPx(100, 100, 0)).toThrow();
+    // R6 勘误：projectedTexelPx 非有限/非正输入返回 0（fail-soft）——改前 RangeError
+    // 会中断 animate 当帧（渐显门控/雾/曝光被跳过）
+    expect(projectedTexelPx(100, 100, 0)).toBe(0);
+    expect(projectedTexelPx(NaN, 100, 100)).toBe(0);
+    expect(projectedTexelPx(100, NaN, 100)).toBe(0);
+    expect(projectedTexelPx(100, 100, NaN)).toBe(0);
   });
 
   it('P3b-E 地形块渐显：8px 以下隐藏、36px 全显、单调 smoothstep、36px 与 WAC 门控开启距离锚定', () => {
