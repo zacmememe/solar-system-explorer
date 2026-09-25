@@ -288,6 +288,8 @@ export class TerrainHeightProvider {
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     geo.setIndex(indices);
     geo.computeVertexNormals();
+    geo.userData.surfaceGrid = { cols:segsLon+1, rows:segsLat+1,
+      lat0:bounds.latMin, lon0:bounds.lonMin, dLat, dLon };
     return geo;
   }
 
@@ -318,13 +320,14 @@ export class TerrainHeightProvider {
     const dLat = 180 / heightSegs;
     const j0 = Math.floor((wb.lonMin - PAD_DEG + 180) / dLon);
     const j1 = Math.ceil((wb.lonMax + PAD_DEG + 180) / dLon);
-    const i0 = Math.floor((wb.latMin - PAD_DEG + 90) / dLat);
-    const i1 = Math.ceil((wb.latMax + PAD_DEG + 90) / dLat);
+    // THREE.SphereGeometry rows run north -> south (latitude = 90 - iy*dLat).
+    const i0 = Math.max(0, Math.floor((90 - wb.latMax - PAD_DEG) / dLat));
+    const i1 = Math.min(heightSegs, Math.ceil((90 - wb.latMin + PAD_DEG) / dLat));
     const holeBounds = {
       lonMin: -180 + j0 * dLon,
       lonMax: -180 + j1 * dLon,
-      latMin: -90 + i0 * dLat,
-      latMax: -90 + i1 * dLat,
+      latMin: 90 - i1 * dLat,
+      latMax: 90 - i0 * dLat,
     };
 
     // SphereGeometry 顶点为行主序网格：vertex(ix, iy) = iy*(widthSegs+1)+ix
@@ -339,7 +342,10 @@ export class TerrainHeightProvider {
         const vi = src[f + k];
         const iy = Math.floor(vi / stride);
         const ix = vi - iy * stride;
-        if (iy < i0 || iy > i1 || ix < j0 || ix > j1) {
+        // Datasets may use 0..360 longitude (e.g. Victoria 354.5 E).
+        // Unwrap the mesh column into the same interval, including the seam.
+        const unwrappedIx = ix + widthSegs * Math.round(((j0 + j1) / 2 - ix) / widthSegs);
+        if (iy < i0 || iy > i1 || unwrappedIx < j0 || unwrappedIx > j1) {
           inHole = false;
           break;
         }
@@ -439,8 +445,8 @@ export class TerrainHeightProvider {
         const d = r * rowStride + kNext;
         const b = (r + 1) * rowStride + k;
         const c = (r + 1) * rowStride + kNext;
-        indices.push(a, d, b);
-        indices.push(b, d, c);
+        indices.push(a, b, d);
+        indices.push(b, c, d);
       }
     }
 

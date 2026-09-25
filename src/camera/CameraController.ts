@@ -73,7 +73,9 @@ export class CameraController {
   private surfaceRadius: number = 2.0;
   private framingRadius: number = 2.0;
   private collisionClearance: number = 0.04;
-  private readonly shift: number = 1.0;
+  private get shift(): number {
+    return this.anchor.kind === 'body' ? Math.max(1e-6, Math.min(1, this.surfaceRadius)) : 1;
+  }
   private qActual: number = Math.log(6.2 + 1.0);
   private qTarget: number = Math.log(6.2 + 1.0);
   private lastInputSign: number = 0;
@@ -176,7 +178,7 @@ export class CameraController {
       case 'flyTo': {
         const dur = command.durationSec ?? (this.reduceMotion ? 0.15 : 2.5);
         this.lookTarget = command.lookTarget ?? { kind: 'center' };
-        this.initiateFlight(command.bodyId, dur, token, command.targetPos, command.exact);
+        this.initiateFlight(command.bodyId, dur, token, command.targetPos, command.exact, command.framingRadius);
         break;
       }
 
@@ -342,8 +344,8 @@ export class CameraController {
     if (!this.isTransitioning && this.anchor.kind === 'body') {
       this.targetPosition.copy(targetPos);
       this.surfaceRadius = targetRadius;
-      this.collisionClearance = Math.max(0.01, targetRadius * 0.02);
-      this.minDistance = Math.max(0.1, targetRadius + this.collisionClearance);
+      this.collisionClearance = Math.max(1e-7, targetRadius * 0.02);
+      this.minDistance = Math.max(1e-6, targetRadius + this.collisionClearance);
       this.maxDistance = Math.max(100, targetRadius * 100);
       if (this.spherical.radius < this.minDistance) {
         this.spherical.radius = this.minDistance;
@@ -376,7 +378,8 @@ export class CameraController {
     durationSec: number,
     token: number,
     targetPos?: [number, number, number],
-    exact?: boolean
+    exact?: boolean,
+    framingRadius?: number
   ): void {
     if (token !== this.currentCommandId) return;
 
@@ -411,7 +414,9 @@ export class CameraController {
     const poseInfo = this.latestGetBodyPos ? this.latestGetBodyPos(targetId) : null;
     const body = BODIES[targetId];
     let baseRadius = 1.4;
-    if (body?.type === 'star') {
+    if (framingRadius !== undefined && Number.isFinite(framingRadius) && framingRadius > 0) {
+      baseRadius = framingRadius;
+    } else if (body?.type === 'star') {
       baseRadius = poseInfo?.framingRadius && poseInfo.framingRadius > 0 ? poseInfo.framingRadius : 7.0; // 太阳特写尺寸
     } else if (poseInfo && (poseInfo.framingRadius ?? poseInfo.radius) > 0) {
       baseRadius = poseInfo.framingRadius ?? poseInfo.radius;
@@ -423,7 +428,7 @@ export class CameraController {
     }
     // 小天体允许近距特写（物理尺度下 0.8 抬升会把火卫一类目标推远成小点）；
     // 仅保留防零防贴模下限
-    baseRadius = Math.max(0.1, baseRadius);
+    baseRadius = Math.max(1e-6, baseRadius);
 
     const framingFactor = body?.type === 'moon' ? 1.40 : 1.65;
     const targetDist = Math.max(
@@ -626,7 +631,7 @@ export class CameraController {
   private syncLogDollyFromRadius(): void {
     const isBody = this.anchor.kind === 'body';
     const effectiveSurface = isBody ? this.surfaceRadius : 0;
-    const h = Math.max(0.01, this.spherical.radius - effectiveSurface);
+    const h = Math.max(1e-7, this.spherical.radius - effectiveSurface);
     this.qActual = Math.log(h + this.shift);
     this.qTarget = this.qActual;
     this.lastInputSign = 0;
@@ -646,8 +651,8 @@ export class CameraController {
 
     const isBody = this.anchor.kind === 'body';
     const effectiveSurface = isBody ? this.surfaceRadius : 0;
-    const minClearance = Math.max(0.01, this.minDistance - effectiveSurface);
-    const maxClearance = Math.max(minClearance + 1.0, this.maxDistance - effectiveSurface);
+    const minClearance = Math.max(1e-7, this.minDistance - effectiveSurface);
+    const maxClearance = Math.max(minClearance + 1e-6, this.maxDistance - effectiveSurface);
 
     const minQ = Math.log(minClearance + this.shift);
     const maxQ = Math.log(maxClearance + this.shift);
@@ -718,8 +723,8 @@ export class CameraController {
         const targetInfo = getPos(this.targetBodyId);
         this.surfaceRadius = targetInfo.surfaceRadius ?? targetInfo.radius;
         this.framingRadius = targetInfo.framingRadius ?? targetInfo.radius;
-        this.collisionClearance = Math.max(0.01, this.surfaceRadius * 0.02);
-        this.minDistance = Math.max(0.1, this.surfaceRadius + this.collisionClearance);
+        this.collisionClearance = Math.max(1e-7, this.surfaceRadius * 0.02);
+        this.minDistance = Math.max(1e-6, this.surfaceRadius + this.collisionClearance);
         this.maxDistance = this.framingRadius * 100;
         this.syncLogDollyFromRadius();
       }
@@ -750,8 +755,8 @@ export class CameraController {
 
       this.surfaceRadius = targetInfo.surfaceRadius ?? targetInfo.radius;
       this.framingRadius = targetInfo.framingRadius ?? targetInfo.radius;
-      this.collisionClearance = Math.max(0.01, this.surfaceRadius * 0.02);
-      this.minDistance = Math.max(0.1, this.surfaceRadius + this.collisionClearance);
+      this.collisionClearance = Math.max(1e-7, this.surfaceRadius * 0.02);
+      this.minDistance = Math.max(1e-6, this.surfaceRadius + this.collisionClearance);
       this.maxDistance = this.framingRadius * 100;
       this.syncLogDollyFromRadius();
     } else {
@@ -761,8 +766,8 @@ export class CameraController {
         this.targetPosition.copy(targetInfo.pos);
         this.surfaceRadius = targetInfo.surfaceRadius ?? targetInfo.radius;
         this.framingRadius = targetInfo.framingRadius ?? targetInfo.radius;
-        this.collisionClearance = Math.max(0.01, this.surfaceRadius * 0.02);
-        this.minDistance = Math.max(0.1, this.surfaceRadius + this.collisionClearance);
+        this.collisionClearance = Math.max(1e-7, this.surfaceRadius * 0.02);
+        this.minDistance = Math.max(1e-6, this.surfaceRadius + this.collisionClearance);
         this.maxDistance = this.framingRadius * 100;
       } else if (this.anchor.kind === 'surface') {
         const targetInfo = getPos(this.anchor.bodyId);
@@ -954,9 +959,10 @@ export class CameraController {
     // 动态调整近裁剪面，彻底杜绝近地观察时地表被裁剪 (CAM-04)
     const isBody = this.anchor.kind === 'body';
     const clearance = isBody
-      ? Math.max(0.001, this.spherical.radius - this.surfaceRadius)
+      ? Math.max(1e-7, this.spherical.radius - this.surfaceRadius)
       : Math.max(0.001, this.spherical.radius);
-    const dynamicNear = CameraController.nearFromClearance(clearance, 0.1, 1e-4);
+    const nearFloor = this.anchor.kind === 'body' ? Math.max(1e-8, Math.min(1e-4, this.surfaceRadius * 0.001)) : 1e-4;
+    const dynamicNear = CameraController.nearFromClearance(clearance, 0.1, nearFloor);
 
     if (Math.abs(this.camera.near - dynamicNear) > 1e-6) {
       this.camera.near = dynamicNear;

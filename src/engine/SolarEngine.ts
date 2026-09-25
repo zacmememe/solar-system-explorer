@@ -10,6 +10,8 @@
  */
 
 import * as THREE from 'three';
+import { DepthSliceRenderer } from './DepthSliceRenderer';
+import { projectDistantBody } from '../astronomy/observerProjection';
 import { CameraController } from '../camera/CameraController';
 import { normalizeWheelDelta, pinchLogDelta } from '../camera/inputKernels';
 import {
@@ -84,6 +86,7 @@ import { JezeroTerrainSource } from '../surface/JezeroTerrainSource';
 import {
   generateRockPlacements,
   buildRockGeometry,
+  sampleRenderedTerrain,
   rockScenePosition,
 } from '../surface/ProceduralRockField';
 import { focalPixelsPx, projectedTexelPx, terrainRevealOpacity } from '../world-support/screenSpaceMetrics';
@@ -166,7 +169,7 @@ interface MarsSiteStack {
   terrainMesh?: THREE.Mesh;
   terrainMaterial?: THREE.MeshStandardMaterial;
   capMesh?: THREE.Mesh;
-  l1Materials: THREE.MeshStandardMaterial[];
+  l1Materials: THREE.ShaderMaterial[];
   rockFieldMaterial: THREE.MeshStandardMaterial | null;
   collarMaterial: THREE.MeshStandardMaterial | null;
   loadStarted: boolean;
@@ -183,7 +186,11 @@ export class SolarEngine {
   private camera: THREE.PerspectiveCamera;
   private cameraController: CameraController;
   private assetManager: AssetManager;
-  private bodyPoseProvider = new BodyPoseProvider('NAV_SCHEMATIC');
+  private bodyPoseProvider = new BodyPoseProvider('PHYSICAL_OBSERVATION');
+  private presentationTravel: {
+    elapsed: number; duration: number;
+    from: Map<BodyId, {position: THREE.Vector3; radius: number}>;
+  } | null = null;
 
   // 场景星空背景
   private skyboxMesh: THREE.Mesh | null = null;
@@ -414,9 +421,11 @@ export class SolarEngine {
           const q = new THREE.Quaternion();
           const up = new THREE.Vector3(0, 1, 0);
           list.forEach((p, i) => {
-            const pos = rockScenePosition(p.latDeg, p.lonDeg, p.heightM, satRadius);
-            pos.setLength(pos.length() + 0.5 * p.scaleM[1] * rockMetricScale); // 露出 75%
-            q.setFromAxisAngle(up, p.rotYRad);
+            const pos = sampleRenderedTerrain(valleyMesh.geometry,p.latDeg,p.lonDeg)
+              ?? rockScenePosition(p.latDeg, p.lonDeg, p.heightM, satRadius);
+            pos.setLength(pos.length() + 0.25 * p.scaleM[1] * rockMetricScale);
+            q.setFromUnitVectors(up, pos.clone().normalize())
+              .multiply(new THREE.Quaternion().setFromAxisAngle(up, p.rotYRad));
             m.compose(
               pos,
               q,
@@ -685,11 +694,11 @@ export class SolarEngine {
           const q = new THREE.Quaternion();
           const up = new THREE.Vector3(0, 1, 0);
           list.forEach((p, i) => {
-            const pos = rockScenePosition(
-              p.latDeg, p.lonDeg, p.heightM, satRadius, dtm.datumRadius
-            );
-            pos.setLength(pos.length() + 0.5 * p.scaleM[1] * rockMetricScale);
-            q.setFromAxisAngle(up, p.rotYRad);
+            const pos = sampleRenderedTerrain(geo,p.latDeg,p.lonDeg)
+              ?? rockScenePosition(p.latDeg,p.lonDeg,p.heightM,satRadius,dtm.datumRadius);
+            pos.setLength(pos.length() + 0.25 * p.scaleM[1] * rockMetricScale);
+            q.setFromUnitVectors(up, pos.clone().normalize())
+              .multiply(new THREE.Quaternion().setFromAxisAngle(up, p.rotYRad));
             m.compose(
               pos,
               q,
@@ -739,19 +748,16 @@ export class SolarEngine {
             : undefined;
           const l1Geo = mola.buildRegionalGeometry(satRadius, 2, dtmHole);
           if (l1Geo) {
-            const l1Mat = new THREE.MeshStandardMaterial({
-              color: 0xffffff,
-              roughness: 0.95,
-              metalness: 0.02,
-            });
+            // The same global image and lighting as the coarse globe: a higher
+            // resolution terrain patch must not become a rectangular color panel.
+            const l1Mat = createMarsMaterial(null);
             stack.l1Materials = [l1Mat];
             // L1 网格 UV=全球等距圆柱：2K 全球图直接可用
             new THREE.TextureLoader().load('/assets/textures/mars/2k_mars.jpg', (tex) => {
               tex.colorSpace = THREE.SRGBColorSpace;
+              tex.wrapS = THREE.RepeatWrapping; // 354.5 E must wrap, not sample the image edge.
               for (const mat of stack.l1Materials) {
-                if (mat.map) continue;
-                mat.map = tex;
-                mat.needsUpdate = true;
+                mat.uniforms.marsTexture.value = tex;
               }
             });
             const l1Mesh = new THREE.Mesh(l1Geo, l1Mat);
@@ -790,12 +796,12 @@ export class SolarEngine {
                 rimMat.polygonOffsetUnits = -1;
                 rimMat.onBeforeCompile = (shader) => {
                   shader.vertexShader = `attribute float aGrayMix;\nvarying float vGrayMix;\n${shader.vertexShader}`.replace(
-                    '#include <begin_vertex>',
-                    '#include <begin_vertex>\n\tvGrayMix = aGrayMix;'
+                    'vUv = uv;',
+                    'vUv = uv;\n\tvGrayMix = aGrayMix;'
                   );
                   shader.fragmentShader = `varying float vGrayMix;\n${shader.fragmentShader}`.replace(
-                    '#include <map_fragment>',
-                    '#include <map_fragment>\n\tfloat grayLum = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));\n\tdiffuseColor.rgb = mix(vec3(grayLum), diffuseColor.rgb, vGrayMix);'
+                    'vec4 texColor = texture2D(marsTexture, vUv);',
+                    'vec4 texColor = texture2D(marsTexture, vUv);\n\tfloat grayLum = dot(texColor.rgb, vec3(0.299, 0.587, 0.114));\n\ttexColor.rgb = mix(vec3(grayLum), texColor.rgb, vGrayMix);'
                   );
                 };
                 stack.l1Materials.push(rimMat);
@@ -822,6 +828,7 @@ export class SolarEngine {
             stack.collarMaterial = collarMat;
             new THREE.TextureLoader().load('/assets/textures/mars/2k_mars.jpg', (tex) => {
               tex.colorSpace = THREE.SRGBColorSpace;
+              tex.wrapS = THREE.RepeatWrapping;
               collarMat.map = tex;
               collarMat.needsUpdate = true;
             });
@@ -928,7 +935,7 @@ export class SolarEngine {
   private marsTerrainMesh?: THREE.Mesh;
   private marsTerrainMaterial?: THREE.MeshStandardMaterial;
   private marsCollarMaterial?: THREE.MeshStandardMaterial;
-  private marsL1Materials: THREE.MeshStandardMaterial[] = [];
+  private marsL1Materials: THREE.ShaderMaterial[] = [];
   private marsHaloMesh?: THREE.Mesh;
   private marsHoleCapMesh?: THREE.Mesh;
   private marsRockFieldMaterial: THREE.MeshStandardMaterial | null = null;
@@ -1021,7 +1028,7 @@ export class SolarEngine {
       45,
       container.clientWidth / container.clientHeight,
       0.1,
-      8000
+      8_000_000 // Covers the outer system at every local body's linear scale.
     );
 
     // 相机控制器：唯一相机写入者
@@ -1098,7 +1105,7 @@ export class SolarEngine {
   }
 
   private setupSkybox(): void {
-    const skyGeo = new THREE.SphereGeometry(5000, 36, 24);
+    const skyGeo = new THREE.SphereGeometry(4_000_000, 36, 24);
     const skyMat = new THREE.MeshBasicMaterial({
       color: 0x050810,
       side: THREE.BackSide,
@@ -2026,6 +2033,33 @@ export class SolarEngine {
   }
 
   public executeCameraCommand(cmd: CameraCommand): void {
+    if ((cmd.type === 'flyTo' && !cmd.exact) || cmd.type === 'overview') {
+      // Travel is an explicit presentation transition, not a physical flight.
+      // Capture the visible scene so switching local systems does not pop bodies.
+      const from = new Map<BodyId, {position: THREE.Vector3; radius: number}>();
+      for (const [id, node] of this.bodyNodes) {
+        node.mesh.updateWorldMatrix(true, false);
+        from.set(id, {position: node.mesh.getWorldPosition(new THREE.Vector3()),
+          radius: node.displayRadius * node.mesh.getWorldScale(new THREE.Vector3()).x});
+      }
+      this.presentationTravel = {elapsed:0, duration:this.reduceMotion ? 0.15 : 1.2, from};
+      if (cmd.type === 'flyTo') {
+        const body = BODIES[cmd.bodyId];
+        const refId = body.type === 'moon' ? body.parentId! : cmd.bodyId;
+        this.bodyPoseProvider.setPhysicalReferenceBody(refId);
+        this.setPresentationPolicy('PHYSICAL_OBSERVATION');
+        const reference = BODIES[refId];
+        const radius = body.type === 'moon'
+          ? getNavDisplayRadius(reference.radiusKm, reference.type) * body.radiusKm / reference.radiusKm
+          : getNavDisplayRadius(body.radiusKm, body.type);
+        const destination = this.bodyPoseProvider.getBodyPose(cmd.bodyId, this.simTimeHours).position.clone();
+        if (body.type === 'moon') destination.add(new THREE.Vector3(...getPlanetNavPosition(refId, this.simTimeHours)));
+        cmd = {...cmd, framingRadius:radius * (body.ringConfig?.outerRadiusRatio ?? 1),
+          targetPos: cmd.targetPos ?? [destination.x, destination.y, destination.z]};
+      } else {
+        this.setPresentationPolicy('NAV_SCHEMATIC');
+      }
+    }
     // R4（260925 审计七）：用户明确前往新目标（旅行类命令）→ 撤销旧下降/返轨
     // 任务及准备/导引许可，从当前真实机位开始新旅程。改前 flyTo 不终止
     // DESCENDING，animate 下一帧继续 applyLandingFrame 把相机抢回——两套
@@ -2059,17 +2093,8 @@ export class SolarEngine {
     if (cmd.type === 'flyTo' && !cmd.targetPos) {
       const node = this.bodyNodes.get(cmd.bodyId);
       if (node) {
-        const wp = new THREE.Vector3();
-        if (node.data.parentId) {
-          const parentNode = this.bodyNodes.get(node.data.parentId);
-          if (parentNode) {
-            wp.copy(parentNode.systemGroup.position).add(node.systemGroup.position);
-          }
-        }
-        if (wp.lengthSq() < 0.001) {
-          node.mesh.updateWorldMatrix(true, false);
-          node.mesh.getWorldPosition(wp);
-        }
+        node.mesh.updateWorldMatrix(true, false);
+        const wp = node.mesh.getWorldPosition(new THREE.Vector3());
         cmd = { ...cmd, targetPos: [wp.x, wp.y, wp.z] };
       }
     }
@@ -2651,129 +2676,30 @@ export class SolarEngine {
     return this.marsTerrainMesh;
   }
 
-  /**
-   * R1（260925 基础体验恢复）：统一完整帧渲染入口——实时主循环、截图与
-   * 明信片共用本方法，画面由同一条管线产生（审计：探针曾用单遍
-   * renderer.render 另画一张图，验收与实机不是同一管线）。
-   *
-   * 分层条件（审计修复）：仅当相机贴近锚定天体（距其中心 < 1.5×当前世界
-   * 有效半径——SURFACE_LOOK/下降近段）才分远/近两 pass，且两 pass 之间
-   * clearDepth：不同 near 的投影深度数值不可比，也不得混合比较（改前近
-   * pass 不清深度，普通浏览即出现黑片/穿插）。贴近表面时锚定系统几何必然
-   * 整体位于其他天体之前（其他天体 ≥ 轨道距离），先远后近+清深度的语义
-   * 成立。普通轨道浏览恒单 pass 一致投影——月球在地球前方就由深度测试
-   * 天然正确遮挡，不按"目标名称"分层（改前按锚定分组，普通浏览下分组
-   * 本身即错误）。载具恒在近 pass；全部暂改状态 finally 恢复。
-   */
-  private farCamera: THREE.PerspectiveCamera | null = null;
-  /** 上一帧分层诊断（探针/验收读取：触发条件与远近深度区间） */
+  /** One render path for animation and captures, partitioned by view depth only. */
+  private readonly depthRenderer = new DepthSliceRenderer();
   public lastFrameRenderInfo: {
     layered: boolean;
     anchorBodyId: BodyId | null;
     anchorDistOverRadius: number;
     farNearPlane: number | null;
+    depthRanges?: Array<{near: number; far: number}>;
   } = { layered: false, anchorBodyId: null, anchorDistOverRadius: Infinity, farNearPlane: null };
 
   public renderFrame(): void {
     const snap = this.cameraController.getSnapshot();
-    const anchorBodyId: BodyId | null =
-      snap.anchor?.kind === 'surface'
-        ? snap.anchor.bodyId
-        : snap.targetBodyId ?? null;
-
-    // 世界有效半径（卫星物理过渡随 mesh.scale 插值；行星恒 scale 1——
-    // 与 computeGroundPose 同口径，不用初始导航半径估深度边界）
-    const worldRadiusOf = (node: BodyRenderNode): number => {
-      const s = node.mesh.scale.x;
-      return node.displayRadius * (Number.isFinite(s) && s > 0 ? s : 1);
-    };
-
-    const anchorNode = anchorBodyId ? this.bodyNodes.get(anchorBodyId) : undefined;
+    const anchorBodyId = snap.anchor?.kind === 'surface' ? snap.anchor.bodyId : snap.targetBodyId ?? null;
+    const node = anchorBodyId ? this.bodyNodes.get(anchorBodyId) : undefined;
     let anchorDistOverRadius = Infinity;
-    if (anchorNode) {
-      const wp = new THREE.Vector3();
-      anchorNode.mesh.getWorldPosition(wp);
-      const r = worldRadiusOf(anchorNode);
-      if (r > 0) anchorDistOverRadius = this.camera.position.distanceTo(wp) / r;
+    if (node) {
+      const scale = node.mesh.getWorldScale(new THREE.Vector3()).x;
+      anchorDistOverRadius = this.camera.position.distanceTo(node.mesh.getWorldPosition(new THREE.Vector3()))
+        / (node.displayRadius * scale);
     }
-    const layered = anchorDistOverRadius < 1.5;
-
-    if (!layered) {
-      this.lastFrameRenderInfo = {
-        layered: false, anchorBodyId, anchorDistOverRadius, farNearPlane: null,
-      };
-      this.renderer.render(this.scene, this.camera);
-      return;
-    }
-
-    // ---- 近表面双 pass：远（星空+非锚定天体）→ clearDepth → 近（锚定+载具） ----
-    // 只统计实际参与渲染的远层天体（物理观察下被隐藏的系统不进深度边界估计）
-    const farVisible: BodyRenderNode[] = [];
-    let minFarDist = Infinity;
-    for (const [id, node] of this.bodyNodes) {
-      if (id === anchorBodyId || !node.systemGroup.visible) continue;
-      const wp = new THREE.Vector3();
-      node.systemGroup.getWorldPosition(wp);
-      minFarDist = Math.min(minFarDist, this.camera.position.distanceTo(wp) - worldRadiusOf(node));
-      farVisible.push(node);
-    }
-
-    if (!farVisible.length || !Number.isFinite(minFarDist) || minFarDist <= 0.01) {
-      // 无远天体或锚定异常：退回单 pass
-      this.lastFrameRenderInfo = {
-        layered: false, anchorBodyId, anchorDistOverRadius, farNearPlane: null,
-      };
-      this.renderer.render(this.scene, this.camera);
-      return;
-    }
-
-    if (!this.farCamera) {
-      this.farCamera = new THREE.PerspectiveCamera(this.camera.fov, this.camera.aspect, 0.1, this.camera.far);
-    }
-    const fc = this.farCamera;
-    fc.fov = this.camera.fov;
-    fc.aspect = this.camera.aspect;
-    fc.near = Math.max(0.01, minFarDist * 0.5);
-    fc.far = this.camera.far;
-    fc.position.copy(this.camera.position);
-    fc.quaternion.copy(this.camera.quaternion);
-    fc.updateProjectionMatrix();
-    fc.updateMatrixWorld();
-
-    const prevAutoClear = this.renderer.autoClear;
-    const vehicleOnCamera = !!(this.currentVehicleMesh && this.vehicleGroup.parent === this.camera);
-    const hiddenPoles: BodyRenderNode[] = [];
-    this.renderer.autoClear = false;
-    try {
-      // 远 pass：锚定系统与载具暂隐（结束即恢复——载具必须在近 pass 有机会绘制，
-      // 改前两遍都隐藏导致贴相机载具整帧消失）
-      for (const n of this.bodyNodes.values()) {
-        if (n === anchorNode) {
-          n.poleFrame.visible = false;
-          hiddenPoles.push(n);
-        }
-      }
-      if (vehicleOnCamera) this.currentVehicleMesh!.visible = false;
-      this.renderer.clear(true, true, true);
-      this.renderer.render(this.scene, fc);
-      for (const n of hiddenPoles) n.poleFrame.visible = true;
-      if (vehicleOnCamera) this.currentVehicleMesh!.visible = true;
-
-      // 近 pass：清深度后绘制锚定系统——"锚定几何整体在远层之前"由贴面
-      // 前提保证；地形正确遮挡星空与远方天体（月面看地球方向不受影响）
-      this.renderer.clearDepth();
-      for (const n of farVisible) {
-        n.poleFrame.visible = false;
-        hiddenPoles.push(n);
-      }
-      this.renderer.render(this.scene, this.camera);
-    } finally {
-      for (const n of hiddenPoles) n.poleFrame.visible = true;
-      this.renderer.autoClear = prevAutoClear;
-    }
-
+    const ranges = this.depthRenderer.render(this.renderer, this.scene, this.camera);
     this.lastFrameRenderInfo = {
-      layered: true, anchorBodyId, anchorDistOverRadius, farNearPlane: fc.near,
+      layered: ranges.length > 1, anchorBodyId, anchorDistOverRadius,
+      farNearPlane: ranges.length > 1 ? ranges[0].near : null, depthRanges: ranges,
     };
   }
 
@@ -3072,7 +2998,13 @@ export class SolarEngine {
     const marsGround =
       (snap.mode === 'SURFACE_LOOK' && (snap.targetBodyId === 'mars' || snap.selectedBodyId === 'mars')) ||
       (this.landingController.getState() !== 'ORBIT' && this.activeLandingBodyId === 'mars');
-    const target = marsGround ? 1 : 0;
+    const marsPose = this.getBodyWorldPose('mars');
+    const marsDatumM = this.marsSiteStacks.get(this.activeMarsSiteId)?.dtm.datumRadius
+      ?? JezeroTerrainSource.DATUM_RADIUS_M;
+    const metersPerScene = marsDatumM / Math.max(1e-9, marsPose.surfaceRadius);
+    const altitudeM = Math.max(0, (this.camera.position.distanceTo(marsPose.pos) - marsPose.surfaceRadius) * metersPerScene);
+    // Dust belongs to the low atmosphere, not the entire interplanetary descent.
+    const target = marsGround ? 1 - THREE.MathUtils.smoothstep(altitudeM, 10_000, 40_000) : 0;
     this.dustSkyMix += (target - this.dustSkyMix) * Math.min(1, deltaSec * 1.6);
     const mix = this.dustSkyMix;
 
@@ -3088,11 +3020,6 @@ export class SolarEngine {
       mat.color.copy(this.clearSkyColor).lerp(this.marsDustColor, mix);
     }
     if (mix > 0.02) {
-      const marsPose = this.getBodyWorldPose('mars');
-      // S5-6：datum 按激活站产品局部球（未装载站 fallback jezero 静态值）
-      const marsDatumM = this.marsSiteStacks.get(this.activeMarsSiteId)?.dtm.datumRadius
-        ?? JezeroTerrainSource.DATUM_RADIUS_M;
-      const metersPerScene = marsDatumM / Math.max(1e-9, marsPose.surfaceRadius);
       if (!this.dustFog) {
         this.dustFog = new THREE.Fog(this.marsDustColor.getHex());
       }
@@ -3100,7 +3027,7 @@ export class SolarEngine {
       // S5-1 勘误：near/far 为视空间场景单位——米须除以 metersPerScene
       // （原 600*metersPerScene=2.1e9 场景单位，雾从未实际生效，仅天穹浸染起效）
       this.dustFog.near = 600 / metersPerScene;
-      this.dustFog.far = (9000 / metersPerScene) / Math.max(0.4, mix); // 淡入期雾拉远，避免突变
+      this.dustFog.far = (9000 / metersPerScene) / Math.max(0.02, mix); // 淡入期雾拉远
       this.scene.fog = this.dustFog;
     } else if (this.dustFog && this.scene.fog === this.dustFog) {
       this.scene.fog = null;
@@ -3111,7 +3038,7 @@ export class SolarEngine {
     // （暗楔形+整体压暗）。地表/下降期隐藏，尘色天空由天穹浸染+雾接管；
     // 恢复时尊重用户大气显示开关。
     if (this.marsHaloMesh) {
-      this.marsHaloMesh.visible = marsGround ? false : this.showAtmosphere;
+      this.marsHaloMesh.visible = marsGround && altitudeM < 60_000 ? false : this.showAtmosphere;
     }
   }
 
@@ -3361,15 +3288,16 @@ export class SolarEngine {
     // 末段方块边缘突现）。块按自身屏幕张角 8→36px smoothstep 渐显；36px 为块在
     // WAC 门控开启距离处的张角——几何与影像在门控开启时同步就位，此前几何先于
     // 影像逐渐显形；<8px 隐藏，消除走样闪烁。挖孔底盖板（moon-hole-cap）兜底。
-    if (this.lunarValleyMesh && this.lunarValleyMaterial) {
-      const windowM = RasterTerrainSource.getInstance().demWindowMeters;
+    const activeMoonStack = this.moonSiteStacks.get(this.activeMoonSiteId);
+    if (this.lunarValleyMesh && this.lunarValleyMaterial && activeMoonStack) {
+      const windowM = activeMoonStack.raster.demWindowMeters;
       if (windowM) {
         const moonPose = this.getBodyWorldPose('moon');
         const moonNode = this.bodyNodes.get('moon');
         const sceneRadius =
           moonNode?.mesh ? moonNode.displayRadius * moonNode.mesh.scale.x : moonNode?.displayRadius ?? 0.368;
         const metersPerScene = 1737400 / Math.max(1e-9, sceneRadius);
-        const site = LANDING_SITES['taurus-littrow'];
+        const site = LANDING_SITES[activeMoonStack.siteId];
         const siteWorld = new THREE.Vector3(...latLonDirection(site.centerLat, site.centerLon))
           .applyQuaternion(moonPose.quaternion)
           .multiplyScalar(sceneRadius)
@@ -3389,7 +3317,7 @@ export class SolarEngine {
         // 0.35→1.3px smoothstep（~1470km 起、~395km 全显，先于 WAC 门控 361km）。
         // 远距隐藏消除亚像素走样"星星点点"（用户反馈 2026-09-24：目标区域提前
         // 点亮）；孔下盖板兜底，隐藏期间不露星空。
-        const lolaCellM = (LolaRegionalSource.getInstance().metaReady?.nativeSpacingMeters ?? 236.901) * 2;
+        const lolaCellM = (activeMoonStack.lola.metaReady?.nativeSpacingMeters ?? 236.901) * 2;
         const cellPx = projectedTexelPx(lolaCellM, focalPixelsPx(this.drawingBufferSizeTmp.y, THREE.MathUtils.degToRad(this.camera.fov)), siteDistM);
         const l1Opacity = terrainRevealOpacity(cellPx, 0.35, 1.3);
         for (const mat of this.lolaMaterials) {
@@ -3451,6 +3379,7 @@ export class SolarEngine {
         for (const mat of this.marsL1Materials) {
           mat.transparent = l1Opacity < 1;
           mat.opacity = l1Opacity;
+          mat.uniforms.layerOpacity.value = l1Opacity;
         }
         if (this.marsRockFieldMaterial) {
           const t = Math.min(1, Math.max(0, (9000 - siteDistM) / 3000));
@@ -3462,7 +3391,8 @@ export class SolarEngine {
     }
 
     // 5. 更新单一相机控制器
-    this.cameraController.update(deltaSec, (id: BodyId) => this.getBodyWorldPose(id));
+    this.cameraController.update(deltaSec, (id: BodyId) => this.getCameraBodyPose(id));
+    this.skyboxMesh?.position.copy(this.camera.position);
 
     // 飞行状态变化监听：飞行结束切入 ORBIT_TARGET 时立即同步状态给 UI，飞行过程中同步实时插值进度
     const isTransitioningNow = this.cameraController.getSnapshot().isTransitioning;
@@ -3471,11 +3401,7 @@ export class SolarEngine {
       this.emitSnapshot();
     }
 
-    // 6. 渲染一帧（S3a 分层深度：Pro 260924——近地形与遥远天体各自深度处理）
-    // 单一权威相机姿态；远 pass 用同姿态派生相机（近面 = 最近远天体距离之半）。
-    // 顺序：先远 pass（星空+非锚定天体，含地球云/大气/瓦片分层），清深度后再
-    // 近 pass（锚定天体系统）——近物自然遮挡远物；远 pass 内部图层（云 0.012
-    // 单位间隔）在合理近面下深度可分，消除触地看地球的鳞片互抢。
+    // 6. 按连续视深区间从远到近渲染；区间之间清深度，禁止异投影共用深度值。
     this.renderLayered();
 
     this.emitHudFrame(now);
@@ -3536,7 +3462,7 @@ export class SolarEngine {
         if (projected.x < -1.05 || projected.x > 1.05 || projected.y < -1.05 || projected.y > 1.05) continue;
 
         // 计算屏幕空间投射半径，将标签优雅浮置于天体顶部边缘上方，绝不遮挡天体表面！
-        let effectiveR = node.displayRadius;
+        let effectiveR = this.getBodyWorldPose(id).surfaceRadius;
         if (node.ringMesh && node.data.ringConfig) {
           effectiveR *= (node.data.ringConfig.outerRadiusRatio * 0.75);
         }
@@ -3556,7 +3482,7 @@ export class SolarEngine {
               const parentProjected = parentWorldPos.project(this.camera);
               const parentScreenX = ((parentProjected.x + 1) / 2) * width;
               const parentScreenY = ((-parentProjected.y + 1) / 2) * height;
-              let parentEffectiveR = parentNode.displayRadius;
+              let parentEffectiveR = this.getBodyWorldPose(targetSystemPlanet).surfaceRadius;
               if (parentNode.ringMesh && parentNode.data.ringConfig) {
                 parentEffectiveR *= (parentNode.data.ringConfig.outerRadiusRatio * 0.72);
               }
@@ -3658,31 +3584,33 @@ export class SolarEngine {
       };
     }
 
-    const worldPos = new THREE.Vector3();
-    if (node.data.parentId) {
-      const parentNode = this.bodyNodes.get(node.data.parentId);
-      if (parentNode) {
-        worldPos.copy(parentNode.systemGroup.position).add(node.systemGroup.position);
-      }
-    } else {
-      worldPos.copy(node.systemGroup.position);
-    }
-    if (worldPos.lengthSq() < 0.001) {
-      node.mesh.updateWorldMatrix(true, false);
-      node.mesh.getWorldPosition(worldPos);
-    }
     node.mesh.updateWorldMatrix(true, false);
+    const worldPos = node.mesh.getWorldPosition(new THREE.Vector3());
     const quat = new THREE.Quaternion();
     node.mesh.getWorldQuaternion(quat);
 
-    const pose = this.bodyPoseProvider.getBodyPose(id, this.simTimeHours);
+    const surfaceRadius = node.displayRadius * node.mesh.getWorldScale(new THREE.Vector3()).x;
+    const framingRadius = surfaceRadius * (node.data.ringConfig?.outerRadiusRatio ?? 1);
     return {
       pos: worldPos,
-      radius: pose.renderFramingRadius,
-      surfaceRadius: pose.renderSurfaceRadius,
-      framingRadius: pose.renderFramingRadius,
+      radius: framingRadius,
+      surfaceRadius,
+      framingRadius,
       quaternion: quat,
     };
+  }
+
+  private getCameraBodyPose(id: BodyId) {
+    const world = this.getBodyWorldPose(id);
+    if (!this.presentationTravel || !this.cameraController.getSnapshot().isTransitioning) return world;
+    // A change of render reference is a navigation transition, not an excursion
+    // toward the old astronomical coordinates and back. Camera targets use the
+    // destination frame while visible bodies interpolate into that frame.
+    const destination = this.bodyPoseProvider.getBodyPose(id, this.simTimeHours);
+    const pos = destination.position.clone();
+    if (BODIES[id].type === 'moon') pos.add(new THREE.Vector3(...getPlanetNavPosition(BODIES[id].parentId!, this.simTimeHours)));
+    return {...world, pos, radius:destination.renderFramingRadius,
+      surfaceRadius:destination.renderSurfaceRadius, framingRadius:destination.renderFramingRadius};
   }
 
   /**
@@ -3704,25 +3632,6 @@ export class SolarEngine {
         this.bodyPoseProvider.setPhysicalReferenceBody(focusId);
       }
     }
-    const referenceBodyId = this.bodyPoseProvider.getPhysicalReferenceBody();
-    const sunNode = this.bodyNodes.get('sun');
-    if (sunNode) {
-      if (!isPhysicalObservation || referenceBodyId === 'sun') {
-        // R3-a：导航示意域，或物理模式且太阳即参考天体（作基准标尺）——NAV 形态
-        sunNode.systemGroup.visible = true;
-        sunNode.systemGroup.scale.setScalar(1);
-      } else {
-        // R3-b：物理模式下从其他天体看太阳——按真实角尺寸渲染（0.267° 太阳角
-        // 半径；NAV 放大球不进入局部物理观看空间——审计五/七）。方向即相机到
-        // 原点方向（近似星历下正确）；仅整体缩放，不改位置
-        sunNode.systemGroup.visible = true;
-        const dist = this.camera.position.length();
-        const sunAngularRadius = Math.atan(696000 / 149597870);
-        const navRadius = sunNode.displayRadius;
-        const scale = Math.max(1e-6, (dist * Math.tan(sunAngularRadius)) / navRadius);
-        sunNode.systemGroup.scale.setScalar(scale);
-      }
-    }
 
     for (const [id, node] of this.bodyNodes.entries()) {
       if (node.data.type === 'star') {
@@ -3733,13 +3642,6 @@ export class SolarEngine {
       }
 
       if (node.data.type === 'planet') {
-        if (isPhysicalObservation && id !== referenceBodyId) {
-          node.systemGroup.visible = false;
-          continue;
-        } else {
-          node.systemGroup.visible = true;
-        }
-
         // 计算行星在太阳系全景中的开普勒公转坐标
         const [px, py, pz] = getPlanetNavPosition(id, this.simTimeHours);
         node.systemGroup.position.set(px, py, pz);
@@ -3796,6 +3698,10 @@ export class SolarEngine {
         if (id === 'mars' && this.marsMaterial) {
           const sunDir = this.bodyPoseProvider.getPhysicalSunDirection('mars', this.simTimeHours);
           this.marsMaterial.uniforms.sunDirection.value.copy(sunDir);
+          for (const mat of this.marsL1Materials) {
+            mat.uniforms.sunDirection.value.copy(sunDir);
+            mat.uniforms.teachingLight.value = this.teachingLight ? 1 : 0;
+          }
         }
 
         // 水星专属：实时同步太阳光照方向向量至 MercuryMaterial 着色器
@@ -3845,13 +3751,6 @@ export class SolarEngine {
       }
 
       if (node.data.type === 'moon') {
-        if (isPhysicalObservation && node.data.parentId !== referenceBodyId) {
-          node.systemGroup.visible = false;
-          continue;
-        } else {
-          node.systemGroup.visible = true;
-        }
-
         // 由 BodyPoseProvider 统一解算卫星局部位置与展示半径（支持物理观察与导航示意平滑过渡）
         const pose = this.bodyPoseProvider.getBodyPose(id, this.simTimeHours);
         node.systemGroup.position.copy(pose.position);
@@ -3930,12 +3829,64 @@ export class SolarEngine {
 
       // 更新大气光晕的向日方向
       if (node.haloMesh && (node.haloMesh.material as THREE.ShaderMaterial).uniforms?.sunDirection) {
-        const worldPos = new THREE.Vector3();
-        node.mesh.getWorldPosition(worldPos);
-        const sunDir = worldPos.negate().normalize();
+        const sunDir = this.bodyPoseProvider.getPhysicalSunDirection(id, this.simTimeHours);
         (node.haloMesh.material as THREE.ShaderMaterial).uniforms.sunDirection.value.copy(sunDir);
       }
     }
+    this.updateCelestialPresentation(deltaSec);
+  }
+
+  /** Local systems use one linear scale. Other systems retain their physical
+   * direction/angular size and relative depth; only the overview uses schematic sizes.
+   * Positions here are render coordinates, never ephemeris or simulation state.
+   */
+  private updateCelestialPresentation(deltaSec: number): void {
+    const provider = this.bodyPoseProvider;
+    const referenceId = provider.getPhysicalReferenceBody();
+    const reference = BODIES[referenceId];
+    const referenceKm = provider.getPhysicalPositionKm(referenceId, this.simTimeHours);
+    const referenceScene = new THREE.Vector3(...getPlanetNavPosition(referenceId, this.simTimeHours));
+    const unitsPerKm = getNavDisplayRadius(reference.radiusKm, reference.type) /
+      (BodyPoseProvider.PHYSICAL_RADII_KM[referenceId] ?? reference.radiusKm);
+    const blend = THREE.MathUtils.smootherstep(provider.getTransitionProgress(), 0, 1);
+    const travel = this.presentationTravel;
+    if (travel) travel.elapsed = Math.min(travel.duration, travel.elapsed + deltaSec);
+    const travelBlend = travel ? THREE.MathUtils.smootherstep(travel.elapsed / travel.duration, 0, 1) : 1;
+    const poses = new Map<BodyId, {position: THREE.Vector3; radius: number}>();
+    for (const [id, node] of this.bodyNodes) {
+      const pose = provider.getBodyPose(id, this.simTimeHours);
+      const position = pose.position.clone();
+      const parentId = node.data.type === 'moon' ? node.data.parentId : undefined;
+      if (parentId) position.add(new THREE.Vector3(...getPlanetNavPosition(parentId, this.simTimeHours)));
+      let radius = pose.renderSurfaceRadius;
+      if (id !== referenceId && parentId !== referenceId && blend > 0) {
+        const projected = projectDistantBody(provider.getPhysicalPositionKm(id, this.simTimeHours),
+          BodyPoseProvider.PHYSICAL_RADII_KM[id] ?? node.data.radiusKm,
+          referenceKm, referenceScene, unitsPerKm);
+        position.lerp(projected.position, blend);
+        radius = THREE.MathUtils.lerp(radius, projected.radius, blend);
+      }
+      const from = travel?.from.get(id);
+      if (from) {
+        position.lerpVectors(from.position, position, travelBlend);
+        radius = THREE.MathUtils.lerp(from.radius, radius, travelBlend);
+      }
+      poses.set(id, {position, radius});
+    }
+    for (const [id, node] of this.bodyNodes) {
+      const pose = poses.get(id)!;
+      node.systemGroup.visible = true;
+      node.systemGroup.scale.setScalar(1);
+      node.systemGroup.position.copy(pose.position);
+      if (node.data.type === 'moon' && node.data.parentId) node.systemGroup.position.sub(poses.get(node.data.parentId)!.position);
+      const scale = pose.radius / node.displayRadius;
+      for (const part of [node.mesh, node.cloudMesh, node.haloMesh, node.ringMesh, node.coronaMesh]) {
+        part?.scale.setScalar(scale);
+      }
+      if (id === 'earth') this.earthTileManager?.group.scale.setScalar(scale);
+    }
+    this.sunPointLight.position.copy(poses.get('sun')!.position);
+    if (travel && travel.elapsed >= travel.duration) this.presentationTravel = null;
   }
 
   /**

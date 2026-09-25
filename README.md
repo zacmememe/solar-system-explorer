@@ -4,7 +4,7 @@
 
 使用 React、TypeScript、Three.js 和 Vite 构建的浏览器太阳系探索项目。包含行星与卫星观察、镜头转场、时间控制、航天器展示、书签和探索明信片，以及六个站点的真实地形着陆闭环（月面陶拉斯—利特罗/哈德利月溪/静海基地，火星耶泽罗/维多利亚/盖尔）——着陆与地表观察消费真实 DTM（NAC 2–5m / HiRISE 2m）与 LOLA/MOLA 区域地形，遥测标注高程溯源与准入状态。
 
-本项目采用适合探索的展示比例和简化轨道模型；画面不代表精确星历或统一真实比例。观测来源贴图与程序生成示意应分别标明，资产出处见 `sources/production-assets.json`。
+普通观星采用以当前行星系统为基准的统一线性尺度，远方天体与本系统保持模型中的方向、视大小和前后关系；“全景”采用便于导航的示意比例，切换系统的转场也属于导航展示。轨道仍是解析近似，不代表精确星历。观测来源贴图与程序生成示意应分别标明，资产出处见 `sources/production-assets.json`。
 
 ## 本地开发
 
@@ -28,6 +28,8 @@ npm run dev
 - `npm run review:export`：导出 HEAD 提交的审查材料，不提交、不推送、不部署。
 
 现有 `npm run test:e2e` 默认访问线上地址。测试当前本地构建时，先运行 build 和 preview，再设置 `$env:TEST_URL = 'http://localhost:4173'`。该脚本使用本机已有 Chrome / Edge，浏览器测试前应检查脚本配置。`verify-assets` 涉及外部资产下载；它不是离线检查命令。
+
+普通观星与下降专项回归：设置 `TEST_URL` 指向本地预览后运行 `node scripts/verify-observation-recovery.mjs`。它用真实 UI 完成拖动、切星、全景、月球/火星下降及返轨；默认截图和报告写入 `D:\solar-evidence\observation-recovery`，可用 `EVIDENCE_DIR` 修改。报告中的行为检查不代替人工看图与体验验收。
 
 ## 代码阅读入口
 

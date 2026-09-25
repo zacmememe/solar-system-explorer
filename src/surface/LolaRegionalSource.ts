@@ -258,8 +258,8 @@ export class LolaRegionalSource {
         const d = r * perimeter + kNext;
         const b = (r + 1) * perimeter + k;
         const c = (r + 1) * perimeter + kNext;
-        indices.push(a, d, b);
-        indices.push(b, d, c);
+        indices.push(a, b, d);
+        indices.push(b, c, d);
       }
     }
     const geo = new THREE.BufferGeometry();
@@ -338,8 +338,8 @@ export class LolaRegionalSource {
         const d = r * perimeter + kNext;
         const b = (r + 1) * perimeter + k;
         const c = (r + 1) * perimeter + kNext;
-        indices.push(a, d, b);
-        indices.push(b, d, c);
+        indices.push(a, b, d);
+        indices.push(b, c, d);
       }
     }
     const geo = new THREE.BufferGeometry();

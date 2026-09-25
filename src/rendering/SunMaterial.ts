@@ -85,7 +85,10 @@ export function createSunCoronaMaterial(coreRadiusRatio: number = 0.45): THREE.S
         vUv = uv;
         // 面向相机的公告板变换：以太阳中心为原点，在观察空间直接平移四边形顶点
         vec4 mvPosition = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
-        mvPosition.xy += position.xy;
+        // Billboard orientation is camera-facing, but its size must still follow
+        // the body's world scale when the Sun is projected into a distant sky.
+        vec2 worldScale = vec2(length(modelMatrix[0].xyz), length(modelMatrix[1].xyz));
+        mvPosition.xy += position.xy * worldScale;
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
@@ -132,4 +135,3 @@ export function createSunCoronaMaterial(coreRadiusRatio: number = 0.45): THREE.S
     depthWrite: false,
   });
 }
-

@@ -11,6 +11,22 @@
  */
 import * as THREE from 'three';
 
+/** Sample the actual displayed triangle, rather than a finer DEM that can sit
+ * metres above/below the decimated mesh. Grid metadata is supplied by builders.
+ */
+export function sampleRenderedTerrain(geometry: THREE.BufferGeometry, lat: number, lon: number): THREE.Vector3 | null {
+  const grid = geometry.userData.surfaceGrid;
+  if (!grid) return null;
+  const x = (lon-grid.lon0)/grid.dLon, y = (lat-grid.lat0)/grid.dLat;
+  const col=Math.floor(x), row=Math.floor(y);
+  if(col<0||row<0||col>=grid.cols-1||row>=grid.rows-1) return null;
+  const u=x-col, v=y-row, a=row*grid.cols+col, p=geometry.getAttribute('position');
+  const read=(i:number)=>new THREE.Vector3().fromBufferAttribute(p,i);
+  return u+v<=1
+    ? read(a).multiplyScalar(1-u-v).addScaledVector(read(a+1),u).addScaledVector(read(a+grid.cols),v)
+    : read(a+grid.cols+1).multiplyScalar(u+v-1).addScaledVector(read(a+1),1-v).addScaledVector(read(a+grid.cols),1-u);
+}
+
 export interface RockPlacement {
   latDeg: number;
   lonDeg: number;
@@ -110,8 +126,16 @@ export function buildRockGeometry(seed: number, variant: number): THREE.BufferGe
   const rng = mulberry32(seed + 101 * (variant + 1));
   const g = new THREE.IcosahedronGeometry(1, 1);
   const pos = g.attributes.position as THREE.BufferAttribute;
+  // IcosahedronGeometry is non-indexed: adjacent faces repeat the same vertex.
+  // Reuse its radial offset, otherwise independent jitter tears every edge open.
+  const offsets = new Map<string, number>();
   for (let i = 0; i < pos.count; i++) {
-    const jitter = 0.72 + rng() * 0.56;
+    const key = [pos.getX(i),pos.getY(i),pos.getZ(i)].map(n=>Math.round(n*1e6)).join(',');
+    let jitter = offsets.get(key);
+    if (jitter === undefined) {
+      jitter = 0.72 + rng() * 0.56;
+      offsets.set(key,jitter);
+    }
     pos.setXYZ(
       i,
       pos.getX(i) * jitter,
@@ -120,6 +144,23 @@ export function buildRockGeometry(seed: number, variant: number): THREE.BufferGe
     );
   }
   g.computeVertexNormals();
+  // Share shading across coincident corners too. The unindexed mesh otherwise
+  // gives each triangle a separate flat highlight, resembling paper facets.
+  const normals = g.getAttribute('normal');
+  const sums = new Map<string, THREE.Vector3>();
+  const keys: string[] = [];
+  for (let i = 0; i < pos.count; i++) {
+    const key = [pos.getX(i),pos.getY(i),pos.getZ(i)].map(n=>Math.round(n*1e6)).join(',');
+    keys.push(key);
+    const sum = sums.get(key) ?? new THREE.Vector3();
+    sum.add(new THREE.Vector3().fromBufferAttribute(normals,i));
+    sums.set(key,sum);
+  }
+  for (const sum of sums.values()) sum.normalize();
+  for (let i = 0; i < pos.count; i++) {
+    const n = sums.get(keys[i])!;
+    normals.setXYZ(i,n.x,n.y,n.z);
+  }
   return g;
 }
 

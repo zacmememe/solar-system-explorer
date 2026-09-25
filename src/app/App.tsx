@@ -396,7 +396,8 @@ export const App: React.FC = () => {
                     backgroundColor: '#22c55e',
                   }}
                 />
-                <span style={{ whiteSpace: 'nowrap' }}>恒星 · 八大行星 · 示意比例</span>
+                <span style={{ whiteSpace: 'nowrap' }}>{engineRef.current?.getPresentationPolicy() === 'NAV_SCHEMATIC'
+                  ? '太阳系全景 · 示意比例' : '局部观测 · 近似星历'}</span>
               </div>
             </div>
           </header>

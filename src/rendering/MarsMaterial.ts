@@ -16,16 +16,20 @@ export interface MarsMaterialUniforms {
   teachingLight: { value: number };
 }
 
-export function createMarsMaterial(marsTex: THREE.Texture): THREE.ShaderMaterial {
+export function createMarsMaterial(marsTex: THREE.Texture | null): THREE.ShaderMaterial {
+  if (marsTex) marsTex.wrapS = THREE.RepeatWrapping;
   const uniforms: MarsMaterialUniforms = {
     marsTexture: { value: marsTex },
     sunDirection: { value: new THREE.Vector3(1, 0, 0).normalize() },
     teachingLight: { value: 0.0 },
+    layerOpacity: { value: 1.0 },
   };
 
   return new THREE.ShaderMaterial({
-    uniforms,
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, uniforms]),
+    fog: true,
     vertexShader: `
+      #include <fog_pars_vertex>
       varying vec2 vUv;
       varying vec3 vNormal;
       varying vec3 vWorldPosition;
@@ -36,15 +40,19 @@ export function createMarsMaterial(marsTex: THREE.Texture): THREE.ShaderMaterial
         vNormal = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
         vec4 worldPos = modelMatrix * vec4(position, 1.0);
         vWorldPosition = worldPos.xyz;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
       }
     `,
     fragmentShader: `
       #include <common>
+      #include <fog_pars_fragment>
 
       uniform sampler2D marsTexture;
       uniform vec3 sunDirection;
       uniform float teachingLight;
+      uniform float layerOpacity;
 
       varying vec2 vUv;
       varying vec3 vNormal;
@@ -106,9 +114,10 @@ export function createMarsMaterial(marsTex: THREE.Texture): THREE.ShaderMaterial
         // 8. 综合最终色彩合成
         vec3 finalColor = litColor * dayFactor + ambientTerm * (1.0 - dayFactor * 0.85) + blueTwilightGlow + dustRimColor;
 
-        gl_FragColor = vec4(finalColor, 1.0);
+        gl_FragColor = vec4(finalColor, layerOpacity);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
+        #include <fog_fragment>
       }
     `,
   });

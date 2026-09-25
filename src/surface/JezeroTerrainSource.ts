@@ -204,6 +204,10 @@ export class JezeroTerrainSource {
     geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
     geo.setIndex(indices);
     geo.computeVertexNormals();
+    geo.userData.surfaceGrid = {cols,rows,
+      lat0:centerLat+this.meta.windowSizeM[1]/2/mPerDeg,
+      lon0:centerLon-this.meta.windowSizeM[0]/2/(mPerDeg*cosLat),
+      dLat:-stepJ*this.meta.stepMeters/mPerDeg, dLon:stepI*this.meta.stepMeters/(mPerDeg*cosLat)};
     return geo;
   }
 

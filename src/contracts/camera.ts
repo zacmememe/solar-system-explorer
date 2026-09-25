@@ -44,7 +44,7 @@ export interface CameraStateSnapshot {
 
 export type CameraCommand =
   | { type: 'select'; bodyId: BodyId }
-  | { type: 'flyTo'; bodyId: BodyId; durationSec?: number; targetPos?: [number, number, number]; lookTarget?: CameraLookTarget; /** P3b-A：true 时 targetPos 为精确相机终点（世界系）；缺省沿用向阳面构图导引 */ exact?: boolean }
+  | { type: 'flyTo'; bodyId: BodyId; durationSec?: number; targetPos?: [number, number, number]; lookTarget?: CameraLookTarget; /** Destination framing, independent of a small distant sky proxy. */ framingRadius?: number; /** P3b-A：true 时 targetPos 为精确相机终点（世界系）；缺省沿用向阳面构图导引 */ exact?: boolean }
   | { type: 'cancelFlight' }
   | { type: 'orbit'; deltaPhi: number; deltaTheta: number }
   | { type: 'zoom'; deltaDist: number }
@@ -88,5 +88,4 @@ export type CameraCommand =
       type: 'lookAtSkyTarget';
       targetBodyId: BodyId;
     };
-
 
