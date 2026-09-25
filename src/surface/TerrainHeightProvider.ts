@@ -362,6 +362,61 @@ export class TerrainHeightProvider {
   }
 
   /**
+   * F-LUNAR-LIMB-01：挖孔补片——保留被 buildHoledMoonSphereGeometry 剔除的
+   * 三角形（三顶点全部落在孔界格线内），与挖孔球共同构成原球面的不重不漏分区。
+   * 用途：L1/裙边/DTM 被距离渐显门控隐藏的时段，以原球面（datum 0m，全球纹理
+   * 同 UV）填补孔洞，消除斜视/球缘处的矩形缺口；孔底盖板继续作为深层兜底。
+   * holeBounds 传 buildHoledMoonSphereGeometry 返回值（格线取整），格线索引
+   * 由边界反解，保证两网格谓词严格互补。
+   */
+  public buildSphereHolePatchGeometry(
+    baseRadius: number,
+    widthSegs = 128,
+    heightSegs = 64,
+    holeBounds: { latMin: number; latMax: number; lonMin: number; lonMax: number }
+  ): THREE.BufferGeometry | null {
+    const dLon = 360 / widthSegs;
+    const dLat = 180 / heightSegs;
+    const j0 = Math.round((holeBounds.lonMin + 180) / dLon);
+    const j1 = Math.round((holeBounds.lonMax + 180) / dLon);
+    const i0 = Math.max(0, Math.round((90 - holeBounds.latMax) / dLat));
+    const i1 = Math.min(heightSegs, Math.round((90 - holeBounds.latMin) / dLat));
+    if (j1 <= j0 || i1 <= i0) return null;
+
+    const sphere = new THREE.SphereGeometry(baseRadius, widthSegs, heightSegs);
+    const index = sphere.getIndex()!;
+    const src = index.array as ArrayLike<number>;
+    const kept: number[] = [];
+    const stride = widthSegs + 1;
+    for (let f = 0; f < src.length; f += 3) {
+      let inHole = true;
+      for (let k = 0; k < 3; k++) {
+        const vi = src[f + k];
+        const iy = Math.floor(vi / stride);
+        const ix = vi - iy * stride;
+        // 与挖孔同款经度解缠（孔可跨 ±180° 接缝）
+        const unwrappedIx = ix + widthSegs * Math.round(((j0 + j1) / 2 - ix) / widthSegs);
+        if (iy < i0 || iy > i1 || unwrappedIx < j0 || unwrappedIx > j1) {
+          inHole = false;
+          break;
+        }
+      }
+      if (inHole) kept.push(src[f], src[f + 1], src[f + 2]);
+    }
+    if (!kept.length) {
+      sphere.dispose();
+      return null;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', sphere.getAttribute('position').clone());
+    geo.setAttribute('normal', sphere.getAttribute('normal').clone());
+    geo.setAttribute('uv', sphere.getAttribute('uv').clone());
+    geo.setIndex(kept);
+    sphere.dispose();
+    return geo;
+  }
+
+  /**
    * P3-T2：裙边环网格。内缘 = DTM 窗口边界（同采样核心，与窗口网格沿同曲线无缝相接），
    * 高度从窗口边缘真实高程向外 smoothstep 归零；外缘 = 挖孔边界格线（高程 0 = 球面，
    * 与挖孔球面共顶点）。着色用全球月面纹理（UV 与 SphereGeometry 等距圆柱约定一致：

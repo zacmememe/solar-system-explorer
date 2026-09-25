@@ -154,6 +154,8 @@ interface MoonSiteStack {
   valleyMesh?: THREE.Mesh;
   valleyMaterial?: THREE.MeshStandardMaterial;
   capMesh?: THREE.Mesh;
+  /** F-LUNAR-LIMB-01：挖孔补片（细层渐显隐藏期间以原球面填孔，防斜视/球缘缺口） */
+  patchMesh?: THREE.Mesh;
   lolaMaterials: THREE.MeshStandardMaterial[];
   rockFieldMaterial: THREE.MeshStandardMaterial | null;
   collarMaterial: THREE.MeshStandardMaterial | null;
@@ -171,6 +173,7 @@ interface MarsSiteStack {
   terrainMesh?: THREE.Mesh;
   terrainMaterial?: THREE.MeshStandardMaterial;
   capMesh?: THREE.Mesh;
+  patchMesh?: THREE.Mesh;
   l1Materials: THREE.ShaderMaterial[];
   rockFieldMaterial: THREE.MeshStandardMaterial | null;
   collarMaterial: THREE.MeshStandardMaterial | null;
@@ -557,6 +560,18 @@ export class SolarEngine {
         stack.capMesh = capMesh;
         stack.group.add(capMesh);
 
+        // F-LUNAR-LIMB-01：挖孔补片——保留被挖掉的原球面三角形，与本体共享材质
+        //（同一 shader/光照/UV）。可见性由 animate 渐显门控驱动：细级覆盖层
+        //（L1/裙边/DTM）隐藏期间显示，填补孔洞，消除斜视/球缘矩形缺口
+        //（用户反馈 2026-09-25：着陆区转到球缘出现凹陷）。盖板继续作深层兜底。
+        const patchGeo = heightProvider.buildSphereHolePatchGeometry(satRadius, 128, 64, holed.holeBounds);
+        if (patchGeo) {
+          const patchMesh = new THREE.Mesh(patchGeo, satMesh.material);
+          patchMesh.name = `${stack.siteId}-hole-patch`;
+          stack.patchMesh = patchMesh;
+          stack.group.add(patchMesh);
+        }
+
         // P3b-C/P3-T5：WAC EMP 区域反照率（仅 taurus 打包了该资产）
         if (stack.siteId === 'taurus-littrow') {
           this.regionalAlbedo = new RegionalAlbedoLayer(satRadius, holed.holeBounds, {
@@ -856,6 +871,16 @@ export class SolarEngine {
         capMesh.name = 'mars-hole-cap';
         stack.capMesh = capMesh;
         stack.group.add(capMesh);
+
+        // F-LUNAR-LIMB-01：火星挖孔补片（镜像月面）——细级覆盖层渐显隐藏期间
+        // 以原球面填孔，消除斜视/球缘矩形缺口；盖板继续作深层兜底。
+        const marsPatchGeo = heightProvider.buildSphereHolePatchGeometry(satRadius, 128, 64, holed.holeBounds);
+        if (marsPatchGeo) {
+          const marsPatchMesh = new THREE.Mesh(marsPatchGeo, satMesh.material);
+          marsPatchMesh.name = `${stack.siteId}-hole-patch`;
+          stack.patchMesh = marsPatchMesh;
+          stack.group.add(marsPatchMesh);
+        }
       }
       if (stack.siteId === this.activeMarsSiteId) this.refreshActiveMarsStackRefs(stack);
     } finally {
@@ -1635,6 +1660,10 @@ export class SolarEngine {
         // 表现为"黑色形状区域闪烁"。共享同一材质实例，明暗恒一致。
         const cap = this.moonHoleCapMesh;
         if (cap) cap.material = this.moonMaterial;
+        // F-LUNAR-LIMB-01：挖孔补片与盖板同律——材质换装时保持与本体一致
+        for (const s of this.moonSiteStacks.values()) {
+          if (s.patchMesh) s.patchMesh.material = this.moonMaterial;
+        }
       }
     }).catch((e) => console.error('[Texture] Moon load failed:', e));
 
@@ -1765,6 +1794,10 @@ export class SolarEngine {
         // 明暗恒一致，避免孔洞区域色差闪烁）
         const cap = this.marsHoleCapMesh;
         if (cap) cap.material = this.marsMaterial;
+        // F-LUNAR-LIMB-01：火星挖孔补片同律换装
+        for (const s of this.marsSiteStacks.values()) {
+          if (s.patchMesh) s.patchMesh.material = this.marsMaterial;
+        }
       }
     }).catch((e) => console.error('[Texture] Mars load failed:', e));
 
@@ -3329,7 +3362,8 @@ export class SolarEngine {
     // P3b-E：DTM 地形块距离渐显（用户反馈 2026-09-24：远看亚像素闪烁光点 +
     // 末段方块边缘突现）。块按自身屏幕张角 8→36px smoothstep 渐显；36px 为块在
     // WAC 门控开启距离处的张角——几何与影像在门控开启时同步就位，此前几何先于
-    // 影像逐渐显形；<8px 隐藏，消除走样闪烁。挖孔底盖板（moon-hole-cap）兜底。
+    // 影像逐渐显形；<8px 隐藏，消除走样闪烁。隐藏期间由挖孔补片填孔（原球面），
+    // 孔底盖板（moon-hole-cap）继续作深层兜底。
     const activeMoonStack = this.moonSiteStacks.get(this.activeMoonSiteId);
     if (this.lunarValleyMesh && this.lunarValleyMaterial && activeMoonStack) {
       const windowM = activeMoonStack.raster.demWindowMeters;
@@ -3358,13 +3392,21 @@ export class SolarEngine {
         // P3-T5b：L1 同律渐显——按网格纹元屏幕张角（decimate 2 × 236.9m ≈ 474m）
         // 0.35→1.3px smoothstep（~1470km 起、~395km 全显，先于 WAC 门控 361km）。
         // 远距隐藏消除亚像素走样"星星点点"（用户反馈 2026-09-24：目标区域提前
-        // 点亮）；孔下盖板兜底，隐藏期间不露星空。
+        // 点亮）；隐藏期间挖孔补片以原球面填孔，盖板深层兜底。
         const lolaCellM = (activeMoonStack.lola.metaReady?.nativeSpacingMeters ?? 236.901) * 2;
         const cellPx = projectedTexelPx(lolaCellM, focalPixelsPx(this.drawingBufferSizeTmp.y, THREE.MathUtils.degToRad(this.camera.fov)), siteDistM);
         const l1Opacity = terrainRevealOpacity(cellPx, 0.35, 1.3);
         for (const mat of this.lolaMaterials) {
           mat.transparent = l1Opacity < 1;
           mat.opacity = l1Opacity;
+        }
+
+        // F-LUNAR-LIMB-01：挖孔补片可见性——细级覆盖层（DTM/L1+裙边）任一未全显
+        // 时显示补片，以原球面填住孔洞；两者全显时隐藏让位真实地形。补片不透明
+        // 且与本体共享材质（同 shader/光照），避免透明排序与明暗不一致。
+        const patch = activeMoonStack.patchMesh;
+        if (patch) {
+          patch.visible = opacity < 0.999 || l1Opacity < 0.999;
         }
 
         // S3a 碎石场距离淡入：<6km 全显，6–9km smoothstep 渐隐（远距亚像素无意义）
@@ -3410,7 +3452,7 @@ export class SolarEngine {
         }
         // S5-1：MOLA L1 同律渐显——按网格纹元屏幕张角（decimate 2 × 463m ≈ 926m）
         // 0.35→1.3px smoothstep，先于 DTM 全显（LOD 顺序：全球球→L1→DTM）。
-        // 远距隐藏消除亚像素走样；孔下盖板兜底，隐藏期间不露星空。
+        // 远距隐藏消除亚像素走样；隐藏期间挖孔补片以原球面填孔，盖板深层兜底。
         const molaCellM = (activeMarsStack.mola.metaReady?.nativeSpacingMeters ?? 463) * 2;
         const molaCellPx = projectedTexelPx(
           molaCellM,
@@ -3422,6 +3464,10 @@ export class SolarEngine {
           mat.transparent = l1Opacity < 1;
           mat.opacity = l1Opacity;
           mat.uniforms.layerOpacity.value = l1Opacity;
+        }
+        // F-LUNAR-LIMB-01：火星挖孔补片可见性（镜像月面，同款门控语义）
+        if (activeMarsStack.patchMesh) {
+          activeMarsStack.patchMesh.visible = opacity < 0.999 || l1Opacity < 0.999;
         }
         if (this.marsRockFieldMaterial) {
           const t = Math.min(1, Math.max(0, (9000 - siteDistM) / 3000));
