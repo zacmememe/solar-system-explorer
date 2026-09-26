@@ -175,7 +175,7 @@
  .hud-instrument-caption { margin-bottom: 0; }
  .hud-profile-summary { font-size: 11px; }
  .hud-context-heading { height: 28px; }
- .hud-popover { max-height: calc(100dvh - var(--hud-height,300px) - 160px); }
+ .hud-popover { max-height: calc(100dvh - var(--hud-height,300px) - 182px); }
 }
 @media (max-height: 500px) {
  .hud-layout, .has-mission .hud-layout { grid-template-columns: 150px minmax(260px,1fr) 170px; grid-template-areas: 'flight context target'; gap: 14px; padding: 0 14px 8px; }
@@ -193,7 +193,7 @@
  .hud-direction-reading strong { font-size: 16px; }
  .hud-flight-actions button { padding: 0 5px; font-size: 10px; }
  .hud-target-heading strong { font-size: 16px; } .hud-radius > span { font-size: 24px; }
- .hud-popover { max-height: calc(100dvh - var(--hud-height,170px) - 85px); }
+ .hud-popover { max-height: calc(100dvh - var(--hud-height,170px) - 102px); }
  .hud-scrim { top: -15px; }
 }
 

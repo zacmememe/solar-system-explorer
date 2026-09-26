@@ -30,6 +30,18 @@ async function layout(name){
  check(name+' mission buttons reachable >=44px',info.buttons.every(b=>b.height>=44&&b.clickable));
  report.checks.push({label:name+' layout metrics',pass:true,info});
 }
+async function popupLayout(name){
+ const info=await page.evaluate(()=>{
+   const panel=document.querySelector('.hud-popover'),r=panel.getBoundingClientRect();
+   const nav=document.querySelector('.app-satellite-bar')?.getBoundingClientRect();
+   const close=panel.querySelector('[aria-label="关闭面板"]'),c=close.getBoundingClientRect();
+   const hit=document.elementFromPoint(c.x+c.width/2,c.y+c.height/2);
+   return {top:r.top,bottom:r.bottom,navBottom:nav?.bottom??0,viewportHeight:innerHeight,closeReachable:hit===close||close.contains(hit)};
+ });
+ check(name+' details clear navigation by 8px',info.top>=info.navBottom+8);
+ check(name+' details close reachable within viewport',info.top>=0&&info.bottom<=info.viewportHeight&&info.closeReachable);
+ report.checks.push({label:name+' popup metrics',pass:true,info});
+}
 try{
  await page.goto(process.env.TEST_URL||'http://127.0.0.1:5204',{waitUntil:'domcontentloaded'});
  await page.waitForSelector('[data-testid="mission-hud"][data-ready="true"]');
@@ -54,9 +66,10 @@ try{
  check('HOLD freezes both rates and trajectory',held.telemetry.progress===held2.telemetry.progress&&held2.telemetry.verticalSpeedMps===0&&held2.telemetry.horizontalSpeedMps===0);
  await shot('08-hold-desktop');await layout('desktop HOLD');
  await page.setViewport({width:390,height:844});await delay(400);await shot('09-hold-portrait');await layout('portrait HOLD');
- await click('[data-testid="hud-site-details"]');await shot('10-details-portrait');await page.keyboard.press('Escape');
+ await click('[data-testid="hud-site-details"]');await shot('10-details-portrait');await popupLayout('portrait HOLD');await page.keyboard.press('Escape');
  check('Escape restores info trigger focus',await page.$eval('[data-testid="hud-site-details"]',b=>b===document.activeElement));
  await page.setViewport({width:844,height:390});await delay(400);await shot('11-hold-landscape');await layout('landscape HOLD');
+ await click('[data-testid="hud-site-details"]');await shot('11b-details-landscape');await popupLayout('landscape HOLD');await page.keyboard.press('Escape');
  await page.setViewport({width:1440,height:900});await delay(300);await drag(90);await click('[data-testid="landing-btn-resume"]');await phase('descending');
  await phase('surface_look');await click('[data-testid="landing-btn-reset-look"]');await delay(1000);await shot('12-surface-desktop');await layout('desktop surface');
  check('surface compass replaces orbit map',!!(await page.$('[data-testid="hud-surface-compass"]'))&&!(await page.$('[data-testid="hud-context-map"]')));
@@ -64,7 +77,7 @@ try{
  const yawAfter=await page.$eval('[data-testid="hud-surface-compass"]',e=>Number(e.dataset.yaw));check('compass responds to actual looking direction',Math.abs(yawBefore-yawAfter)>1);await shot('13-look-sky');
  if(moon){await click('[data-testid="landing-btn-look-earth"]');await delay(1200);await shot('14-look-earth');}
  await page.setViewport({width:390,height:844});await delay(300);await shot('15-surface-portrait');await layout('portrait surface');
- await click('[data-testid="hud-site-details"]');await shot('16-surface-details');await click('[aria-label="关闭面板"]');
+ await click('[data-testid="hud-site-details"]');await shot('16-surface-details');await popupLayout('portrait surface');await click('[aria-label="关闭面板"]');
  await click('[data-testid="landing-btn-return-orbit"]');await phase('ascending');const asc0=await snapshot();await delay(1500);const asc1=await snapshot();
  check('return starts below completion and advances',asc0.telemetry.progress<.3&&asc1.telemetry.progress>asc0.telemetry.progress&&asc1.telemetry.progress<1);
  await shot('17-ascending');await layout('portrait ascending');
