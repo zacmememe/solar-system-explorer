@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 import type {HudFrame} from '../../contracts/hud';
 import {compassTicks,journeyArc} from './arc';
-import {bearingLabel,formatAltitude,hudPhase,observedAltitude} from './phase';
+import {bearingLabel,hudPhase} from './phase';
 
 export function useInstrumentWidth(initial=500) {
   const root=useRef<HTMLDivElement>(null),[width,setWidth]=useState(initial);
@@ -19,10 +19,6 @@ export function TaskArc({frame,destination,source}: {frame:HudFrame;destination:
   const point=(t:number)=>({x:24+(width-48)*t,y:15+24*(2*t-1)**2});
   const cursor=point(model.cursor),yaw=pose?.yawDeg;
   const compassValid=ground&&yaw!=null&&Number.isFinite(yaw);
-  const reading=ground?(compassValid?`${Math.round(((yaw%360)+360)%360)%360}`:'—'):
-    phase==='preparing'?(frame.landing?.preparation.phase==='approach'?'绕行至落区上空':'准备当地观察'):
-    transfer?destination:formatAltitude(observedAltitude(frame));
-  const numericAltitude=!ground&&!transfer&&phase!=='preparing'&&reading.includes(' ')?reading.split(' '):null;
   return <div ref={root} className="hud-task-arc" data-testid={ground?'hud-surface-compass':transfer?'hud-transfer':'hud-altitude-profile'}
     data-yaw={ground?yaw:undefined} data-pitch={ground?pose?.pitchDeg:undefined} data-arc-kind={ground?'compass':model.kind}>
     <svg width="100%" height="46" viewBox={`0 0 ${width} 46`} role="img"
@@ -47,11 +43,7 @@ export function TaskArc({frame,destination,source}: {frame:HudFrame;destination:
       </>}
     </svg>
     {!ground && model.progress!=null && <span className="hud-sr-only" role="progressbar" aria-label={model.caption} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(model.progress*100)}/>}
-    <div className={`hud-arc-reading${transfer||phase==='preparing'?' is-text':''}`}>
-      <span className="hud-arc-reading-label">{ground?'视线方位':transfer?'前往':phase==='preparing'?'':'离地'}</span>
-      <strong data-testid={!ground&&!transfer&&phase!=='preparing'?'telemetry-agl-value':undefined}>{numericAltitude?<>{numericAltitude[0]} <small>{numericAltitude[1]}</small></>:reading}</strong>
-      {ground&&compassValid&&<span className="hud-arc-unit">° {bearingLabel(yaw)}</span>}
-    </div>
+    {transfer&&<span className="hud-sr-only">{source} → {destination}</span>}
   </div>;
 }
 

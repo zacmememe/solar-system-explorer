@@ -1,4 +1,4 @@
-/* A task arc: light instruments between location and actions; B lenses expand on demand. */
+/* Classic A: time left, a spacious central instrument with actions below, reading right. */
 .mission-hud { --hud-text:#edf6f8; --hud-muted:#b8c8ce; --hud-rule:rgb(224 240 246 / .23);
  position:absolute; inset:auto 0 0; z-index:16; pointer-events:none; color:var(--hud-text);
  font:12px/1.45 system-ui,-apple-system,'Segoe UI',sans-serif; font-variant-numeric:tabular-nums; }
@@ -10,29 +10,42 @@
 .mission-hud button:disabled { opacity:.45; cursor:not-allowed; }
 .mission-hud button[aria-pressed='true'] { background:rgb(255 255 255 / .13); }
 .hud-scrim { position:absolute; inset:-12px 0 0; z-index:-1; background:linear-gradient(to top,rgb(3 9 13 / .79),rgb(3 9 13 / .44) 58%,transparent); }
-.hud-layout { display:grid; grid-template-columns:minmax(0,1fr) clamp(220px,calc(100vw - 1340px),560px) minmax(0,1fr); align-items:end;
- gap:clamp(18px,2vw,48px); padding:8px clamp(24px,2.7vw,60px) max(10px,env(safe-area-inset-bottom)); min-height:96px; }
-.hud-target, .hud-context { min-width:0; }
-.hud-target { align-self:center; }
+.hud-layout { display:grid; grid-template-columns:minmax(220px,1fr) minmax(0,780px) minmax(220px,1fr); align-items:end;
+ gap:clamp(16px,2vw,48px); padding:6px clamp(24px,2.7vw,60px) max(8px,env(safe-area-inset-bottom)); min-height:120px; }
+.hud-time, .hud-target, .hud-context { min-width:0; }
+.hud-time { justify-self:start; transform:perspective(1100px) rotateY(7deg); transform-origin:left bottom; }
+.hud-target { justify-self:end; max-width:100%; text-align:right; transform:perspective(1100px) rotateY(-7deg); transform-origin:right bottom; }
+.hud-target-heading { display:flex; align-items:baseline; justify-content:flex-end; gap:10px; }
 .hud-target-kicker { display:block; font-size:9px; letter-spacing:.18em; color:#94adb8; text-transform:uppercase; margin-bottom:5px; }
-.hud-object-name { display:block; font-size:21px; font-weight:450; letter-spacing:.03em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.hud-stage { display:block; color:var(--hud-muted); font-size:10px; letter-spacing:.12em; margin-top:3px; }
-.hud-stage::before { content:'';display:inline-block;width:4px;height:4px;border-radius:50%;background:#cee5eb;margin:0 7px 2px 0; }
-.hud-flight, .hud-utility, .hud-mission-actions { display:flex; align-items:center; gap:6px; }
-.hud-flight { justify-content:flex-end; gap:12px; padding-bottom:7px; }
-.hud-utility { border-left:1px solid var(--hud-rule); padding-left:10px; flex-shrink:0; }
-.hud-utility button { color:var(--hud-muted); padding:0 10px; white-space:nowrap; flex-shrink:0; }
-.hud-options { font-size:21px !important; letter-spacing:2px; }
-.hud-pause { width:38px; }
+.hud-object-name { display:block; font-size:21px; line-height:1.2; font-weight:450; letter-spacing:.03em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.hud-stage { color:var(--hud-muted); font-size:9px; letter-spacing:.08em; flex:none; }
+.hud-flight, .hud-mission-actions { display:flex; align-items:center; gap:8px; }
+.hud-flight { justify-content:center; min-height:44px; }
+.hud-time-caption { display:block; color:#a8bdc7; font-size:10px; letter-spacing:.12em; margin-left:40px; line-height:15px; }
+.hud-time-controls { display:flex; align-items:center; }
+.mission-hud .hud-time button { min-height:46px; }
+.hud-time-options { display:flex; align-items:center; gap:4px; }
+.mission-hud .hud-time-options button { font-size:10px; padding:0 10px; color:var(--hud-muted); white-space:nowrap; }
+.hud-pause { width:40px; padding:0 !important; }
 .hud-speed-control { display:flex; align-items:center; flex:none; gap:0; }
-.mission-hud .hud-speed-step { width:30px; min-height:44px; padding:0; font-size:23px; font-weight:300; color:#a6bbc3; }
+.mission-hud .hud-speed-step { width:32px; min-height:46px; padding:0; font-size:23px; font-weight:300; color:#a6bbc3; }
 .hud-speed-reading { width:94px; text-align:center; }
-.hud-speed-caption { display:block; font-size:8px; letter-spacing:.14em; color:#94adb8; }
-.hud-speed-number { display:block; font-size:27px; line-height:1.2; font-weight:300; letter-spacing:-.04em; white-space:nowrap; }
+.hud-speed-number { display:block; font-size:38px; line-height:1.12; font-weight:300; letter-spacing:-.04em; white-space:nowrap; }
+.is-large-rate .hud-speed-number { font-size:26px; }
 .hud-speed-number small { font-size:12px; margin-left:5px; color:var(--hud-muted); }
+.hud-primary-reading { height:42px; display:flex; align-items:center; justify-content:flex-end; white-space:nowrap; }
+.hud-primary-reading strong { font-size:38px; font-weight:300; line-height:1.1; letter-spacing:-.035em; }
+.hud-primary-reading small { font-size:12px; font-weight:400; color:var(--hud-muted); letter-spacing:0; }
+.hud-primary-reading.is-text strong { font-size:25px; letter-spacing:.05em; }
+.hud-target-footer { display:flex; align-items:center; justify-content:flex-end; gap:12px; }
+.hud-target-footer .hud-reading-label { font-size:10px; white-space:nowrap; }
+.mission-hud .hud-target-footer button { padding:0; min-height:46px; font-size:10px; color:var(--hud-muted); white-space:nowrap; }
+.hud-system-caption { display:block; text-align:center; font-size:10px; line-height:16px; color:var(--hud-muted); letter-spacing:.08em; }
+.hud-task-arc { padding:8px 0; }
+.hud-popover-observe,.hud-popover-time { left:clamp(24px,3vw,76px); right:auto; }
 .hud-mission-actions:empty { display:none; }
-.mission-hud .hud-mission-actions button { white-space:nowrap; border:1px solid var(--hud-rule); padding:0 13px; }
-.mission-hud .hud-mission-actions .is-primary { background:rgb(255 255 255 / .11); border-color:rgb(255 255 255 / .38); }
+.mission-hud .hud-mission-actions button { white-space:nowrap; border:0; padding:0 13px; border-radius:0; }
+.mission-hud .hud-mission-actions .is-primary { background:none; box-shadow:inset 0 -1px rgb(255 255 255 / .3); }
 .hud-compact-altitude, .hud-compact-bearing, .hud-transfer { display:flex; align-items:center; gap:14px; }
 .hud-compact-altitude > strong { font-size:25px; font-weight:300; letter-spacing:-.035em; white-space:nowrap; }
 .hud-reading-label, .hud-compact-note, .hud-compact-bearing > span { color:var(--hud-muted); font-size:11px; }
@@ -44,11 +57,11 @@
 .hud-transfer small { color:var(--hud-muted); }
 .hud-landing-row { display:flex; align-items:center; gap:8px; pointer-events:auto; }
 .hud-landing-label { color:var(--hud-muted); font-size:11px; white-space:nowrap; }
-.hud-landing-row select { min-width:0; max-width:190px; min-height:44px; padding:0 9px; border:1px solid var(--hud-rule); border-radius:5px; background:rgb(12 20 26 / .55); }
+.hud-landing-row select { min-width:0; max-width:220px; min-height:44px; padding:0 9px; border:0; border-bottom:1px solid var(--hud-rule); border-radius:0; background:rgb(12 20 26 / .35); }
 .hud-landing-label { display:none; }
-.mission-hud .hud-landing-action { white-space:nowrap; border:1px solid var(--hud-rule); }
-.hud-landing-action.is-primary { background:rgb(255 255 255 / .11); }
-.hud-landing-wait { color:var(--hud-muted); font-size:11px; }
+.mission-hud .hud-landing-action { white-space:nowrap; border:0; border-radius:0; box-shadow:inset 0 -1px var(--hud-rule); }
+.hud-landing-action.is-primary { background:rgb(255 255 255 / .04); }
+.hud-landing-wait { color:var(--hud-muted); font-size:11px; max-width:210px; }
 /* Menus are bounded by the measured navigation and the strip; no invisible overlay. */
 .hud-popover { pointer-events:auto; position:absolute; bottom:calc(100% + 12px); right:clamp(24px,3vw,76px);
  width:min(410px,calc(100vw - 24px)); max-height:min(620px,calc(100dvh - var(--hud-height,86px) - var(--hud-top-clearance,120px) - 12px));
@@ -123,34 +136,32 @@
 .hud-direction-lens > div { display:flex;flex-direction:column;gap:5px; }
 .hud-direction-lens strong { font-size:19px;font-weight:400; } .hud-direction-lens small { font-size:10px;color:var(--hud-muted); }
 .hud-sr-only { position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap; }
-@media (min-width:901px) { .hud-landing-row select { max-width:145px; } }
-@media (max-width:1700px) {
- .hud-layout { grid-template-columns:minmax(125px,.7fr) minmax(220px,1fr) auto; gap:16px; padding-left:20px; padding-right:20px; }
- .hud-flight { gap:8px; } .hud-utility { gap:0; padding-left:5px; }
- .hud-object-name { font-size:15px; } .hud-landing-label { display:none; }
- .hud-landing-row select { max-width:145px; } .hud-mini-progress { min-width:30px; }
- .hud-flight { gap:5px; } .hud-utility button { padding:0 7px; }
+@media (max-width:1250px) {
+ .hud-layout { grid-template-columns:minmax(200px,1fr) minmax(250px,1.4fr) minmax(200px,1fr); gap:16px; padding-left:20px; padding-right:20px; }
+ .hud-object-name { font-size:18px; } .hud-target-heading { display:block; }
+ .hud-stage { display:block; font-size:8px; line-height:12px; }
+ .hud-landing-row select { max-width:160px; }
+ .hud-target-footer { gap:8px; }
 }
-@media (max-width:900px) {
- .hud-layout { grid-template-columns:minmax(90px,.7fr) minmax(190px,1.3fr); grid-template-areas:'target context' 'flight flight'; gap:6px 10px; padding:6px 14px max(8px,env(safe-area-inset-bottom)); }
- .hud-target { grid-area:target; } .hud-context { grid-area:context; }
- .hud-flight { grid-area:flight; justify-content:space-between; padding:0;flex-wrap:wrap; }
- .hud-utility { margin-left:auto; } .hud-compact-altitude, .hud-compact-bearing { justify-content:flex-end; gap:8px; }
- .hud-compact-altitude strong { font-size:22px; } .hud-compact-bearing strong { font-size:16px; }
- .hud-layout .hud-mini-progress { display:none; } .hud-transfer { justify-content:flex-end; gap:6px; }
- .hud-transfer .hud-compact-note { max-width:145px; } .hud-landing-row { flex-wrap:wrap; gap:4px; justify-content:flex-end; }
- .hud-landing-row select { max-width:100%; } .hud-landing-row .hud-landing-action { padding:0 8px; }
- .mission-hud .hud-mission-actions button { font-size:11px; padding:0 9px; }
+@media (max-width:760px) {
+ .hud-layout { grid-template-columns:minmax(0,1fr) minmax(0,1fr); grid-template-areas:'time target' 'context context'; gap:0 12px; padding:4px 12px max(6px,env(safe-area-inset-bottom)); }
+ .hud-time { grid-area:time; transform:none; } .hud-target { grid-area:target; transform:none; }
+ .hud-context { grid-area:context; } .hud-flight { gap:4px; flex-wrap:wrap; }
+ .hud-pause { width:26px; } .mission-hud .hud-speed-step { width:26px; }
+ .hud-speed-reading { width:86px; } .hud-speed-number { font-size:32px; }
+ .is-large-rate .hud-speed-number { font-size:24px; }
+ .hud-time-caption { margin-left:26px; font-size:9px; }
+ .mission-hud .hud-time-options button { padding:0 5px; font-size:9px; }
+ .hud-object-name { font-size:16px; } .hud-primary-reading strong { font-size:31px; }
+ .hud-primary-reading.is-text strong { font-size:22px; }
+ .hud-primary-reading small { font-size:10px; }
+ .hud-target-footer { gap:7px; }
+ .hud-target-footer .hud-reading-label,.mission-hud .hud-target-footer button { font-size:9px; }
+ .hud-landing-row { gap:4px; } .hud-landing-row select { max-width:180px; }
+ .hud-landing-wait { max-width:140px; } .mission-hud .hud-mission-actions button { font-size:11px; padding:0 10px; }
  .hud-popover { left:12px; right:12px; width:auto; }
- .hud-target-kicker { font-size:8px;letter-spacing:.1em; }
  .hud-task-arc svg text { font-size:9px;letter-spacing:0; }
- .hud-arc-reading strong { font-size:27px; } .hud-arc-reading.is-text strong { font-size:16px; }
- .hud-preview-caption { font-size:8px; } .hud-arc-reading-label { font-size:9px;letter-spacing:0; }
- .hud-space-instrument .hud-arc-reading-label { display:none; }
- .hud-landing-row { flex-wrap:nowrap; }
- .hud-landing-row select { max-width:150px; }
+ .hud-preview-caption { font-size:8px; }
 }
-@media (max-width:500px) { .hud-utility button { padding:0 8px; } .hud-flight { gap:4px; } .hud-mission-actions { gap:4px; }
- .hud-speed-reading { width:90px; } }
 @media (prefers-reduced-motion:reduce) { .mission-hud * { transition:none !important; } }
 .mission-hud.reduce-motion * { transition:none !important; }

@@ -29,15 +29,16 @@ async function saveOverview(){
 async function layout(name){
  const info=await page.evaluate(()=>{
    const el=document.querySelector('[data-testid="mission-hud"]'),r=el.getBoundingClientRect();
-   const boxes=[...el.querySelectorAll('.hud-flight,.hud-context,.hud-target')].map(e=>{const q=e.getBoundingClientRect();return {x:q.x,y:q.y,right:q.right,bottom:q.bottom};});
-   const buttons=[...el.querySelectorAll('.hud-mission-actions button')].map(b=>{const q=b.getBoundingClientRect();const hit=document.elementFromPoint(q.x+q.width/2,q.y+q.height/2);return {text:b.textContent,height:q.height,clickable:!!hit&&(hit===b||b.contains(hit))};});
+   const boxes=[...el.querySelectorAll('.hud-time,.hud-context,.hud-target')].map(e=>{const q=e.getBoundingClientRect();return {x:q.x,y:q.y,right:q.right,bottom:q.bottom};});
+   const buttons=[...el.querySelectorAll('.hud-layout button,.hud-layout select')].map(b=>{const q=b.getBoundingClientRect();const hit=document.elementFromPoint(q.x+q.width/2,q.y+q.height/2);return {text:b.textContent,height:q.height,clickable:!!hit&&(hit===b||b.contains(hit))};});
    return {hudHeight:r.height,scrimHeight:el.querySelector('.hud-scrim').getBoundingClientRect().height,phase:el.dataset.phase,viewport:[innerWidth,innerHeight],boxes,buttons,overflow:document.documentElement.scrollWidth>innerWidth};
  });
  check(name+' HUD within viewport',!info.overflow&&info.boxes.every(b=>b.x>=0&&b.y>=0&&b.right<=info.viewport[0]+1&&b.bottom<=info.viewport[1]+1));
  check(name+' sections do not overlap',info.boxes.every((a,i)=>info.boxes.slice(i+1).every(b=>Math.min(a.right,b.right)<=Math.max(a.x,b.x)+.5||Math.min(a.bottom,b.bottom)<=Math.max(a.y,b.y)+.5)));
- check(name+' mission buttons reachable >=44px',info.buttons.every(b=>b.height>=44&&b.clickable));
+ check(name+' HUD controls reachable >=44px',info.buttons.every(b=>b.height>=44&&b.clickable));
  if(['hold','surface_look','descending'].includes(info.phase))check(name+' essential journey controls present',info.buttons.length>=(info.phase==='surface_look'?1:2));
- check(name+' compact strip including fade',info.scrimHeight<=(info.viewport[0]>1250?110:220));
+ // User-selected A prototype allowed 142px including its fade; keep the implementation within it.
+ check(name+' compact A strip including fade',info.scrimHeight<=(info.viewport[0]>1250?142:info.viewport[0]>760?155:250));
  report.checks.push({label:name+' layout metrics',pass:true,info});
 }
 async function popupLayout(name){

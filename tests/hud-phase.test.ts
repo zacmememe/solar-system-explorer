@@ -8,10 +8,38 @@ import {LandingController} from '../src/surface/LandingController';
 import {CameraController} from '../src/camera/CameraController';
 import * as THREE from 'three';
 import {compassTicks,journeyArc} from '../src/app/hud/arc';
+import {primaryReading} from '../src/app/hud/primaryReading';
 
 const frame=():{-readonly [K in keyof HudFrame]:HudFrame[K]}=>({sequence:1,simTimeHours:0,isPaused:true,timeScale:50,observerPosition:[0,0,0],bodies:[],
  camera:{mode:'ORBIT_TARGET',targetBodyId:'moon',selectedBodyId:'moon',distanceToTarget:3,minDistance:1,maxDistance:10,commandId:1,isTransitioning:false,spherical:{radius:3,theta:0,phi:1}}});
 const mission=()=>({telemetry:new LandingController().getTelemetry(),availability:{action:'none' as const,reason:'mission-active' as const},sites:[LANDING_SITES['taurus-littrow']],preparation:{active:false,phase:null,lightingAdjustedSimHours:null}});
+
+describe('classic right-side instrument',()=>{
+ it('Earth observation shows radius but overview and cancelled free observation do not retain it',()=>{
+  const f=frame();expect(primaryReading(f,'earth')).toMatchObject({value:'6,371',unit:'km',label:'平均半径'});
+  f.camera.mode='OVERVIEW';expect(primaryReading(f,'earth').unit).toBe('');
+  f.camera.mode='ORBIT_TARGET';f.camera.anchor={kind:'free',pivotScene:[1,2,3]};expect(primaryReading(f,'earth').label).toBe('自由观察机位');
+ });
+ it('preparation never shows planner clearance; descent uses actual observer height',()=>{
+  const f=frame();f.landing=mission();f.landing.telemetry.state='PREPARING';
+  expect(primaryReading(f,'moon').value).toBe('准备中');
+  f.landing.telemetry.state='DESCENDING';f.landing.telemetry.altitudeAGLM=50000;
+  expect(primaryReading(f,'moon').value).toBe('—');
+  f.surface={bodyId:'moon',lat:0,lon:0,eyeHeightM:108.3,datumHeightM:-50,yawDeg:0,pitchDeg:0};
+  expect(primaryReading(f,'moon')).toMatchObject({value:'108',unit:'m',label:'离地高度'});
+ });
+ it('surface bearing wraps across north and unavailable orientation remains unknown',()=>{
+  const f=frame();f.camera.mode='SURFACE_LOOK';expect(primaryReading(f,'moon').value).toBe('—');
+  f.surface={bodyId:'moon',lat:0,lon:0,eyeHeightM:1.7,datumHeightM:0,yawDeg:359.8,pitchDeg:0};
+  expect(primaryReading(f,'moon')).toMatchObject({value:'0',unit:'° 北'});
+  f.surface={...f.surface,yawDeg:NaN};expect(primaryReading(f,'moon').value).toBe('—');
+ });
+ it('transfer reads current segment progress and allows replanning to reset that segment',()=>{
+  const f=frame();f.camera.isTransitioning=true;f.camera.transitionProgress=.7;
+  expect(primaryReading(f,'moon')).toMatchObject({value:'70',unit:'%',label:'当前转场段'});
+  f.camera.transitionProgress=.1;expect(primaryReading(f,'moon').value).toBe('10');
+ });
+});
 describe('phase-aware observer instruments',()=>{
  it('the real controller distinguishes overview arrival from Sun observation',()=>{
   const camera=new THREE.PerspectiveCamera(45,1.6,.1,10000);camera.position.set(0,30,100);
