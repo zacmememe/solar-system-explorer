@@ -10,6 +10,7 @@
  */
 import * as THREE from 'three';
 import { computeTerrainNormals } from './TerrainBoundary';
+import { refineTerrainGrid } from './LocalTerrainRefinement';
 
 interface JezeroMeta {
   schemaVersion: number;
@@ -163,7 +164,7 @@ export class JezeroTerrainSource {
   }
 
   /** 地表网格（与月球 buildDemWindowGeometry 同构；datum=Mars2000 局部球） */
-  public buildDemWindowGeometry(baseRadius: number, maxSegments = 512): THREE.BufferGeometry | null {
+  public buildDemWindowGeometry(baseRadius: number, maxSegments = 512, refine?:{lat:number;lon:number;sizeM:number}): THREE.BufferGeometry | null {
     if (!this.meta || !this.heights) return null;
     const { centerLat, centerLon } = this.meta.site;
     const mPerDeg = this.datumRadiusM * Math.PI / 180;
@@ -174,8 +175,8 @@ export class JezeroTerrainSource {
     const cols = Math.floor((W - 1) / stepI) + 1;
     const rows = Math.floor((H - 1) / stepJ) + 1;
     const scale = baseRadius / this.datumRadiusM;
-    const positions = new Float64Array(cols * rows * 3);
-    const uvs = new Float32Array(cols * rows * 2);
+    let positions = new Float64Array(cols * rows * 3);
+    let uvs = new Float32Array(cols * rows * 2);
     let p = 0, u = 0;
     for (let j = 0; j < rows; j++) {
       const rIdx = j * stepJ;
@@ -197,7 +198,7 @@ export class JezeroTerrainSource {
         uvs[u++] = rIdx / (H - 1);
       }
     }
-    const indices: number[] = [];
+    let indices: number[] = [];
     for (let j = 0; j < rows - 1; j++) {
       for (let i = 0; i < cols - 1; i++) {
         const a = j * cols + i, b = a + 1, c = a + cols, d = c + 1;
@@ -206,6 +207,20 @@ export class JezeroTerrainSource {
       }
     }
     const geo = new THREE.BufferGeometry();
+    if(refine){
+      const refined=refineTerrainGrid({positions,uvs,indices,cols,rows,stepX:stepI,stepY:stepJ,
+        centerX:((refine.lon-centerLon)*mPerDeg*cosLat+this.meta.windowSizeM[0]/2)/this.meta.stepMeters,
+        centerY:((centerLat-refine.lat)*mPerDeg+this.meta.windowSizeM[1]/2)/this.meta.stepMeters,
+        halfSamples:refine.sizeM/(2*this.meta.stepMeters),
+        vertex:(x,y)=>{
+          if(this.valid?.[y*W+x]!==1)return null;
+          const lat=THREE.MathUtils.degToRad(centerLat+(this.meta!.windowSizeM[1]/2-y*this.meta!.stepMeters)/mPerDeg);
+          const lon=THREE.MathUtils.degToRad(centerLon+(x*this.meta!.stepMeters-this.meta!.windowSizeM[0]/2)/(mPerDeg*cosLat));
+          const radius=baseRadius+this.heights![y*W+x]*scale;
+          return {position:[radius*Math.cos(lat)*Math.cos(lon),radius*Math.sin(lat),-radius*Math.cos(lat)*Math.sin(lon)],uv:[x/(W-1),y/(H-1)]};
+        }});
+      if(refined){positions=refined.positions;uvs=refined.uvs;indices=refined.indices;geo.userData.localRefinement=refined.refinement;}
+    }
     geo.setAttribute('position', new THREE.BufferAttribute(Float32Array.from(positions), 3));
     geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
     geo.setIndex(indices);

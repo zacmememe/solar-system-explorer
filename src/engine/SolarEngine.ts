@@ -744,7 +744,8 @@ export class SolarEngine {
       stack.group.add(terrainMesh);
       stack.terrainMesh = terrainMesh;
 
-      const geo = dtm.buildDemWindowGeometry(satRadius);
+      const geo = dtm.buildDemWindowGeometry(satRadius,512,stack.siteId==='gale-murray-buttes'
+        ? {lat:site.centerLat,lon:site.centerLon,sizeM:512} : undefined);
       const ortho = dtm.buildOrthoTexture();
       if (!geo || !ortho) {
         console.error(`[SolarEngine] ${stack.siteId} DTM 已装载但网格构建失败`);
