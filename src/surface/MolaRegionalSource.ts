@@ -212,7 +212,8 @@ export class MolaRegionalSource {
     dtmHeightAt: (latDeg: number, lonDeg: number) => number,
     rimDeg = 0.15,
     rings = 10,
-    edgeSegs = 96
+    edgeSegs = 96,
+    imageUvAt?: (lat: number, lon: number) => [number, number],
   ): THREE.BufferGeometry | null {
     if (!this.meta) return null;
     const wb = windowBounds;
@@ -241,6 +242,7 @@ export class MolaRegionalSource {
     const uvs: number[] = [];
     const indices: number[] = [];
     const scale = baseRadius / this.meta.projection.referenceRadiusM;
+    const imageUvs: number[] = [];
     for (let r = 0; r <= rings; r++) {
       const tR = r / rings;
       const w = tR * tR * (3 - 2 * tR); // 0=内缘(HiRISE) → 1=外缘(MOLA)
@@ -249,6 +251,7 @@ export class MolaRegionalSource {
         const b = outerAt(k);
         const lat = a.lat + (b.lat - a.lat) * tR;
         const lon = a.lon + (b.lon - a.lon) * tR;
+        if (imageUvAt) imageUvs.push(...imageUvAt(lat, lon));
         const dtmH = dtmHeightAt(a.lat, a.lon);
         const molaH = this.sampleHeight(
           Math.max(this.windowBounds!.latMin, Math.min(this.windowBounds!.latMax, b.lat)),
@@ -277,6 +280,7 @@ export class MolaRegionalSource {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    if (imageUvAt) geo.setAttribute('aBoundaryUv', new THREE.Float32BufferAttribute(imageUvs, 2));
     geo.setIndex(indices);
     geo.computeVertexNormals();
     return geo;

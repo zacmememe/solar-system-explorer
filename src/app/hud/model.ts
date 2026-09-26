@@ -38,6 +38,7 @@ export function materialNote(id: BodyId, infrared: boolean): string {
     io:'Galileo / Voyager 增强色拼图 · 非肉眼自然色，两极含插值',
     mimas:'Cassini 灰度观测拼图 · 保留拍摄阴影，球面未重建坑深',
     enceladus:'Cassini 紫外 / 红外增强色拼图 · 非肉眼自然色',
+    tethys:'Cassini 灰度观测拼图 · 保留拍摄阴影，球面未重建坑深',
   };
   if (observed[id]) return observed[id] + '；图像未就绪时显示纯色球体';
   if (BODIES[id]?.type === 'moon' && id !== 'moon') {

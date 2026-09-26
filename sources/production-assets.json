@@ -566,6 +566,37 @@
       "licenseUrl": "https://www.jpl.nasa.gov/jpl-image-use-policy/",
       "licenseNotes": "按 JPL 图片使用政策，保留原署名；不暗示 NASA/JPL 背书。",
       "releaseApproved": false
+    },
+    {
+      "id": "tethys-cassini-pia14931-4k",
+      "bodyId": "tethys",
+      "role": "color",
+      "sourcePage": "https://science.nasa.gov/photojournal/map-of-tethys-june-2012/",
+      "sourceAssetUrl": "https://assets.science.nasa.gov/dynamicimage/assets/science/psd/photojournal/pia/pia14/pia14931/PIA14931.jpg?fit=clip&w=4096&h=2048",
+      "localPath": "assets/textures/tethys/tethys-cassini-pia14931-4k.jpg",
+      "sourceSha256": "5056170fe5bcde03934c48d77db3af356e44053c3595a0d25850b494e62f9a77",
+      "derivedSha256": "5056170fe5bcde03934c48d77db3af356e44053c3595a0d25850b494e62f9a77",
+      "originalWidth": 4096,
+      "originalHeight": 2048,
+      "derivedWidth": 4096,
+      "derivedHeight": 2048,
+      "projection": "equirectangular",
+      "longitudeConvention": "0-to-360-east",
+      "centralMeridianDeg": 0,
+      "northUp": true,
+      "colorInterpretation": "sRGB",
+      "observationBands": [
+        "visible-grayscale"
+      ],
+      "provenanceClass": "processed-observation",
+      "coverageNotes": "Cassini 2012 全球灰度拼图，保留拍摄阴影和极区拉伸；非真实彩色、非纯反照率、非高程。原始地图11520×5760，官方服务缩小为4K。PDS3标签EAST、中心0°，网页摘要Positive West与标签矛盾，按标签和地标位置采用东经向右。",
+      "processingHistory": [
+        "2026-09-26: NASA官方服务4096×2048版本，下载后逐字节保存，无镜像/平移/锐化；originalWidth指下载文件，原始地图尺寸见coverageNotes。"
+      ],
+      "credit": "NASA/JPL-Caltech/Space Science Institute; Roatsch, Kersten, Hoffmeister, Wahlisch",
+      "licenseUrl": "https://astrogeology.usgs.gov/search/map/tethys_cassini_global_mosaic_293m",
+      "licenseNotes": "对应USGS产品Public domain / Please cite authors；NASA/JPL图像使用规则：https://www.jpl.nasa.gov/jpl-image-use-policy/ 。保留署名。",
+      "releaseApproved": false
     }
   ]
 }

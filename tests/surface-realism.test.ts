@@ -50,7 +50,7 @@ describe('surface realism contracts',()=>{
      expect(total/tex.image.width).toBeLessThan(.005);expect(tex.colorSpace).toBe(THREE.SRGBColorSpace);tex.dispose();
    }
  });
- for(const id of ['io-usgs-galileo-1k','mimas-cassini-pia17214-4k','enceladus-cassini-pia18435-4k'])it(id+' bytes, dimensions and source match the catalog',()=>{
+ for(const id of ['io-usgs-galileo-1k','mimas-cassini-pia17214-4k','enceladus-cassini-pia18435-4k','tethys-cassini-pia14931-4k'])it(id+' bytes, dimensions and source match the catalog',()=>{
    const a=manifest.assets.find(a=>a.id===id)!;
    const bytes=readFileSync('public/'+a.localPath),meta=decodeImageMetadata(bytes);
    expect(createHash('sha256').update(bytes).digest('hex')).toBe(a.derivedSha256);

@@ -45,6 +45,8 @@ import {
 import { createSunMaterial, createSunCoronaMaterial } from '../rendering/SunMaterial';
 import { createJupiterMaterial } from '../rendering/JupiterMaterial';
 import { createMarsMaterial } from '../rendering/MarsMaterial';
+import { MarsRegionalMaterial } from '../rendering/MarsRegionalMaterial';
+import { installRockSurface } from '../rendering/RockSurface';
 import { createObservationSkyMaterial, marsAtmosphereState, MARS_REGOLITH_TINT, installMarsFog } from '../rendering/MarsAtmosphere';
 import { createVenusAtmosphereMaterial, createVenusRadarMaterial } from '../rendering/VenusMaterial';
 import { createMercuryMaterial } from '../rendering/MercuryMaterial';
@@ -91,6 +93,7 @@ import { JezeroTerrainSource } from '../surface/JezeroTerrainSource';
 import {
   generateRockPlacements,
   buildRockGeometry,
+  composeLocalRockMatrix,
   sampleRenderedTerrain,
   renderedTerrainBounds,
   rockScenePosition,
@@ -182,7 +185,7 @@ interface MarsSiteStack {
   capMesh?: THREE.Mesh;
   patchMesh?: THREE.Mesh;
   patchMaterial?: THREE.Material;
-  l1Materials: THREE.ShaderMaterial[];
+  l1Materials: MarsRegionalMaterial[];
   rockFieldMaterial: THREE.MeshStandardMaterial | null;
   collarMaterial: THREE.MeshStandardMaterial | null;
   loadStarted: boolean;
@@ -469,29 +472,20 @@ export class SolarEngine {
         stack.rockFieldMaterial = rockMat;
         // S4b 勘误：scaleM 是米——须乘 metricScale 折算网格局部单位再 compose
         const rockMetricScale = satRadius / 1737400;
+        installRockSurface(rockMat,rockMetricScale);
+        const rockOrigin = sampleRenderedTerrain(valleyMesh.geometry, site.centerLat, site.centerLon)
+          ?? rockScenePosition(site.centerLat, site.centerLon, sample(site.centerLat, site.centerLon)?.heightM ?? 0, satRadius);
         const byVariant: typeof placements[] = [[], [], []];
         for (const p of placements) byVariant[p.variant].push(p);
         byVariant.forEach((list, v) => {
           if (!list.length) return;
           const inst = new THREE.InstancedMesh(buildRockGeometry(20260924, v), rockMat, list.length);
+          inst.position.copy(rockOrigin);
           const m = new THREE.Matrix4();
-          const q = new THREE.Quaternion();
-          const up = new THREE.Vector3(0, 1, 0);
           list.forEach((p, i) => {
             const pos = sampleRenderedTerrain(valleyMesh.geometry,p.latDeg,p.lonDeg)
               ?? rockScenePosition(p.latDeg, p.lonDeg, p.heightM, satRadius);
-            pos.setLength(pos.length() + 0.25 * p.scaleM[1] * rockMetricScale);
-            q.setFromUnitVectors(up, pos.clone().normalize())
-              .multiply(new THREE.Quaternion().setFromAxisAngle(up, p.rotYRad));
-            m.compose(
-              pos,
-              q,
-              new THREE.Vector3(
-                p.scaleM[0] * rockMetricScale,
-                p.scaleM[1] * rockMetricScale,
-                p.scaleM[2] * rockMetricScale
-              )
-            );
+            composeLocalRockMatrix(pos, p, rockMetricScale, rockOrigin, m);
             inst.setMatrixAt(i, m);
           });
           inst.instanceMatrix.needsUpdate = true;
@@ -784,29 +778,20 @@ export class SolarEngine {
         stack.rockFieldMaterial = rockMat;
         // S4b 勘误：米 → 网格局部单位（同月面修复；火星 datum = 本站 HiRISE 局部球）
         const rockMetricScale = satRadius / dtm.datumRadius;
+        installRockSurface(rockMat,rockMetricScale);
+        const rockOrigin = sampleRenderedTerrain(geo, site.centerLat, site.centerLon)
+          ?? rockScenePosition(site.centerLat, site.centerLon, sample(site.centerLat, site.centerLon)?.heightM ?? 0, satRadius, dtm.datumRadius);
         const byVariant: typeof placements[] = [[], [], []];
         for (const p of placements) byVariant[p.variant].push(p);
         byVariant.forEach((list, v) => {
           if (!list.length) return;
           const inst = new THREE.InstancedMesh(buildRockGeometry(20260924, v, true), rockMat, list.length);
+          inst.position.copy(rockOrigin);
           const m = new THREE.Matrix4();
-          const q = new THREE.Quaternion();
-          const up = new THREE.Vector3(0, 1, 0);
           list.forEach((p, i) => {
             const pos = sampleRenderedTerrain(geo,p.latDeg,p.lonDeg)
               ?? rockScenePosition(p.latDeg,p.lonDeg,p.heightM,satRadius,dtm.datumRadius);
-            pos.setLength(pos.length() + 0.25 * p.scaleM[1] * rockMetricScale);
-            q.setFromUnitVectors(up, pos.clone().normalize())
-              .multiply(new THREE.Quaternion().setFromAxisAngle(up, p.rotYRad));
-            m.compose(
-              pos,
-              q,
-              new THREE.Vector3(
-                p.scaleM[0] * rockMetricScale,
-                p.scaleM[1] * rockMetricScale,
-                p.scaleM[2] * rockMetricScale
-              )
-            );
+            composeLocalRockMatrix(pos, p, rockMetricScale, rockOrigin, m);
             inst.setMatrixAt(i, m);
             // Deterministic, subdued regolith variation; these are illustrative rocks.
             inst.setColorAt(i, new THREE.Color().setScalar(0.78 + 0.22 * ((i * 0.61803398875) % 1)));
@@ -849,16 +834,17 @@ export class SolarEngine {
             : undefined;
           const l1Geo = mola.buildRegionalGeometry(satRadius, 2, dtmHole);
           if (l1Geo) {
-            // The same global image and lighting as the coarse globe: a higher
-            // resolution terrain patch must not become a rectangular color panel.
-            const l1Mat = createMarsMaterial(null, this.marsAirColor, this.marsSunVisibility);
+            // Near the surface share HiRISE light/fog; at orbital distances the
+            // material blends continuously back to the coarse globe response.
+            const l1Mat = new MarsRegionalMaterial(this.marsAirColor, this.marsSunVisibility, satRadius / dtm.datumRadius);
             stack.l1Materials = [l1Mat];
             // L1 网格 UV=全球等距圆柱：2K 全球图直接可用
             new THREE.TextureLoader().load('/assets/textures/mars/2k_mars.jpg', (tex) => {
               tex.colorSpace = THREE.SRGBColorSpace;
               tex.wrapS = THREE.RepeatWrapping; // 354.5 E must wrap, not sample the image edge.
               for (const mat of stack.l1Materials) {
-                mat.uniforms.marsTexture.value = tex;
+                mat.map = tex;
+                mat.needsUpdate = true;
               }
             });
             const l1Mesh = new THREE.Mesh(l1Geo, l1Mat);
@@ -879,12 +865,15 @@ export class SolarEngine {
                 if (!point) throw new Error('Mars terrain seam lies outside its displayed grid');
                 return (point.length() / satRadius - 1) * dtm.datumRadius;
               };
-              const rimGeo = mola.buildWindowRimSkirt(satRadius, renderedBounds, dtmHeightAt, 0.15);
+              const mPerDeg = dtm.datumRadius * Math.PI / 180;
+              const cosCenter = Math.cos(THREE.MathUtils.degToRad(dtm.metaReady!.site.centerLat));
+              const rimGeo = mola.buildWindowRimSkirt(satRadius, renderedBounds, dtmHeightAt, 0.15, 10, 96,
+                (lat,lon)=>[(lon-wb.lonMin)*mPerDeg*cosCenter/dtm.uvSpanMeters.x,
+                  (wb.latMax-lat)*mPerDeg/dtm.uvSpanMeters.y]);
               if (rimGeo) {
                 // 裙圈是窗缘细级：polygonOffset 压过 L1 挖孔锯齿边（LOD 排序）。
-                // 饱和度渐变（展示层，不改动源影像）：内缘接灰度 HiRISE 正射、
-                // 外缘接彩色 2K 全球图——跨 LOD 接缝的灰↔彩色差在 ~9km 裙圈内
-                // 平滑过渡（S5-1 collar 接缝色差消除）
+                // Extend the HiRISE boundary image into a smooth transition band.
+                // This is an illustrative extension, not new measured coverage.
                 const RIM_RINGS = 10, RIM_SEGS = 96;
                 const perimeter = 4 * RIM_SEGS;
                 const grayMix = new Float32Array(rimGeo.getAttribute('position').count);
@@ -892,23 +881,12 @@ export class SolarEngine {
                   grayMix[v] = Math.floor(v / perimeter) / RIM_RINGS;
                 }
                 rimGeo.setAttribute('aGrayMix', new THREE.BufferAttribute(grayMix, 1));
-                const rimMat = l1Mat.clone();
-                rimMat.uniforms.marsAirColor.value = this.marsAirColor;
-                rimMat.uniforms.marsSunVisibility = this.marsSunVisibility;
+                const rimMat = new MarsRegionalMaterial(this.marsAirColor, this.marsSunVisibility,
+                  satRadius / dtm.datumRadius, terrainMat.map ? {texture:terrainMat.map,spanM:dtm.uvSpanMeters} : undefined);
+                rimMat.map = l1Mat.map;
                 rimMat.polygonOffset = true;
                 rimMat.polygonOffsetFactor = -1;
                 rimMat.polygonOffsetUnits = -1;
-                rimMat.onBeforeCompile = (shader) => {
-                  shader.vertexShader = `attribute float aGrayMix;\nvarying float vGrayMix;\n${shader.vertexShader}`.replace(
-                    'vUv = uv;',
-                    'vUv = uv;\n\tvGrayMix = aGrayMix;'
-                  );
-                  shader.uniforms.regolithTint = {value: MARS_REGOLITH_TINT};
-                  shader.fragmentShader = `uniform vec3 regolithTint;\nvarying float vGrayMix;\n${shader.fragmentShader}`.replace(
-                    'vec4 texColor = texture2D(marsTexture, vUv);',
-                    'vec4 texColor = texture2D(marsTexture, vUv);\n\tfloat grayLum = dot(texColor.rgb, vec3(0.299, 0.587, 0.114));\n\ttexColor.rgb = mix(vec3(grayLum) * regolithTint, texColor.rgb, vGrayMix);'
-                  );
-                };
                 stack.l1Materials.push(rimMat);
                 const rimMesh = new THREE.Mesh(rimGeo, rimMat);
                 rimMesh.name = 'mola-l1-window-rim';
@@ -1074,7 +1052,7 @@ export class SolarEngine {
   private marsTerrainMesh?: THREE.Mesh;
   private marsTerrainMaterial?: THREE.MeshStandardMaterial;
   private marsCollarMaterial?: THREE.MeshStandardMaterial;
-  private marsL1Materials: THREE.ShaderMaterial[] = [];
+  private marsL1Materials: MarsRegionalMaterial[] = [];
   private marsHaloMesh?: THREE.Mesh;
   private marsHoleCapMesh?: THREE.Mesh;
   private marsRockFieldMaterial: THREE.MeshStandardMaterial | null = null;
@@ -1798,7 +1776,7 @@ export class SolarEngine {
     for (const satId of allMoonIds) {
       const satNode = this.bodyNodes.get(satId);
       if (!satNode) continue;
-      const observedAsset = ({io:'io-usgs-galileo-1k',mimas:'mimas-cassini-pia17214-4k',enceladus:'enceladus-cassini-pia18435-4k'} as Record<string,string>)[satId];
+      const observedAsset = ({io:'io-usgs-galileo-1k',mimas:'mimas-cassini-pia17214-4k',enceladus:'enceladus-cassini-pia18435-4k',tethys:'tethys-cassini-pia14931-4k'} as Record<string,string>)[satId];
       if (observedAsset) {
         // Keep the neutral loading material on failure; never masquerade a procedural map as observation.
         this.assetManager.loadTexture(observedAsset, token, () => true).then(tex => {
@@ -3649,7 +3627,6 @@ export class SolarEngine {
         for (const mat of this.marsL1Materials) {
           mat.transparent = l1Opacity < 1;
           mat.opacity = l1Opacity;
-          mat.uniforms.layerOpacity.value = l1Opacity;
         }
         // F-LUNAR-LIMB-01/R2：火星挖孔补片连续淡出（镜像月面；layerOpacity）
         if (activeMarsStack.patchMesh) {

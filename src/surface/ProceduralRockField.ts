@@ -23,6 +23,27 @@ export interface RockPlacement {
   variant: number;
 }
 
+/**
+ * Compose in CPU double precision before writing the Float32 instance buffer.
+ * The InstancedMesh itself must be placed at `origin` in the body's frame.
+ * Keeping planet-scale translations in instanceMatrix collapses centimetre rocks
+ * before modelViewMatrix can subtract the camera (Three's project_vertex order).
+ */
+export function composeLocalRockMatrix(
+  groundPosition: THREE.Vector3,
+  placement: RockPlacement,
+  metricScale: number,
+  origin: THREE.Vector3,
+  target = new THREE.Matrix4(),
+): THREE.Matrix4 {
+  const up = new THREE.Vector3(0, 1, 0);
+  const position = groundPosition.clone();
+  position.setLength(position.length() + 0.25 * placement.scaleM[1] * metricScale);
+  const rotation = new THREE.Quaternion().setFromUnitVectors(up, position.clone().normalize())
+    .multiply(new THREE.Quaternion().setFromAxisAngle(up, placement.rotYRad));
+  return target.compose(position.sub(origin), rotation, new THREE.Vector3(...placement.scaleM).multiplyScalar(metricScale));
+}
+
 function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return () => {

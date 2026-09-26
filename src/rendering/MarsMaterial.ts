@@ -1,6 +1,6 @@
 /**
- * 火星专属天体物理着色器材质 (MarsMaterial)
- * 1. Lommel-Seeliger / Hapke 粗糙风化矿物砂岩散射模型（消除廉价塑料感）；
+ * 火星轨道外观展示材质 (MarsMaterial)
+ * 1. Lommel-Seeliger 与 Lambert 混合近似（非完整 Hapke 反演）；
  * 2. 极地冰盖 (Polar Ice Caps) 高反照率与微晶冰面光泽；
  * 3. 火星标志性“蓝夕阳”晨昏前向散射微光 (Martian Forward Twilight Blue Haze)；
  * 4. 高层微细氧化铁尘埃浅赭边缘光晕 (Dust Horizon Rim)；
@@ -62,6 +62,7 @@ export function createMarsMaterial(marsTex: THREE.Texture | null, airColor = new
       varying vec3 vNormal;
       varying vec3 vViewPosition;
 
+      ${MARS_ORBITAL_RADIANCE}
       void main() {
         // 世界空间向量
         vec3 N = normalize(vNormal);
@@ -73,6 +74,20 @@ export function createMarsMaterial(marsTex: THREE.Texture | null, airColor = new
         // 基础地表纹理采样
         vec4 texColor = texture2D(marsTexture, vUv);
 
+        vec3 finalColor=marsOrbitalRadiance(texColor.rgb,vUv,N,L,V,teachingLight,marsSunVisibility);
+
+        gl_FragColor = vec4(finalColor, layerOpacity);
+        ${MARS_FOG_FRAGMENT}
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }
+    `,
+  });
+}
+
+/** Shared orbital display response keeps the outer regional edge matched to the globe. */
+export const MARS_ORBITAL_RADIANCE = `
+vec3 marsOrbitalRadiance(vec3 texColor,vec2 uv,vec3 N,vec3 L,vec3 V,float teachingLight,float marsSunVisibility){
         // 1. 关键几何夹角
         float NdotL = dot(N, L);
         float NdotV = max(dot(N, V), 0.0);
@@ -84,14 +99,14 @@ export function createMarsMaterial(marsTex: THREE.Texture | null, airColor = new
         float rockDiffuse = mix(sunLit, lommelSeeliger * 1.45, 0.40);
 
         // 3. 南北极极地冰盖 (Polar Caps) 高反照增强与微弱冰晶反射
-        // 火星南极 (vUv.y < 0.12) 和北极 (vUv.y > 0.88) 富含二氧化碳干冰与水冰
-        float polarDist = abs(vUv.y - 0.5) * 2.0; // 0 (赤道) ~ 1.0 (极点)
-        float luma = dot(texColor.rgb, vec3(0.299, 0.587, 0.114));
+        // 火星南极 (uv.y < 0.12) 和北极 (uv.y > 0.88) 富含二氧化碳干冰与水冰
+        float polarDist = abs(uv.y - 0.5) * 2.0; // 0 (赤道) ~ 1.0 (极点)
+        float luma = dot(texColor, vec3(0.299, 0.587, 0.114));
         float isIceCap = smoothstep(0.80, 0.94, polarDist) * smoothstep(0.48, 0.70, luma);
 
         // 冰盖冷白提亮与微晶高光
-        vec3 iceColor = mix(texColor.rgb, vec3(0.96, 0.98, 1.02), 0.38);
-        vec3 surfaceColor = mix(texColor.rgb, iceColor, isIceCap);
+        vec3 iceColor = mix(texColor, vec3(0.96, 0.98, 1.02), 0.38);
+        vec3 surfaceColor = mix(texColor, iceColor, isIceCap);
 
         vec3 H = normalize(L + V);
         float iceGlint = pow(max(dot(N, H), 0.0), 24.0) * isIceCap * 0.35 * sunLit;
@@ -118,13 +133,7 @@ export function createMarsMaterial(marsTex: THREE.Texture | null, airColor = new
         vec3 ambientTerm = mix(deepSpaceAmbient, teachingAmbient, teachingLight);
 
         // 8. 综合最终色彩合成
-        vec3 finalColor = (litColor * dayFactor + blueTwilightGlow + dustRimColor)*marsSunVisibility + ambientTerm * (1.0 - dayFactor * 0.85);
+        return (litColor * dayFactor + blueTwilightGlow + dustRimColor)*marsSunVisibility + ambientTerm * (1.0 - dayFactor * 0.85);
 
-        gl_FragColor = vec4(finalColor, layerOpacity);
-        ${MARS_FOG_FRAGMENT}
-        #include <tonemapping_fragment>
-        #include <colorspace_fragment>
-      }
-    `,
-  });
 }
+`;
