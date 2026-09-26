@@ -21,7 +21,7 @@ export const BODIES: Record<string, CelestialBodyData> = {
     orbitSemiMajorAxisKm: 0,
     orbitPeriodDays: 0,
     colorHex: 0xffaa22,
-    observationTip: '太阳是太阳系的能量源泉，它的质量占了整个太阳系的 99.86%！',
+    observationTip: '太空中的太阳接近白色；这里压低了显示亮度，方便观察较暗的球缘与光球纹理。表面图案为视觉重建，并非实时太阳影像。',
     description: '太阳是一颗黄矮星（G2V），核心通过剧烈的核聚变将氢融合成氦，源源不断向太阳系辐射光与热。表面有米粒组织与太阳黑子。',
     funFact: '太阳肚子里可以装下大约 130 万个地球！',
     colorAssetId: 'sun-sss-2k',

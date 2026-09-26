@@ -1244,14 +1244,15 @@ export class SolarEngine {
     sunGroup.add(sunPoleFrame);
 
     const sunRadius = getNavDisplayRadius(sunData.radiusKm, sunData.type);
-    const sunGeo = new THREE.SphereGeometry(sunRadius, 48, 48);
-    const sunMat = new THREE.MeshBasicMaterial({ color: 0xffaa22 });
+    const sunGeo = new THREE.SphereGeometry(sunRadius, 128, 96);
+    const sunMat = createSunMaterial(null);
+    this.sunMaterial = sunMat;
     const sunMesh = new THREE.Mesh(sunGeo, sunMat);
     sunMesh.userData = { bodyId: 'sun' };
     sunPoleFrame.add(sunMesh);
     this.pickableMeshes.push(sunMesh);
 
-    // 太阳高能日冕辐射流（面向相机自适应公告板，超大尺度柔和指数衰减，彻底杜绝硬环切面）
+    // 太阳局部曝光辉光示意；仍由世界深度测试负责前景遮挡。
     const quadSize = sunRadius * 4.2;
     this.sunCoronaMaterial = createSunCoronaMaterial(sunRadius / (quadSize * 0.5));
     const coronaGeo = new THREE.PlaneGeometry(quadSize, quadSize);

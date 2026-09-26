@@ -179,7 +179,7 @@
         "visible-light-reconstructed"
       ],
       "provenanceClass": "observation-derived-visualization",
-      "coverageNotes": "太阳光球层表面视觉图，包含米粒组织与太阳黑子示意。",
+      "coverageNotes": "Solar System Scope太阳表面视觉重建图，用于低对比度大尺度调制；渲染器另加程序米粒组织与黑子示意。不是实时太阳观测，图案位置与显示色彩不作测量依据。",
       "processingHistory": [
         "Verified and stored by verify-assets pipeline at 2026-09-20T13:03:08.541Z"
       ],
