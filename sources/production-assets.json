@@ -179,7 +179,7 @@
         "visible-light-reconstructed"
       ],
       "provenanceClass": "observation-derived-visualization",
-      "coverageNotes": "Solar System Scope太阳表面视觉重建图，用于低对比度大尺度调制；渲染器另加程序米粒组织与黑子示意。不是实时太阳观测，图案位置与显示色彩不作测量依据。",
+      "coverageNotes": "Solar System Scope太阳表面视觉重建图；渲染器另加局部流动、程序米粒组织与黑子示意，以红黄增强色彩呈现。不是裸眼真彩或实时太阳观测，图案位置与显示色彩不作测量依据。",
       "processingHistory": [
         "Verified and stored by verify-assets pipeline at 2026-09-20T13:03:08.541Z"
       ],

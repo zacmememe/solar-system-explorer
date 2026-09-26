@@ -1,6 +1,6 @@
 /**
- * 太阳可见光外观近似：保留来源纹理的细节与边缘变暗；采用中性亮色。
- * 日冕为克制的展示光晕，不是校准辐射或光球对流模拟。
+ * 太阳色彩增强视图：金黄亮区、橙红暗部与缓慢活动纹理。
+ * 这是展示着色与局部流动示意，不是裸眼真彩、实时观测或流体模拟。
  */
 
 import * as THREE from 'three';
@@ -16,8 +16,8 @@ export function createSunMaterial(sunTexture: THREE.Texture | null): THREE.Shade
       sunTexture: { value: sunTexture },
       hasSurfaceMap: { value: sunTexture ? 1.0 : 0.0 },
       time: { value: 0.0 },
-      glowColor: { value: new THREE.Color(1.0, 0.72, 0.40) },
-      coreColor: { value: new THREE.Color(1.0, 0.93, 0.78) },
+      glowColor: { value: new THREE.Color(1.0, 0.105, 0.006) },
+      coreColor: { value: new THREE.Color(1.0, 0.68, 0.13) },
     },
     vertexShader: `
       varying vec2 vUv;
@@ -85,10 +85,16 @@ export function createSunMaterial(sunTexture: THREE.Texture | null): THREE.Shade
       }
 
       void main() {
-        // SSS is an illustrative surface map, not a measured white-light image.
-        // Use its luminance, not its orange display palette. The body already
-        // rotates in simulation time; do not scroll UVs a second time.
-        vec4 texColor = texture2D(sunTexture, vUv);
+        // Enhanced-colour activity view. Bounded, body-fixed local deformation
+        // avoids a second whole-body rotation; all motion uses simulation time.
+        // The rate is illustrative, not a measured solar convection speed.
+        vec3 direction = normalize(vSurfaceDirection);
+        float phase = time * 12.0;
+        vec2 flow = vec2(
+          granulation(direction*9.0 + vec3(phase,0.0,0.0)),
+          granulation(direction*13.0 + vec3(0.0,-phase*0.7,0.0))) - 0.5;
+        vec2 flowUv = vUv + flow * (0.016 * sin(vUv.y * PI));
+        vec4 texColor = texture2D(sunTexture, flowUv);
 
         // 视线夹角与边缘昏暗（Limb Darkening）
         vec3 viewDir = normalize(vViewPosition);
@@ -99,14 +105,14 @@ export function createSunMaterial(sunTexture: THREE.Texture | null): THREE.Shade
         // display coefficients are not a calibrated wavelength-dependent fit.
         float limbFactor = 0.30 + 0.70 * dotNV;
         float luminance = mix(0.45, dot(texColor.rgb, vec3(0.2126, 0.7152, 0.0722)), hasSurfaceMap);
-        vec3 direction = normalize(vSurfaceDirection);
         vec3 cells = direction * 420.0;
         float footprint = max(length(dFdx(cells)), length(dFdy(cells)));
         float grainWeight = 1.0 - smoothstep(0.65, 2.2, footprint);
         float grain = mix(1.0, 0.86 + 0.28 * granulation(cells), grainWeight);
-        // The SSS map's large bright swirls must not become white continents.
-        // Keep only gentle broad modulation under the fine photosphere texture.
-        float detail = (0.87 + 0.22 * luminance) * grain;
+        // Keep the hot/cool structure in a warm palette instead of flattening
+        // it into white. This is a display mapping, not a temperature scale.
+        float activity = smoothstep(0.10, 0.85, luminance);
+        float detail = (0.58 + 0.90 * activity) * grain;
         // Illustrative active-region groups; no claim about current positions,
         // sizes or activity. Unlike UV decals these remain smooth at the seam.
         float spots = spot(direction, vec3(0.93,0.22,-0.32), 0.029)
@@ -115,8 +121,8 @@ export function createSunMaterial(sunTexture: THREE.Texture | null): THREE.Shade
                     * spot(direction, vec3(0.70,-0.23,-0.66), 0.011)
                     * spot(direction, vec3(-0.70,0.30,0.64), 0.024)
                     * spot(direction, vec3(-0.74,0.31,0.59), 0.012);
-        vec3 tint = mix(glowColor, coreColor, smoothstep(0.0, 0.65, dotNV));
-        vec3 finalColor = tint * (1.12 * limbFactor * detail * spots);
+        vec3 tint = mix(glowColor, coreColor, 0.15 + 0.85 * activity);
+        vec3 finalColor = tint * (1.5 * limbFactor * detail * spots);
 
         gl_FragColor = vec4(finalColor, 1.0);
         #include <tonemapping_fragment>
@@ -133,8 +139,8 @@ export function createSunMaterial(sunTexture: THREE.Texture | null): THREE.Shade
 export function createSunCoronaMaterial(coreRadiusRatio: number = 0.45): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
-      coronaColor: { value: new THREE.Color(1.0, 0.78, 0.48) },
-      coreGlowColor: { value: new THREE.Color(1.0, 0.95, 0.83) },
+      coronaColor: { value: new THREE.Color(1.0, 0.09, 0.003) },
+      coreGlowColor: { value: new THREE.Color(1.0, 0.53, 0.06) },
       coreRadiusRatio: { value: coreRadiusRatio },
       time: { value: 0.0 },
     },
@@ -179,7 +185,7 @@ export function createSunCoronaMaterial(coreRadiusRatio: number = 0.45): THREE.S
         float d = max(dist - coreRadiusRatio, 0.0);
         // Concentrate the visual glow at the limb, with a faint broad tail.
         // This is an exposure cue, not a plasma-density calculation.
-        float corona = 0.82 * exp(-d * 32.0) + 0.18 * exp(-d * 8.0);
+        float corona = 0.72 * exp(-d * 22.0) + 0.28 * exp(-d * 7.0);
 
         // Subtle illustrative asymmetry; not observed magnetic structures.
         float angle = atan(centerOffset.y, centerOffset.x);
@@ -193,7 +199,7 @@ export function createSunCoronaMaterial(coreRadiusRatio: number = 0.45): THREE.S
         if (alpha < 0.002) discard;
 
         vec3 col = mix(coronaColor, coreGlowColor * 1.8, exp(-d * 22.0));
-        gl_FragColor = vec4(col, alpha * 0.32);
+        gl_FragColor = vec4(col, alpha * 0.50);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }

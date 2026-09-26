@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
 import {preview} from 'vite';
 import puppeteer from 'puppeteer-core';
-const out=process.env.EVIDENCE_DIR||'D:/solar-evidence/sun-appearance-14/final';
+const out=process.env.EVIDENCE_DIR||'D:/solar-evidence/sun-appearance-14/enhanced-final';
 await fs.mkdir(out,{recursive:true});
 const hash=b=>crypto.createHash('sha256').update(b).digest('hex');
 const report={indexSha256:hash(await fs.readFile('dist/index.html')),errors:[],expectedFaults:[],frames:[],visualAcceptance:'NOT_OBSERVED'};
@@ -31,7 +31,15 @@ try{
  report.defaultFrameIntervals=await page.evaluate(async()=>{const times=[];await new Promise(resolve=>{let prev;function tick(t){if(prev!==undefined)times.push(t-prev);prev=t;if(times.length<90)requestAnimationFrame(tick);else resolve();}requestAnimationFrame(tick);});const sorted=[...times].sort((a,b)=>a-b);return {medianMs:sorted[45],p95Ms:sorted[85],maxMs:sorted[89],sampleCount:times.length};});
  await page.evaluate(()=>{window.__sunNormalBookmark=window.__solarEngine.captureObservationSnapshot('sun normal UI diagnostic');});
  await page.mouse.move(960,490);await page.mouse.wheel({deltaY:-460});await delay(1300);await shot('02-sun-near');
- await page.mouse.down();await page.mouse.move(1180,550,{steps:25});await page.mouse.up();await delay(400);await shot('03-sun-drag');
+ // Normal UI resume/pause: the effect follows the existing simulation clock.
+ await page.click('[aria-label="继续模拟"]');const activityStart=await shot('02a-activity-start');
+ await delay(3500);const activityEnd=await shot('02b-activity-end');assert.ok(activityEnd.time>activityStart.time);
+ await page.click('[aria-label="暂停模拟"]');await delay(80);
+ const pausedTime=await page.evaluate(()=>window.__solarEngine.getSimTimeHours());await delay(300);
+ assert.equal(await page.evaluate(()=>window.__solarEngine.getSimTimeHours()),pausedTime);report.activityPauseResume='PASS';
+ const beforeDrag=await page.evaluate(()=>window.__solarEngine.getCameraSnapshot().spherical);
+ await page.mouse.move(960,490);await page.mouse.down();await page.mouse.move(1180,550,{steps:25});await page.mouse.up();await delay(400);const dragged=await shot('03-sun-drag');
+ assert.ok(Math.abs(dragged.snapshot.spherical.theta-beforeDrag.theta)+Math.abs(dragged.snapshot.spherical.phi-beforeDrag.phi)>.01,'normal UI drag must actually move the view');
  // Readable diagnostic: remove just the halo, preserving pose/time/exposure.
  await page.evaluate(()=>{window.__solarEngine.getBodyNode('sun').coronaMesh.visible=false;});await delay(80);await shot('diag-no-corona');
  await page.evaluate(()=>{window.__solarEngine.getBodyNode('sun').coronaMesh.visible=true;});

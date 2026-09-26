@@ -5,7 +5,7 @@ import path from 'node:path';
 import {build} from 'esbuild';
 import puppeteer from 'puppeteer-core';
 
-const out=process.env.EVIDENCE_DIR||'D:/solar-evidence/sun-appearance-14/gpu';
+const out=process.env.EVIDENCE_DIR||'D:/solar-evidence/sun-appearance-14/enhanced-gpu';
 await fs.mkdir(out,{recursive:true});
 const code=await build({stdin:{resolveDir:process.cwd(),sourcefile:'sun-gpu-fixture.ts',contents:`
 import * as THREE from 'three';
@@ -35,7 +35,9 @@ window.runSolarChecks=()=>{
   check('resolved limb remains darker than disk centre',lum(center)-lum(limb)>25,{center,limb});
   tex.image.data.set([64,64,64,255]);tex.needsUpdate=true;const dark=sample(draw(),256);
   tex.image.data.set([192,192,192,255]);tex.needsUpdate=true;const bright=sample(draw(),256);
-  check('broad source texture stays subtle rather than white continents',lum(bright)-lum(dark)>1&&lum(bright)-lum(dark)<15,{dark,bright});
+  // The user's revised direction is enhanced activity colour, not white light.
+  check('enhanced palette keeps hot and cool source regions distinct',lum(bright)-lum(dark)>35,{dark,bright});
+  check('enhanced solar colour remains warm rather than white',center[0]>center[1]&&center[1]>center[2]&&center[2]/center[0]<.8,{center});
   tex.image.data.set([128,128,128,255]);tex.needsUpdate=true;
   const surface=draw();
   const spotPixel=new THREE.Vector3(-.70,.30,.64).normalize().project(camera);
@@ -59,6 +61,13 @@ window.runSolarChecks=()=>{
   check('foreground blocks photosphere and glow across world slices',max<=1,{max,slices:slices.render(renderer,scene,camera)});
   foreground.visible=false;const frozen1=draw();const frozen2=draw();
   check('paused simulation produces identical pixels',frozen1.every((v,i)=>v===frozen2[i]),{});
+  // A real patterned texture lets us test local flow, independently of body
+  // rotation. On a constant texture the bounded UV deformation is invisible.
+  const patterned=new Uint8Array(64*32*4);for(let y=0;y<32;y++)for(let x=0;x<64;x++){const k=(y*64+x)*4,v=80+Math.round(120*(.5+.5*Math.sin(x*.71)*Math.cos(y*.53)));patterned.set([v,v,v,255],k);}
+  const flowTex=new THREE.DataTexture(patterned,64,32);flowTex.wrapS=THREE.RepeatWrapping;flowTex.magFilter=THREE.LinearFilter;flowTex.needsUpdate=true;material.uniforms.sunTexture.value=flowTex;
+  material.uniforms.time.value=0;const flow0=draw();material.uniforms.time.value=1;const flow1=draw();
+  let changed=0;for(let i=0;i<flow0.length;i+=4)if(Math.abs(flow1[i]-flow0[i])+Math.abs(flow1[i+1]-flow0[i+1])+Math.abs(flow1[i+2]-flow0[i+2])>3)changed++;
+  check('simulation time produces local activity without rotating the body',changed>300,{changedPixels:changed});
   check('WebGL error free',gl.getError()===gl.NO_ERROR,{});
   return {result:'PASS',checks:results};
  }catch(e){return {result:'FAIL',failure:String(e),checks:results};}
