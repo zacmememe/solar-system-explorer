@@ -2,6 +2,8 @@
 
 ## 1. 现在从哪里继续
 
+**追加交接：HUD时间15。** 用户要求倍率常驻、移除重复“位置”菜单，并明确选择SpaceX启发的白色数字仪表＋左右调速箭头，不接受下拉框。当前交付分支为`codex/hud-time-controls-15`，包含太阳14；下一任务从该分支的交付HEAD建分支，勿盲切旧main或太阳14。先读`docs/hud-time-15.md`和唯一queue。普通跨星倍率累加未复现；正常UI实测1000×、200×、暂停恢复与月面HOLD手动改速，并非修复了时钟引擎。F-STARTUP-RESPONSIVENESS-11仍为下一就绪任务。
+
 **追加交接：太阳修复14。** 用户要求Codex修复白球感，并明确选择红黄、缓慢翻涌、有辉光的增强活动视图。最终产品`127b0f408ee9767e66b8a2035f1b0396da6613a0`，在`codex/sun-appearance-14`（base为main的516a3aa）；f821b74是白光中间版。先读`docs/sun-appearance-14.md`和唯一queue；下文b98e909仍是历史主线基准。本地已多出本修复，下一任务从包含127b0f4的当前交付HEAD创建分支，不盲切旧main。F-STARTUP-RESPONSIVENESS-11仍是首任务。保留增强色彩、模拟时间驱动的局部流动和示意说明，不因“太阳本来是白色”擅自回退方向，不调全局曝光或关辉光深度测试。定向runner与证据见报告。
 
 用户明确将后续执行交给 zcode 内的 GLM-5.3 Flash；Codex 暂停常规重度开发。当前成果作为继续改进的质量基准，先理解其因果与验证方法，再做局部增量。
@@ -15,7 +17,7 @@
 
 开工读取顺序：`AGENTS.md`、唯一queue、`README.md`、本文、`docs/experience-foundations.md`；之后按任务读`docs/system-polish-10.md`或`docs/selected-vehicles-10.md`及相关源码。不必重读全部旧聊天和几十份历史方案。`docs/codex-resume.md`主要保留历史索引，本次分工以本文和queue为准。
 
-先`git status --short`、`git branch --show-current`、`git rev-parse HEAD`、`git log -5 --oneline`，再从当前main建立短任务分支，例如`codex/startup-responsiveness-11`。若当前main已多了别人提交，先核对范围，不reset回旧SHA。未跟踪的`.zcodeignore`、旧review/plan/prompt和diag脚本是保留文件，不删除、不覆盖、不顺手提交。queue被gitignore排除是有意设计，应直接读绝对路径；不要因文件搜索忽略它而另建看板。
+先`git status --short`、`git branch --show-current`、`git rev-parse HEAD`、`git log -5 --oneline`，再从包含太阳14和HUD15的当前交付HEAD建立短任务分支，例如`codex/startup-responsiveness-11`。若当前main已多了别人提交，先核对范围，不reset回旧SHA。未跟踪的`.zcodeignore`、旧review/plan/prompt和diag脚本是保留文件，不删除、不覆盖、不顺手提交。queue被gitignore排除是有意设计，应直接读绝对路径；不要因文件搜索忽略它而另建看板。
 
 ## 2. 先学会这四个修复案例
 
@@ -48,13 +50,13 @@
 
 ### F-STARTUP-RESPONSIVENESS-11：第一个就绪任务
 
-**目标：找出当前main启动最长任务的主因，只修有证据支持的一项，保持画面、数据和交互等价。** 初始允许范围是测量、定位及已批准语义内的局部性能修复；不要预先决定换引擎、重写加载框架、批量上Worker或降画质。
+**目标：找出当前交付候选启动最长任务的主因，只修有证据支持的一项，保持画面、数据和交互等价。** 初始允许范围是测量、定位及已批准语义内的局部性能修复；不要预先决定换引擎、重写加载框架、批量上Worker或降画质。
 
 历史值只是线索：系统10启动最长主线程任务6147→6255ms，尚未改善；首次Earth538→577ms、Mars874→901ms也未改善。只有静海首次准备2198→798ms明确改善。程序纹理、GPU初始化目前仍是待证实归因，不能直接当根因。
 
 执行步骤：
 
-1. 在新分支从当前main获取基线。用现有`scripts/verify-switch-performance-10.mjs`，每次指定新的`EVIDENCE_DIR`，勿覆盖10轮基线。该脚本自行创建/关闭生产preview；采样在业务脚本之前启动。
+1. 在新分支从当前交付HEAD获取基线。用现有`scripts/verify-switch-performance-10.mjs`，每次指定新的`EVIDENCE_DIR`，勿覆盖10轮基线。该脚本自行创建/关闭生产preview；采样在业务脚本之前启动。
 2. 加只读计时/Performance trace或精确临时标记，区分模块初始化、程序纹理、影像解码、网格准备、资源上传和着色器编译。最终代码移除无用调试日志。`longtask`只代表主线程区间，不能据此断言GPU耗时；必要时用已有Edge/CDP，不装新浏览器。
 3. 写出可推翻的归因与一个最小方案，说明输出等价及取消/重试/销毁路径。若在现有契约内，直接实现一个小提交；若需要改变相机、空间、时钟、资产准入或全局生命周期语义，留下两页以内问题包，转就绪支持任务，不能强行扩架构。
 4. 同机器/浏览器/分辨率/缓存条件，前后至少三次有效配对，GPU负载串行。每轮新HTTP profile仍不等于清空OS/驱动缓存；报告注明。不得一边跑多浏览器一边报帧率。
