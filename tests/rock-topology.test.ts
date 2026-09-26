@@ -30,7 +30,11 @@ for(const coherent of [false,true]) for(let variant=0;variant<3;variant++) it(`r
   for(let i=0;i<p.count;i++) {
     const k=key(new THREE.Vector3().fromBufferAttribute(p,i));
     const n=new THREE.Vector3().fromBufferAttribute(g.getAttribute('normal'),i);
-    if(normals.has(k)) expect(n.distanceTo(normals.get(k)!)).toBeLessThan(1e-6);
+    if(!coherent&&normals.has(k)) expect(n.distanceTo(normals.get(k)!)).toBeLessThan(1e-6);
+    expect(n.length()).toBeCloseTo(1,6);
+    const a=Math.floor(i/3)*3,pa=new THREE.Vector3().fromBufferAttribute(p,a);
+    const face=new THREE.Vector3().fromBufferAttribute(p,a+1).sub(pa).cross(new THREE.Vector3().fromBufferAttribute(p,a+2).sub(pa)).normalize();
+    if(coherent)expect(n.dot(face)).toBeGreaterThan(.75); // Mars creases may split normals without turning against the face.
     normals.set(k,n);
   }
   g.dispose();

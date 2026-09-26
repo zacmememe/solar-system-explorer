@@ -2,7 +2,7 @@ import {describe,it,expect} from 'vitest';
 import * as THREE from 'three';
 import {readFileSync} from 'node:fs';
 import {refineTerrainGrid} from '../src/surface/LocalTerrainRefinement';
-import {sampleRenderedTerrain} from '../src/surface/RenderedTerrain';
+import {sampleRenderedTerrain,sampleRenderedTerrainSurface} from '../src/surface/RenderedTerrain';
 import {JezeroTerrainSource} from '../src/surface/JezeroTerrainSource';
 import {LANDING_SITES} from '../src/contracts/landing';
 
@@ -47,6 +47,11 @@ describe('single-surface local source refinement',()=>{
    const sample=sampleRenderedTerrain(geo,y,x);expect(sample).not.toBeNull();
    ray.set(new THREE.Vector3(x,20,y),new THREE.Vector3(0,-1,0));const hit=ray.intersectObject(mesh)[0];
    expect(hit).toBeDefined();expect(sample!.distanceTo(hit.point)).toBeLessThan(1e-5);
+   const contact=sampleRenderedTerrainSurface(geo,y,x)!;
+   const p=geo.getAttribute('position'),face=hit.face!;
+   const bary=THREE.Triangle.getBarycoord(hit.point,...[face.a,face.b,face.c].map(k=>new THREE.Vector3().fromBufferAttribute(p,k)) as [THREE.Vector3,THREE.Vector3,THREE.Vector3],new THREE.Vector3())!;
+   // On a shared edge either adjacent triangle is a legitimate contact face.
+   if(Math.min(bary.x,bary.y,bary.z)>1e-5)expect(Math.abs(contact.normal.dot(face.normal))).toBeCloseTo(1,6);
   }
   expect(sampleRenderedTerrain(geo,0,-.01)).toBeNull();
  });

@@ -11,7 +11,7 @@
  */
 import * as THREE from 'three';
 
-export {sampleRenderedTerrain,renderedTerrainBounds} from './RenderedTerrain';
+export {sampleRenderedTerrain,sampleRenderedTerrainSurface,renderedTerrainBounds} from './RenderedTerrain';
 
 export interface RockPlacement {
   latDeg: number;
@@ -35,11 +35,13 @@ export function composeLocalRockMatrix(
   metricScale: number,
   origin: THREE.Vector3,
   target = new THREE.Matrix4(),
+  groundNormal?: THREE.Vector3,
 ): THREE.Matrix4 {
   const up = new THREE.Vector3(0, 1, 0);
+  const contactUp = (groundNormal ?? groundPosition).clone().normalize();
   const position = groundPosition.clone();
-  position.setLength(position.length() + 0.25 * placement.scaleM[1] * metricScale);
-  const rotation = new THREE.Quaternion().setFromUnitVectors(up, position.clone().normalize())
+  position.addScaledVector(contactUp, 0.25 * placement.scaleM[1] * metricScale);
+  const rotation = new THREE.Quaternion().setFromUnitVectors(up, contactUp)
     .multiply(new THREE.Quaternion().setFromAxisAngle(up, placement.rotYRad));
   return target.compose(position.sub(origin), rotation, new THREE.Vector3(...placement.scaleM).multiplyScalar(metricScale));
 }
@@ -101,12 +103,12 @@ export function generateRockPlacements(opts: RockFieldOptions): RockPlacement[] 
     const lon = opts.siteLon + dLon;
     const h = opts.sampleHeight(lat, lon);
     if (!h) continue; // DTM 窗外 fail-closed
-    // 坡度过滤（4m 基线双向差分）
+    // 2m east/north forward differences; combine both components of the gradient.
     const d2 = 2;
     const hx = opts.sampleHeight(lat, lon + d2 / (M_PER_DEG_LAT * Math.cos((opts.siteLat * Math.PI) / 180)));
     const hy = opts.sampleHeight(lat + d2 / M_PER_DEG_LAT, lon);
     if (!hx || !hy) continue;
-    const slope = Math.atan(Math.max(Math.abs(hx.heightM - h.heightM), Math.abs(hy.heightM - h.heightM)) / d2);
+    const slope = Math.atan(Math.hypot(hx.heightM - h.heightM, hy.heightM - h.heightM) / d2);
     const slopeDeg = (slope * 180) / Math.PI;
     if (slopeDeg > opts.maxSlopeDeg) continue;
     // S3b 坡度偏好：接受概率随局部坡度上升（崩积裙富集），平坦基线 30%
@@ -150,29 +152,38 @@ export function buildRockGeometry(seed: number, variant: number, coherentFacets 
       jitter = coherentFacets ? 0.94 + 0.07 * Math.sin(x*3.1 + variant) * Math.cos(z*2.7-y*1.9) + 0.04 * (rng()-0.5) : 0.72 + rng()*0.56;
       offsets.set(key,jitter);
     }
-    pos.setXYZ(
-      i,
-      pos.getX(i) * jitter,
-      pos.getY(i) * jitter * 0.72,
-      pos.getZ(i) * jitter
-    );
+    const point=new THREE.Vector3(pos.getX(i),pos.getY(i),pos.getZ(i)).multiplyScalar(jitter);
+    if(coherentFacets) {
+      // Illustrative broken blocks, slabs and wedges. Shared clipping planes make
+      // broad fracture faces rather than unrelated triangle-sized facets.
+      point.set(...point.toArray().map(v=>Math.sign(v)*Math.pow(Math.abs(v),variant===2?1:.78)) as [number,number,number]);
+      const planes=variant===0?[[.18,1,.12,.48],[.75,.1,.65,.76],[0,-1,0,.62]]:
+        variant===1?[[-.17,1,.18,.36],[0,-1,0,.44],[1,.08,0,.85],[-1,0,.1,.88]]:
+        [[-.4,1,.28,.6],[0,-1,0,.57],[1,.2,.15,.77]];
+      let limit=1;
+      for(const [x,y,z,d] of planes){const dot=point.x*x+point.y*y+point.z*z;if(dot>d)limit=Math.min(limit,d/dot);}
+      point.multiplyScalar(limit);
+    }
+    pos.setXYZ(i,point.x,point.y*.72,point.z);
   }
   g.computeVertexNormals();
   // Share shading across coincident corners too. The unindexed mesh otherwise
   // gives each triangle a separate flat highlight, resembling paper facets.
   const normals = g.getAttribute('normal');
-  const sums = new Map<string, THREE.Vector3>();
+  const groups = new Map<string, THREE.Vector3[]>();
   const keys: string[] = [];
   for (let i = 0; i < pos.count; i++) {
     const key = [pos.getX(i),pos.getY(i),pos.getZ(i)].map(n=>Math.round(n*1e6)).join(',');
     keys.push(key);
-    const sum = sums.get(key) ?? new THREE.Vector3();
-    sum.add(new THREE.Vector3().fromBufferAttribute(normals,i));
-    sums.set(key,sum);
+    const group = groups.get(key) ?? [];
+    group.push(new THREE.Vector3().fromBufferAttribute(normals,i));
+    groups.set(key,group);
   }
-  for (const sum of sums.values()) sum.normalize();
+  const faceNormals=normals.clone();
   for (let i = 0; i < pos.count; i++) {
-    const n = sums.get(keys[i])!;
+    const face=new THREE.Vector3().fromBufferAttribute(faceNormals,i),n=new THREE.Vector3();
+    for(const neighbour of groups.get(keys[i])!)if(!coherentFacets||face.dot(neighbour)>Math.cos(38*Math.PI/180))n.add(neighbour);
+    n.normalize();
     normals.setXYZ(i,n.x,n.y,n.z);
   }
   return g;

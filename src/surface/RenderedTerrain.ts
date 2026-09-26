@@ -3,6 +3,11 @@ import type {LocalRefinement} from './LocalTerrainRefinement';
 
 /** Sample uploaded triangle positions; scientific source DEM sampling remains independent. */
 export function sampleRenderedTerrain(geometry:THREE.BufferGeometry,lat:number,lon:number):THREE.Vector3|null {
+  return sampleRenderedTerrainSurface(geometry,lat,lon)?.position ?? null;
+}
+
+/** Uploaded triangle contact, including its geometric (not smoothed lighting) normal. */
+export function sampleRenderedTerrainSurface(geometry:THREE.BufferGeometry,lat:number,lon:number):{position:THREE.Vector3;normal:THREE.Vector3}|null {
   const grid=geometry.userData.surfaceGrid;
   if(!grid)return null;
   let x=(lon-grid.lon0)/grid.dLon,y=(lat-grid.lat0)/grid.dLat;
@@ -10,8 +15,13 @@ export function sampleRenderedTerrain(geometry:THREE.BufferGeometry,lat:number,l
   if(!Number.isFinite(x)||!Number.isFinite(y)||x < -eps||y < -eps||x>grid.cols-1+eps||y>grid.rows-1+eps)return null;
   x=Math.max(0,Math.min(grid.cols-1,x));y=Math.max(0,Math.min(grid.rows-1,y));
   const p=geometry.getAttribute('position');
-  const mix=(a:number,b:number,c:number,u:number,v:number)=>new THREE.Vector3().fromBufferAttribute(p,a).multiplyScalar(1-u-v)
-    .addScaledVector(new THREE.Vector3().fromBufferAttribute(p,b),u).addScaledVector(new THREE.Vector3().fromBufferAttribute(p,c),v);
+  const mix=(a:number,b:number,c:number,u:number,v:number)=>{
+    const pa=new THREE.Vector3().fromBufferAttribute(p,a),pb=new THREE.Vector3().fromBufferAttribute(p,b),pc=new THREE.Vector3().fromBufferAttribute(p,c);
+    const position=pa.clone().multiplyScalar(1-u-v).addScaledVector(pb,u).addScaledVector(pc,v);
+    const normal=pb.sub(pa).cross(pc.sub(pa)).normalize();
+    if(normal.dot(position)<0)normal.negate();
+    return {position,normal};
+  };
   function sampleGrid(x:number,y:number,cols:number,rows:number,offset=0){
     const col=Math.min(cols-2,Math.max(0,Math.floor(x))),row=Math.min(rows-2,Math.max(0,Math.floor(y)));
     const u=x-col,v=y-row,a=offset+row*cols+col;

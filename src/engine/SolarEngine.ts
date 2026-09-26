@@ -95,6 +95,7 @@ import {
   buildRockGeometry,
   composeLocalRockMatrix,
   sampleRenderedTerrain,
+  sampleRenderedTerrainSurface,
   rockScenePosition,
 } from '../surface/ProceduralRockField';
 import { focalPixelsPx, projectedTexelPx, terrainRevealOpacity } from '../world-support/screenSpaceMetrics';
@@ -786,17 +787,22 @@ export class SolarEngine {
         installRockSurface(rockMat,rockMetricScale);
         const rockOrigin = sampleRenderedTerrain(geo, site.centerLat, site.centerLon)
           ?? rockScenePosition(site.centerLat, site.centerLon, sample(site.centerLat, site.centerLon)?.heightM ?? 0, satRadius, dtm.datumRadius);
-        const byVariant: typeof placements[] = [[], [], []];
-        for (const p of placements) byVariant[p.variant].push(p);
+        // Source DEM slope and a decimated display triangle can differ. Stones
+        // must also rest on an admissible displayed slope, not stand on cliffs.
+        const grounded = placements.flatMap(placement => {
+          const contact=sampleRenderedTerrainSurface(geo,placement.latDeg,placement.lonDeg);
+          if(!contact || contact.normal.dot(contact.position.clone().normalize())<Math.cos(19*Math.PI/180))return [];
+          return [{placement,contact}];
+        });
+        const byVariant: typeof grounded[] = [[], [], []];
+        for (const p of grounded) byVariant[p.placement.variant].push(p);
         byVariant.forEach((list, v) => {
           if (!list.length) return;
           const inst = new THREE.InstancedMesh(buildRockGeometry(20260924, v, true), rockMat, list.length);
           inst.position.copy(rockOrigin);
           const m = new THREE.Matrix4();
-          list.forEach((p, i) => {
-            const pos = sampleRenderedTerrain(geo,p.latDeg,p.lonDeg)
-              ?? rockScenePosition(p.latDeg,p.lonDeg,p.heightM,satRadius,dtm.datumRadius);
-            composeLocalRockMatrix(pos, p, rockMetricScale, rockOrigin, m);
+          list.forEach(({placement:p,contact}, i) => {
+            composeLocalRockMatrix(contact.position, p, rockMetricScale, rockOrigin, m, contact.normal);
             inst.setMatrixAt(i, m);
             // Deterministic, subdued regolith variation; these are illustrative rocks.
             inst.setColorAt(i, new THREE.Color().setScalar(0.78 + 0.22 * ((i * 0.61803398875) % 1)));

@@ -7,6 +7,12 @@ import { generateRockPlacements, buildRockGeometry, rockScenePosition } from '..
 const FLAT_SAMPLER = () => ({ heightM: -2641 });
 
 describe('S3a：程序碎石场（示意层，非实测位置）', () => {
+  it('rejects diagonal slopes whose combined gradient exceeds the limit',()=>{
+    const mpd=3396000*Math.PI/180,k=Math.tan(18*Math.PI/180);
+    const opts={siteLat:0,siteLon:0,radiusM:100,count:30,clearZoneM:3,maxSlopeDeg:19,sizeMaxM:1,slopeWeight:0,seed:7,datumRadiusM:3396000};
+    expect(generateRockPlacements({...opts,sampleHeight:(lat,lon)=>({heightM:(lat+lon)*mpd*k})})).toHaveLength(0);
+    expect(generateRockPlacements({...opts,sampleHeight:(_lat,lon)=>({heightM:lon*mpd*k})}).length).toBeGreaterThan(0);
+  });
   it('确定性：同种子逐位一致，不同种子不同', () => {
     const a = generateRockPlacements({
       siteLat: 20.2108, siteLon: 30.7997, radiusM: 1200, count: 60, clearZoneM: 20,
