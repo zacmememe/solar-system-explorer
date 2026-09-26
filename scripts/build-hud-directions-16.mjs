@@ -1,0 +1,10 @@
+import {readFile,writeFile,mkdir} from 'node:fs/promises';
+import path from 'node:path';
+const out=process.env.EVIDENCE_DIR||'D:/solar-evidence/hud-directions-16';
+const image=async(p,mime)=>`data:${mime};base64,${(await readFile(p)).toString('base64')}`;
+const backgrounds={};
+for(const p of ['orbit','descent','ground'])backgrounds[p]=await image(`D:/solar-evidence/hud-directions/backgrounds/${p}.jpg`,'image/jpeg');
+const refs={old:await image('D:/Temp/User/codex-clipboard-0a43a021-a8e8-478b-bf7b-178c5d4c4325.png','image/png'),recent:await image('D:/solar-evidence/hud-time-15/instrument-final/moon-1920.png','image/png')};
+const html=(await readFile('docs/design/hud-directions-16/index.template.html','utf8')).replace('__BACKGROUNDS__',JSON.stringify(backgrounds)).replace('__REFERENCES__',JSON.stringify(refs));
+await mkdir(out,{recursive:true});await writeFile(path.join(out,'HUD三方向比较.html'),html);
+console.log(path.join(out,'HUD三方向比较.html'));
