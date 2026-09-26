@@ -129,9 +129,17 @@ export function MissionHUD(props: MissionHUDProps) {
   useEffect(() => {
     const el=root.current;
     if(!el)return;
-    const observer=new ResizeObserver(()=>el.style.setProperty('--hud-height',el.offsetHeight+'px'));
-    observer.observe(el);return ()=>observer.disconnect();
-  }, []);
+    const navigation=[...document.querySelectorAll<HTMLElement>('.app-top-container, .app-satellite-bar')];
+    const measure=()=>{
+      el.style.setProperty('--hud-height',el.offsetHeight+'px');
+      const navBottom=Math.max(0,...navigation.map(n=>n.getBoundingClientRect().bottom));
+      el.style.setProperty('--hud-top-clearance',`${navBottom+12}px`);
+    };
+    const observer=new ResizeObserver(measure);
+    observer.observe(el);navigation.forEach(n=>observer.observe(n));measure();
+    window.addEventListener('resize',measure);
+    return ()=>{observer.disconnect();window.removeEventListener('resize',measure);};
+  }, [body.id]);
 
   const toggle = (label: string, pressed: boolean, action: () => void) =>
     <button key={label} className="hud-setting" aria-pressed={pressed} onClick={action} disabled={!ready}>

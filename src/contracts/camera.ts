@@ -56,6 +56,7 @@ export type CameraCommand =
   | { type: 'setLookTarget'; lookTarget: CameraLookTarget }
   | {
       type: 'restoreBookmark';
+      destinationMode?: 'OVERVIEW' | 'ORBIT_TARGET';
       targetBodyId: BodyId;
       spherical: { radius: number; phi: number; theta: number };
       durationSec?: number;

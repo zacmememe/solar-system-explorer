@@ -29,6 +29,17 @@ describe('phase-aware observer instruments',()=>{
   expect(f.landing.telemetry.altitudeAGLM).toBe(50000);
   expect(hudPhase(f)).toBe('preparing');expect(observedAltitude(f)).toBeNull();
  });
+ it('bookmark arrival preserves explicit overview intent, including the stored framing',()=>{
+  const camera=new THREE.PerspectiveCamera(45,1.6,.1,10000);camera.position.set(0,30,100);
+  const c=new CameraController({camera}),spherical={radius:600,phi:1,theta:.4};
+  for(const destinationMode of ['OVERVIEW',undefined] as const){
+   c.executeCommand({type:'restoreBookmark',targetBodyId:'sun',spherical,destinationMode,durationSec:1});
+   c.update(2,()=>({pos:new THREE.Vector3(),radius:1}));
+   expect(c.getSnapshot().mode).toBe(destinationMode??'ORBIT_TARGET');
+   expect(c.getSnapshot().spherical.radius).toBeCloseTo(spherical.radius);
+   expect(c.getSnapshot().spherical.phi).toBeCloseTo(spherical.phi);
+  }
+ });
  it('landing phases override incidental camera reframing, independent of astronomical pause',()=>{
   for(const state of ['DESCENDING','HOLD','SURFACE_LOOK','ASCENDING'] as const){
    const f=frame();f.landing=mission();f.landing.telemetry.state=state;f.camera.isTransitioning=true;

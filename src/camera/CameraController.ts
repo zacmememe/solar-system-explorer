@@ -184,7 +184,7 @@ export class CameraController {
     const token = ++this.currentCommandId;
     const startsFlight=['flyTo','overview','restoreBookmark','focusRegion'].includes(command.type);
     if(startsFlight) {
-      this.transitionDestinationMode = command.type === 'overview' ? 'OVERVIEW' : 'ORBIT_TARGET';
+      this.transitionDestinationMode = command.type === 'overview' || (command.type === 'restoreBookmark' && command.destinationMode === 'OVERVIEW') ? 'OVERVIEW' : 'ORBIT_TARGET';
       // Every entry (including surface -> overview/bookmark) starts at the pose
       // actually displayed, not the last orbit's stale spherical coordinates.
       this.spherical.setFromVector3(this.camera.position.clone().sub(this.targetPosition));

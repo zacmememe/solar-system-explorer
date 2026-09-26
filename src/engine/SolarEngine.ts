@@ -4206,6 +4206,7 @@ export class SolarEngine {
       quality: 'analytic-approximation',
       sourceVersion: '2026.09-P2-DTM', // P2 起站点高程来自真实 NAC DTM
       simulation: {isPaused:this.isPaused,timeScale:this.timeScale},
+      cameraMode: camSnap.mode==='OVERVIEW' ? 'OVERVIEW' : 'ORBIT_TARGET',
       viewCameraMode: this.viewCameraMode,
       vehicleId: this.currentVehicleId,
       layers: {
@@ -4271,7 +4272,7 @@ export class SolarEngine {
       this.setTimeScale(bm.simulation.timeScale);
     }
     if (!station) {
-      this.cameraController.executeCommand({type:'restoreBookmark',targetBodyId:target,spherical:bm.spherical,lookTarget:bm.lookTarget,durationSec:this.reduceMotion?0.15:1.2});
+      this.cameraController.executeCommand({type:'restoreBookmark',targetBodyId:target,spherical:bm.spherical,lookTarget:bm.lookTarget,destinationMode:bm.cameraMode,durationSec:this.reduceMotion?0.15:1.2});
       this.updateEphemerisPoses(0);
     }
     this.setVehicle(bm.vehicleId ?? null);

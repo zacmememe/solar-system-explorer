@@ -21,6 +21,16 @@ function pendingEngine(error: string|null = null) {
     getLandingSiteChoices:()=>[LANDING_SITES['hadley-rille']]});
   return {engine,command};
 }
+it('overview intent survives V3 serialization without reinterpreting old Sun saves',()=>{
+  const old={...PRESET_BOOKMARKS_V3[0],targetBodyId:'sun' as const};
+  expect(upgradeBookmarkToV3(old).cameraMode).toBeUndefined();
+  const overview={...old,cameraMode:'OVERVIEW' as const};
+  expect(isValidBookmarkAnyVersion(overview)).toBe(true);
+  expect(upgradeBookmarkToV3(JSON.parse(JSON.stringify(overview))).cameraMode).toBe('OVERVIEW');
+  expect(isValidBookmarkAnyVersion({...overview,cameraMode:'TRANSITION'})).toBe(false);
+  expect(isValidBookmarkAnyVersion({...overview,targetBodyId:'mars'})).toBe(false);
+  expect(isValidBookmarkAnyVersion({...overview,presentationPolicy:'PHYSICAL_OBSERVATION'})).toBe(false);
+});
 it('failed terrain restores leave the existing camera untouched',async()=>{
   const {engine,command}=pendingEngine('offline');
   await expect(engine.restoreObservationSnapshot(surfaceBookmark)).rejects.toThrow('已保留当前视角');

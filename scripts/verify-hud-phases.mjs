@@ -18,6 +18,13 @@ async function shot(name){const state=await snapshot();await page.screenshot({pa
 async function phase(value){await page.waitForFunction(value=>document.querySelector('[data-testid="mission-hud"]')?.dataset.phase===value,{timeout:60000},value);}
 async function travel(id,moon=false){await click('[data-testid="'+(moon?'moon':'planet')+'-btn-'+id+'"]');await page.waitForFunction(id=>{const c=window.__solarEngine.getCameraSnapshot();return c.targetBodyId===id&&!c.isTransitioning;},{timeout:60000},id);await delay(300);}
 async function drag(dx,dy=0){const v=page.viewport(),x=v.width*.40,y=v.height*.42;await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+dx,y+dy,{steps:12});await page.mouse.up();await delay(250);}
+async function saveOverview(){
+ await click('[data-testid="toolbar-bookmark-btn"]');await click('[data-testid="bookmark-tab-custom"]');
+ const before=await page.$$eval('[data-testid^="bookmark-fly-"]',els=>els.map(e=>e.getAttribute('data-testid')));
+ await click('[data-testid="bookmark-btn-add"]');await page.click('[data-testid="bookmark-save-title-input"]',{clickCount:3});await page.type('[data-testid="bookmark-save-title-input"]','QA HUD overview');await click('[data-testid="bookmark-save-submit-btn"]');
+ const ids=await page.$$eval('[data-testid^="bookmark-fly-"]',els=>els.map(e=>e.getAttribute('data-testid'))),id=ids.find(id=>!before.includes(id));
+ check('overview bookmark saved by UI',!!id);await click('[data-testid="bookmark-modal-close-btn"]');return id;
+}
 async function layout(name){
  const info=await page.evaluate(()=>{
    const el=document.querySelector('[data-testid="mission-hud"]'),r=el.getBoundingClientRect();
@@ -38,9 +45,9 @@ async function popupLayout(name){
    const hit=document.elementFromPoint(c.x+c.width/2,c.y+c.height/2);
    return {top:r.top,bottom:r.bottom,navBottom:nav?.bottom??0,viewportHeight:innerHeight,closeReachable:hit===close||close.contains(hit)};
  });
+ report.checks.push({label:name+' popup metrics',pass:true,info});
  check(name+' details clear navigation by 8px',info.top>=info.navBottom+8);
  check(name+' details close reachable within viewport',info.top>=0&&info.bottom<=info.viewportHeight&&info.closeReachable);
- report.checks.push({label:name+' popup metrics',pass:true,info});
 }
 try{
  await page.goto(process.env.TEST_URL||'http://127.0.0.1:5204',{waitUntil:'domcontentloaded'});
@@ -52,6 +59,10 @@ try{
  check('overview transition labelled as overview',(await page.$eval('[data-testid="hud-transfer"]',e=>e.textContent)).includes('太阳系全景'));
  await shot('02-overview-transfer');await phase('overview');await shot('03-overview');
  check('overview has no stale planet radius',!(await page.$('.hud-radius')));
+ const overviewPose=(await snapshot()).camera.spherical,bookmarkId=await saveOverview();
+ await travel('sun');await phase('observe');check('Sun observation has body radius',!!(await page.$('.hud-radius')));
+ await click('[data-testid="toolbar-bookmark-btn"]');await click('[data-testid="bookmark-tab-custom"]');await click('[data-testid="'+bookmarkId+'"]');await phase('overview');
+ const restored=(await snapshot()).camera.spherical;check('overview bookmark restores framing and phase',Object.keys(overviewPose).every(k=>Math.abs(overviewPose[k]-restored[k])<1e-5)&&!(await page.$('.hud-radius')));await shot('03b-overview-restored');
  await click('[data-testid="planet-btn-saturn"]');await phase('transfer');await shot('04-transfer');await click('[data-testid="hud-cancel-transfer"]');await phase('free');await shot('05-cancelled');
  const id=process.env.SITE_ID||'jezero',moon=['tranquility-base','taurus-littrow','hadley-rille'].includes(id);
  if(moon){await travel('earth');await travel('moon',true);}else await travel('mars');

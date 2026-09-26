@@ -107,6 +107,8 @@ export interface BookmarkItemV3 {
   sourceVersion?: string;
   /** Optional V3 extension. Old bookmarks preserve the current playback controls. */
   simulation?: { isPaused: boolean; timeScale: number };
+  /** Optional V3 framing intent. Missing on older saves; never infer overview from the Sun alone. */
+  cameraMode?: 'OVERVIEW' | 'ORBIT_TARGET';
   viewCameraMode: ViewCameraMode;
   vehicleId: VehicleId | null;
   layers: BookmarkLayers;

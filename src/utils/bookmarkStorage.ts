@@ -314,6 +314,8 @@ export function importBookmarksJson(jsonStr: string): {
  */
 export function isValidBookmarkAnyVersion(obj: any): boolean {
   if (obj?.simulation !== undefined && (!obj.simulation || typeof obj.simulation.isPaused !== 'boolean' || !Number.isFinite(obj.simulation.timeScale) || obj.simulation.timeScale < 0)) return false;
+  if (obj?.cameraMode !== undefined && obj.cameraMode !== 'OVERVIEW' && obj.cameraMode !== 'ORBIT_TARGET') return false;
+  if (obj?.cameraMode === 'OVERVIEW' && (obj.targetBodyId !== 'sun' || obj.presentationPolicy !== 'NAV_SCHEMATIC' || obj.surfaceStation)) return false;
   if (!obj || typeof obj !== 'object') return false;
   if (typeof obj.id !== 'string' || !obj.id) return false;
   if (obj.schemaVersion !== 1 && obj.schemaVersion !== 2 && obj.schemaVersion !== 3) return false;

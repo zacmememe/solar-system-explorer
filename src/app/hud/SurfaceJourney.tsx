@@ -102,10 +102,11 @@ export function SurfaceActions({frame,engine}: {frame: HudFrame;engine: SolarEng
 export function SurfaceLocation({frame}: {frame: HudFrame}) {
   const telemetry=frame.landing?.telemetry, pose=frame.surface;
   const site=telemetry?.state!=='ORBIT'?telemetry?.site:undefined;
+  const phase=hudPhase(frame), enroute=phase==='preparing'||phase==='descending'||phase==='hold';
   return <>
-    <div className="hud-eyebrow">{BODIES[pose?.bodyId??site?.bodyId??'moon'].name} · {hudPhase(frame)==='preparing'?'目标地点':'当地观察'}</div>
+    <div className="hud-eyebrow">{BODIES[pose?.bodyId??site?.bodyId??'moon'].name} · {enroute?'目标落区':phase==='ascending'?'离开落区':'当地观察'}</div>
     <div className="hud-site-name">{site?.name.split(' · ')[0] ?? '地表观察点'}</div>
-    <div className="hud-local-coordinates" data-testid="telemetry-coord-value">{pose?formatCoordinates(pose.lat,pose.lon):'准备完成后显示位置'}</div>
+    <div className="hud-local-coordinates" data-testid="telemetry-coord-value">{pose?<>{enroute||phase==='ascending'?'当前位置 ':''}{formatCoordinates(pose.lat,pose.lon)}</>:'准备完成后显示位置'}</div>
   </>;
 }
 
