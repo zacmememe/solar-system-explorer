@@ -1,0 +1,131 @@
+{
+  "sourceRevision": "11ebb4ee043715aefbba6aeec8a61746fad67fa7",
+  "base": "b59aa60849dcf6779857b535051db24727dd927f",
+  "license": "NASA Media Usage Guidelines",
+  "licenseUrl": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+  "assets": [
+    {
+      "id": "shuttle-d",
+      "name": "航天飞机 D",
+      "url": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/11ebb4ee043715aefbba6aeec8a61746fad67fa7/3D%20Models/Space%20Shuttle%20(D)/Space%20Shuttle%20(D).glb",
+      "bytes": 2471932,
+      "sha256": "d0015681ff092d36062fdfed78e2bd1ca0f86e90862840d25bae11c686ce3549",
+      "meshes": 1,
+      "materials": 42,
+      "images": 22,
+      "extensions": [
+        "KHR_draco_mesh_compression",
+        "KHR_materials_specular",
+        "EXT_texture_webp"
+      ]
+    },
+    {
+      "id": "apollo-lm",
+      "name": "阿波罗登月舱",
+      "url": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/11ebb4ee043715aefbba6aeec8a61746fad67fa7/3D%20Models/Apollo%20Lunar%20Module/Apollo%20Lunar%20Module.glb",
+      "bytes": 716840,
+      "sha256": "379101dfcee399267addf771709107c35e826b0b9e5233272f123e4c8a585c4e",
+      "meshes": 134,
+      "materials": 12,
+      "images": 6,
+      "extensions": [
+        "KHR_draco_mesh_compression",
+        "KHR_materials_specular",
+        "EXT_texture_webp"
+      ]
+    },
+    {
+      "id": "voyager",
+      "name": "旅行者",
+      "url": "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/v/Voyager.glb",
+      "bytes": 3128204,
+      "sha256": "5338241f2e89e9cfe3ebb82f519b4cad64c97e66883cccba6fdda98667aec731",
+      "meshes": 4,
+      "materials": 5,
+      "images": 4,
+      "extensions": []
+    },
+    {
+      "id": "cassini",
+      "name": "卡西尼",
+      "url": "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/c/Cassini.glb",
+      "bytes": 5852640,
+      "sha256": "cacdca3279b28e64280ff8e823f572311f67a83bde2d0435b26f515a1b7926be",
+      "meshes": 12,
+      "materials": 10,
+      "images": 7,
+      "extensions": []
+    },
+    {
+      "id": "juno",
+      "name": "朱诺",
+      "url": "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/j/Juno.glb",
+      "bytes": 9185648,
+      "sha256": "d467c3164806aebfdf72c61a29e12851895d91a20cbb64b9653abb421f3193eb",
+      "meshes": 14,
+      "materials": 14,
+      "images": 11,
+      "extensions": []
+    },
+    {
+      "id": "shuttle-d-door-prt",
+      "name": "Space Shuttle (D) door-prt",
+      "url": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/11ebb4ee043715aefbba6aeec8a61746fad67fa7/3D%20Models/Space%20Shuttle%20(D)/Space%20Shuttle%20(D)%20door-prt.glb",
+      "bytes": 36044,
+      "sha256": "cd8e84f3b108137f573ef260b5be8c35816fbb89e273b4648b20e35aee1ed419",
+      "meshes": 1,
+      "materials": 5,
+      "images": 2
+    },
+    {
+      "id": "shuttle-d-door-stb",
+      "name": "Space Shuttle (D) door-stb",
+      "url": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/11ebb4ee043715aefbba6aeec8a61746fad67fa7/3D%20Models/Space%20Shuttle%20(D)/Space%20Shuttle%20(D)%20door-stb.glb",
+      "bytes": 36024,
+      "sha256": "f48cf6e5f11ec13f28b143526cdd27751a5fe7117b45472b5d49b185c9ac45dc",
+      "meshes": 1,
+      "materials": 5,
+      "images": 2
+    },
+    {
+      "id": "shuttle-d-eng",
+      "name": "Space Shuttle (D) eng",
+      "url": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/11ebb4ee043715aefbba6aeec8a61746fad67fa7/3D%20Models/Space%20Shuttle%20(D)/Space%20Shuttle%20(D)%20eng.glb",
+      "bytes": 480216,
+      "sha256": "e31cfb57e3365f036d40cee79ac9e2f8b5f4c48849f6aa9e19aee4075846a0bc",
+      "meshes": 1,
+      "materials": 3,
+      "images": 0
+    },
+    {
+      "id": "shuttle-d-rcs",
+      "name": "Space Shuttle (D) rcs",
+      "url": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/11ebb4ee043715aefbba6aeec8a61746fad67fa7/3D%20Models/Space%20Shuttle%20(D)/Space%20Shuttle%20(D)%20rcs.glb",
+      "bytes": 480224,
+      "sha256": "5f0cf370c432f1fe940bf6cd14dd1c9b0376904391c5f797b39c9e2629e0100d",
+      "meshes": 1,
+      "materials": 3,
+      "images": 0
+    },
+    {
+      "id": "shuttle-d-door-side-texture",
+      "filename": "SHUT-DOO.JPG",
+      "name": "NASA Shuttle original door side texture",
+      "url": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/af4cf98471052b48c404158dda28cad2aa461f3c/3D%20Models/Shuttle%20%28High%20Res%29/Shuttle%20%28High%20Res%29.7z",
+      "archiveMember": "Textures/shut-doors-side.jpg",
+      "archiveSha256": "4e459c7b59ee9923887dfc7f045ff4b757def74b0a73ebc87879a8e0c83ec114",
+      "bytes": 21877,
+      "sha256": "1572686651de28f108eea02528c782b5be422542df710255e72dfb7b6c771030"
+    },
+    {
+      "id": "shuttle-d-door-top-texture",
+      "filename": "SHUT-DOA.JPG",
+      "name": "NASA Shuttle original door top texture",
+      "url": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/af4cf98471052b48c404158dda28cad2aa461f3c/3D%20Models/Shuttle%20%28High%20Res%29/Shuttle%20%28High%20Res%29.7z",
+      "archiveMember": "Textures/shut-doors-top.jpg",
+      "archiveSha256": "4e459c7b59ee9923887dfc7f045ff4b757def74b0a73ebc87879a8e0c83ec114",
+      "bytes": 87414,
+      "sha256": "7d369ac25637c1085719ecc089c4ec3d3ce92fc675d0bea606ea0c6e5de88a24"
+    }
+  ]
+}

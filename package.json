@@ -18,7 +18,8 @@
     "deploy": "tsx scripts/deploy-to-vercel.ts",
     "review:export": "node scripts/export-review.mjs",
     "verify:realism": "node --import tsx scripts/verify-realism.mjs",
-    "verify:hud": "node scripts/verify-hud-phases.mjs"
+    "verify:hud": "node scripts/verify-hud-phases.mjs",
+    "vehicles:lab": "node scripts/vehicle-lab.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.454.0",
