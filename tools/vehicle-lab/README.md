@@ -1,6 +1,8 @@
 # 载具隔离样机
 
-用途：同机位比较素材、材质、反面、真实光照和伴飞占屏。未接入游戏，不是六款正式上线。当前结论见 `docs/vehicle-preflight-06.md`。Shuttle已由用户确认保留，不沿用05轮的作者淘汰建议。
+用途：同机位比较素材、材质、反面、真实光照和伴飞占屏，不是六款正式上线。最新舱体和伴飞方向见 `docs/vehicle-detail-08.md`；五款接入范围见 `docs/vehicle-preflight-06.md`。ISS舱体/太阳翼已同步当前游戏；Shuttle等新款仍为样机。
+
+08轮验证：`node scripts/verify-vehicle-detail.mjs`；对照页：`node scripts/report-vehicle-detail.mjs`（需已有baseline和game证据）。Shuttle `formationRotation`只作用于展示根节点，不可烘焙或再次叠加源轴向；ISS后续导出使用08新包。
 
 从项目根目录运行：
 

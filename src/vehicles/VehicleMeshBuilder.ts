@@ -10,6 +10,7 @@
 
 import * as THREE from 'three';
 import type { VehicleId } from '../contracts/vehicle';
+import { addISSModules } from './ISSModules';
 import {
   getSolarPanelTexture,
   getGoldFoilTexture,
@@ -569,18 +570,12 @@ export class VehicleMeshBuilder {
   // =========================================================================
   private static buildISS(parent: THREE.Group): void {
     const solarTex = getSolarPanelTexture();
-    const hullTex = getHullPanelTexture();
     const darkTex = getDarkCarbonTexture();
 
     const trussMat = new THREE.MeshStandardMaterial({
       map: darkTex,
       metalness: 0.82,
       roughness: 0.3,
-    });
-    const moduleMat = new THREE.MeshStandardMaterial({
-      map: hullTex,
-      metalness: 0.6,
-      roughness: 0.35,
     });
     const solarMat = new THREE.MeshStandardMaterial({
       map: solarTex,
@@ -597,12 +592,6 @@ export class VehicleMeshBuilder {
       metalness: 0.3,
       roughness: 0.6,
       side: THREE.DoubleSide,
-    });
-    const cupolaGlassMat = new THREE.MeshPhysicalMaterial({
-      color: 0x0284c7,
-      metalness: 0.9,
-      roughness: 0.1,
-      clearcoat: 1.0,
     });
 
     // 1. 中央贯通式主综合桁架 (ITS: Integrated Truss Structure: 跨度 109m 比例)
@@ -644,43 +633,8 @@ export class VehicleMeshBuilder {
       parent.add(radiator);
     }
 
-    // 4. 纵向加压舱段群 (Destiny, Unity, Harmony, Zarya, Zvezda)
-    for (let m = -2; m <= 2; m++) {
-      const mod = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.32, 0.32, 1.25, 20),
-        moduleMat
-      );
-      mod.rotation.x = Math.PI / 2;
-      mod.position.set(0, 0, m * 1.25);
-      parent.add(mod);
-
-      // 对接舱环与强化带
-      const band = new THREE.Mesh(
-        new THREE.TorusGeometry(0.33, 0.025, 8, 20),
-        trussMat
-      );
-      band.position.set(0, 0, m * 1.25);
-      parent.add(band);
-    }
-
-    // 国际实验舱段横向扩展 (Columbus / Kibo / JEM EF)
-    for (const sign of [-1, 1]) {
-      const lab = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.29, 0.29, 1.15, 16),
-        moduleMat
-      );
-      lab.rotation.z = Math.PI / 2;
-      lab.position.set(sign * 0.85, 0, 0.65);
-      parent.add(lab);
-    }
-
-    // 5. 欧洲制造圆顶观测舱 (Cupola: 7 扇观地视窗)
-    const cupola = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.18, 0.28, 0.22, 7),
-      cupolaGlassMat
-    );
-    cupola.position.set(0, -0.38, 0.65);
-    parent.add(cupola);
+    // 4–5. 分段舱壳、窄接口、防护板/扶手与有窗框的观察舱。
+    addISSModules(parent);
 
     // 6. 加拿大双臂机械臂 (Canadarm2)
     const armGroup = new THREE.Group();

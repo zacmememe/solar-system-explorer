@@ -21,5 +21,5 @@ const names=[['iss','国际空间站','保留你认可的现有造型'],['cassin
 document.getElementById('lineup').innerHTML=names.map(([id,name,note])=>card(find({id,view:'formation',variant:'refined'}),name,note)).join('');
 document.addEventListener('click',e=>{if(e.target.dataset.full){document.querySelector('#zoom img').src=e.target.dataset.full;document.getElementById('zoom').showModal()}});document.getElementById('close').onclick=()=>document.getElementById('zoom').close();
 </script></body></html>`;
-await fs.writeFile(path.join(out, '载具进度与朱诺对比.html'), html.replace('</header>', '<p>ISS 太阳翼已继续修复并进入本地游戏；本页 ISS 为历史样张。请看 <a href="../iss-solar-07/ISS太阳翼修复对比.html">ISS 最新游戏内对照</a>。其他新载具的接入状态仍按本页记录。</p></header>'));
+await fs.writeFile(path.join(out, '载具进度与朱诺对比.html'), html.replace('</header>', '<p>本页为第06轮历史样张。最新调整见 <a href="../vehicle-detail-08/ISS舱体与航天飞机伴飞对比.html">ISS 舱体细化与航天飞机尾部伴飞</a>。ISS 已更新本地游戏；其他新载具仍待接入。</p></header>'));
 console.log(path.join(out, '载具进度与朱诺对比.html'));

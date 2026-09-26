@@ -16,5 +16,5 @@ ${pair('单太阳正面受光', 'final/inspect-space-front-front-before.png', 'f
 <section><h2>光向与表面保持一致</h2><div class="pair">${card('final/inspect-space-back-front-after.png', '修复后 · 正面处于背光，保持暗部')}${card('final/inspect-space-back-rear-after.png', '修复后 · 转到受光的背面，片格可见')}</div></section>
 <section><h2>机库中查看</h2><div class="pair">${card('game/01-hangar-studio.png', '当前游戏 · 工坊光')}${card('game/02-hangar-orbit.png', '当前游戏 · 在轨日光')}</div></section>
 <p>构建、23项相关测试、样机5组对照、游戏7帧流程取证通过，浏览器错误0。图像已作定向目视；不代表整体游戏体验或所有载具已验收。报告：docs/iss-solar-material-report.md。</p></main></html>`;
-await fs.writeFile(path.join(out, 'ISS太阳翼修复对比.html'), html);
+await fs.writeFile(path.join(out, 'ISS太阳翼修复对比.html'), html.replace('<h1>', '<p>后续舱体细化见 <a href="../vehicle-detail-08/ISS舱体与航天飞机伴飞对比.html">第08轮最新对照</a>；本页保留太阳翼修正时的历史证据。</p><h1>'));
 console.log(path.join(out, 'ISS太阳翼修复对比.html'));

@@ -25,5 +25,5 @@ document.getElementById('formation').innerHTML=[['iss','ISS · 保留现有造�
 for(const [id,action] of [['cassini-controls',cassini],['shuttle-controls',shuttle]]) document.getElementById(id).addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;document.querySelectorAll('#'+id+' button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));action(b.dataset.angle)});
 document.addEventListener('click',e=>{if(e.target.dataset.full){document.querySelector('#zoom img').src=e.target.dataset.full;document.getElementById('zoom').showModal()}});document.getElementById('close').onclick=()=>document.getElementById('zoom').close();
 </script></body></html>`;
-await fs.writeFile(path.join(out, '载具样机评审.html'), html.replace('</header>', '<p>ISS 太阳翼已有后续修复，以下 ISS 为历史样张。请看 <a href="../iss-solar-07/ISS太阳翼修复对比.html">ISS 最新游戏内对照</a>。</p></header>'));
+await fs.writeFile(path.join(out, '载具样机评审.html'), html.replace('</header>', '<p>本页为历史样张。最新调整见 <a href="../vehicle-detail-08/ISS舱体与航天飞机伴飞对比.html">ISS 舱体细化与航天飞机尾部伴飞</a>；太阳翼修正见 <a href="../iss-solar-07/ISS太阳翼修复对比.html">第07轮对照</a>。</p></header>'));
 console.log(path.join(out, '载具样机评审.html'));

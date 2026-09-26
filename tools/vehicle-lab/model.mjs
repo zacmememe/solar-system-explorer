@@ -3,7 +3,7 @@ import * as THREE from 'three';
 export const profiles = {
   iss: { name: '国际空间站', note: '当前外观基准', rotation: [0, 0, 0], span: .6375 },
   cassini: { name: '卡西尼', note: 'NASA 模型 · 材质与取景样机', rotation: [0, 0, 0], span: .82 },
-  'shuttle-d': { name: '航天飞机', note: 'NASA D · 用户接受此版，保留已装配外观', rotation: [-Math.PI / 2, -Math.PI / 2, 0], span: .6375 },
+  'shuttle-d': { name: '航天飞机', note: 'NASA D · 尾部斜后方伴飞', rotation: [-Math.PI / 2, -Math.PI / 2, 0], formationRotation: [.24, Math.PI + .58, 0], span: .6375 },
   voyager: { name: '旅行者', note: '原材质 · 细长结构取景检查', rotation: [0, 0, 0], span: .95 },
   juno: { name: '朱诺', note: 'NASA 模型 · 太阳翼反射材质修正', rotation: [Math.PI / 3, 0, .25], span: .8 },
 };

@@ -61,7 +61,9 @@ function composition() {
   if (formation) {
     camera.position.set(0, 0, 0); camera.quaternion.identity();
     camera.add(current);
-    current.position.set(Math.min(.48, Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 2.1 * camera.aspect * .55), -.34, -2.1); current.rotation.set(.12, -.38, 0);
+    current.position.set(Math.min(.48, Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 2.1 * camera.aspect * .55), -.34, -2.1);
+    // Presentation-only pose: source orientation remains baked exactly once.
+    current.rotation.set(...(profiles[$('#vehicle').value].formationRotation || [.12, -.38, 0]));
     fitPresentationToViewport(current, camera, profiles[$('#vehicle').value].span);
   } else {
     scene.add(current); setPresentationSpan(current, 4);
@@ -123,6 +125,13 @@ document.querySelectorAll('[data-angle]').forEach(b => b.addEventListener('click
 $('#reset').addEventListener('click', () => { angles = 'front'; composition(); });
 new ResizeObserver(resize).observe(stage);
 window.vehicleLab = { snapshot, ready: () => loadState === 'ready', raw: () => current,
+  // Isolated geometry A/B only: retain the baseline framing after normal UI
+  // arrival, so a changed bounding sphere cannot quietly change camera distance.
+  matchDiagnosticCamera: state => {
+    camera.position.fromArray(state.position); camera.quaternion.fromArray(state.quaternion);
+    camera.fov = state.fov; camera.updateProjectionMatrix();
+    $('#status').textContent = '固定基线机位对照 · 灯光未改'; render();
+  },
   recordAppearance: () => { render(); referencePixels = canvasPixels(); },
   compareAppearance: () => {
     render(); const pixels = canvasPixels();

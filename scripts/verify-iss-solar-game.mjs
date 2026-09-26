@@ -9,7 +9,7 @@ const out = process.env.EVIDENCE_DIR || 'D:/solar-evidence/iss-solar-07/game';
 await fs.mkdir(out, { recursive: true });
 const sha = b => crypto.createHash('sha256').update(b).digest('hex');
 const index = await fs.readFile('dist/index.html');
-const report = { base: 'cdccb6d36f31bf6fa29295f85d81338f6e4ac7d4', sourceSha256: sha(await fs.readFile('src/vehicles/VehicleMeshBuilder.ts')), indexSha256: sha(index), cases: [], errors: [], checks: [] };
+const report = { base: process.env.BASE_SHA || 'cdccb6d36f31bf6fa29295f85d81338f6e4ac7d4', sourceSha256: sha(await fs.readFile('src/vehicles/VehicleMeshBuilder.ts')), indexSha256: sha(index), cases: [], errors: [], checks: [] };
 const server = await preview({ preview: { host: '127.0.0.1', port: 0, open: false } });
 let browser, page;
 const delay = ms => new Promise(r => setTimeout(r, ms));

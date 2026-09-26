@@ -1,9 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 // @ts-expect-error Isolated browser tooling intentionally lives outside production TS.
-import { prepareModel, setPresentationSpan, fitPresentationToViewport, refineMaterials } from '../tools/vehicle-lab/model.mjs';
+import { prepareModel, setPresentationSpan, fitPresentationToViewport, refineMaterials, profiles, shuttleMounts } from '../tools/vehicle-lab/model.mjs';
 
 describe('isolated vehicle presentation transforms', () => {
+  it('shows the Shuttle exhaust and dorsal side, with the nose aimed into the composition', () => {
+    const source = new THREE.Quaternion().setFromEuler(new THREE.Euler().setFromVector3(new THREE.Vector3(...profiles['shuttle-d'].rotation), 'YXZ'));
+    const display = new THREE.Quaternion().setFromEuler(new THREE.Euler(...profiles['shuttle-d'].formationRotation));
+    const towardViewer = new THREE.Vector3(-.48,.34,2.1).normalize();
+    for (const mount of shuttleMounts) {
+      const exhaust = new THREE.Vector3(...mount.normal).normalize().applyQuaternion(source).applyQuaternion(display);
+      expect(exhaust.dot(towardViewer)).toBeGreaterThan(.4);
+    }
+    const nose = new THREE.Vector3(1,0,0).applyQuaternion(source).applyQuaternion(display);
+    expect(nose.x).toBeLessThan(0); expect(nose.y).toBeGreaterThan(0);
+    const dorsal = new THREE.Vector3(0,0,1).applyQuaternion(source).applyQuaternion(display);
+    expect(dorsal.dot(towardViewer)).toBeGreaterThan(0);
+  });
   it.each([.001, 1, 1000])('keeps apparent bounds independent of metric calibration %s', metricScale => {
     const raw = new THREE.Group();
     const body = new THREE.Mesh(new THREE.BoxGeometry(4, 2, 1));
