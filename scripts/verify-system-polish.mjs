@@ -7,6 +7,7 @@ import {sampleBrowserPerformance} from './lib/browser-performance.ts';
 
 const out=process.env.EVIDENCE_DIR || 'D:/solar-evidence/codex-system-polish/final';
 const url=process.env.TEST_URL || 'http://127.0.0.1:5203';
+const withVehicle=process.env.VERIFY_VEHICLE==='1';
 await mkdir(out,{recursive:true});
 const browser=await puppeteer.launch({executablePath:process.env.EDGE_PATH || 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
   headless:true,userDataDir:path.join(out,`profile-${process.pid}`),defaultViewport:{width:1440,height:900},
@@ -17,7 +18,12 @@ page.on('pageerror',e=>report.errors.push(String(e)));
 page.on('console',m=>{if(m.type()==='error')report.consoleErrors.push(m.text());});
 const click=id=>page.click(`[data-testid="${id}"]`);
 async function shot(name){
-  const meta=await page.evaluate(()=>{const e=window.__solarEngine;return {camera:e.getCameraSnapshot(),telemetry:e.getLandingTelemetry(),simTime:e.getSimTimeHours()};});
+  const meta=await page.evaluate(()=>{const e=window.__solarEngine;return {camera:e.getCameraSnapshot(),telemetry:e.getLandingTelemetry(),simTime:e.getSimTimeHours(),vehicle:e.getCurrentVehicle(),display:e.lastFrameRenderInfo};});
+  if(meta.vehicle) {
+    assert.equal(meta.display.vehicleDisplayPass,true);
+    const r=meta.display.vehicleDisplayRange;
+    assert.ok(Number.isFinite(r.near)&&r.near>0&&Number.isFinite(r.far)&&r.far>r.near);
+  }
   await page.screenshot({path:path.join(out,`${name}.png`)});
   report.frames.push({name,...meta});
   await writeFile(path.join(out,'report.json'),JSON.stringify(report,null,2));
@@ -35,6 +41,13 @@ try {
   await page.goto(url,{waitUntil:'domcontentloaded'});
   await page.waitForFunction(()=>window.__solarEngine?.getBodyNode('moon'));
   report.bundle=await page.$$eval('script[src]',els=>els.map(e=>e.src));
+  if(withVehicle) {
+    await click('toolbar-hangar-btn');
+    await page.waitForSelector('[data-testid="hangar-board-btn"]');await click('hangar-board-btn');
+    await page.waitForFunction(()=>window.__solarEngine.currentVehicleMesh&&window.__solarEngine.vehicleGroup.visible,{timeout:30000});
+    if(await page.$('[data-testid="hangar-close-btn"]'))await click('hangar-close-btn');
+    // Real pointer click below, including when the transient boarding toast overlaps navigation.
+  }
   await click('moon-btn-moon');
   await page.waitForFunction(()=>{const s=window.__solarEngine.getCameraSnapshot();return s.targetBodyId==='moon'&&!s.isTransitioning;});
   await page.waitForSelector('[data-testid="landing-site-select"]');

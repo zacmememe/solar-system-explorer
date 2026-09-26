@@ -12,7 +12,9 @@
 
 `双击启动.bat` 重复入口已移除。`导出Pro审查材料.bat` 仅导出审查材料，不启动游戏。这里的“最新”指当前本地文件；启动器不会自动拉取 GitHub 或改动尚未提交的代码。
 
-项目继续在原来的 D 盘目录中使用 Antigravity 开发，GitHub 保存提交后的版本。
+项目继续在原来的 D 盘目录中本地开发，GitHub 保存提交后的版本。
+
+Codex 重置后的接手入口：[本轮接手索引](docs/codex-resume.md)；实际作者与任务状态仍以本机 `review-exports/coordination/queue.md` 为准。
 
 ```powershell
 # 已有 node_modules 时无需重复安装。

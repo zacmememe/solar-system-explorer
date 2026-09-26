@@ -1,5 +1,7 @@
 # F-SURFACE-BLEND-01：静海基地高清区边缘自然过渡（原型报告）
 
+> Codex 系统复核勘误（F-CODEX-SYSTEM-POLISH）：以下保留原交付记录，§4 的 5.5–5.6 ms/帧、§5.3 的“触地秒级渲染”及严格同机位对照结论已撤回。两个 RAF 探针在回调中引用未定义的 `label`，异常后 Promise 未完成；另一个探针把多次 render pass 的累计计数当作用户帧数，分母错误。`02-agl-293km.png` 文件名也不等于截图的实际高度（after 图 HUD 为约 167km）。这些证据不能证明卡顿、帧耗或同机位改进幅度。修复后的正常 UI 取证与明确限制见 [Codex 系统收口报告](../codex-system-polish-report.md)。原型统一着色的实现方向保留；静海边界仍需继续打磨。
+
 - 分支：`codex/restore-observation-experience`；base `8deebfc`，本轮含 P1（`7361736`）与 toast 修复（`69d3e30`）。
 - 范围：仅静海基地（`tranquility-base`）站点栈材质；Taurus-Littrow / Hadley-Rille 与全部火星站点未动。
 - 证据目录：`D:\solar-evidence\fsurface-blend\`（`before\`＝8deebfc 隔离 worktree 构建 4174；`after\`＝本轮构建 4173；`diagnosis\`＝诊断；`touch-probe\`＝触地判别实验）。
