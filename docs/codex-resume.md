@@ -4,6 +4,8 @@
 
 工作目录 `D:\Game Zac\Personal Projects\太阳系漫游`；分支 `codex/restore-observation-experience`。日常唯一启动入口为根目录 `启动太阳系漫游.bat`，每次构建当前本地源码成功后才打开页面。
 
+最新待用户选择：F-HUD-VISUAL-OPTIONS-03 已交付三方向独立样张，见[HUD视觉方向比较](hud-visual-directions.md)与`D:\solar-evidence\hud-directions\HUD方案对比.html`。A任务弧/B轨道透镜/C地平线罗盘，每套观星/下降/地面三状态；当前产品HUD未替换。先等用户选型，不自行把原型接入引擎。原型微图与数值为示例，接入须消费实际HudFrame。取景另见耶泽罗地平线细长断片，记录在报告，后续先复现，不把设计稿当修复证据。
+
 最小阅读顺序：
 
 1. `AGENTS.md` 和 `review-exports/coordination/queue.md`：后者是本机唯一动态状态，不复制新看板。
