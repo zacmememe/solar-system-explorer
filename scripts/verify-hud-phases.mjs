@@ -3,7 +3,7 @@ import puppeteer from 'puppeteer-core';
 import {mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import assert from 'node:assert/strict';
-import {journeyAction} from './lib/hud-ui.mjs';
+import {journeyAction,timePanel} from './lib/hud-ui.mjs';
 const out=process.env.EVIDENCE_DIR||'D:/solar-evidence/phase-aware-hud/candidate';
 await mkdir(out,{recursive:true});
 const browser=await puppeteer.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true,userDataDir:path.join(out,'profile-'+process.pid),defaultViewport:{width:1920,height:1080},args:['--use-gl=angle','--use-angle=d3d11'],protocolTimeout:240000});
@@ -58,6 +58,7 @@ try{
  report.bundle=await page.$$eval('script[src]',els=>els.map(e=>e.src));
  if(await page.$('[aria-label="暂停模拟"]'))await click('[aria-label="暂停模拟"]');
  await delay(2000);await shot('01-observe');
+ check('compact system preview consumes the live frame',!!(await page.$('[data-testid="hud-context-preview"][data-sequence]')));
  await click('[aria-controls="hud-observe-panel"]');
  await click('[data-testid="hud-collapse"]');
  check('collapse gives focus to restore',await page.$eval('.hud-restore',e=>e===document.activeElement));
@@ -76,6 +77,7 @@ try{
  const id=process.env.SITE_ID||'jezero',moon=['tranquility-base','taurus-littrow','hadley-rille'].includes(id);
  if(moon){await travel('earth');await travel('moon',true);}else await travel('mars');
  await page.waitForSelector('[data-testid="landing-site-select"]');await page.select('[data-testid="landing-site-select"]',id);
+ await timePanel(page);await click('[data-testid="landing-daylight"]');await page.keyboard.press('Escape');
  await page.waitForFunction(()=>!!document.querySelector('[data-testid="lunar-landing-start-btn"], [data-testid="lunar-landing-travel-site-btn"]'),{timeout:90000});
  if(await page.$('[data-testid="lunar-landing-travel-site-btn"]'))await click('[data-testid="lunar-landing-travel-site-btn"]');
  await click('[data-testid="hud-navigation"]');await click('[data-testid="lunar-landing-start-btn"]');
@@ -83,6 +85,7 @@ try{
  await phase('descending');await shot('07-descending');
  check('navigation closes during descent',!(await page.$('#hud-navigation-panel')));
  const a=await snapshot();await delay(900);const b=await snapshot();check('astronomical pause does not stop guided descent',a.simTime===b.simTime&&b.telemetry.progress>a.telemetry.progress);
+ await page.waitForFunction(()=>window.__solarEngine.getLandingTelemetry().altitudeAGLM<30000,{timeout:150000});
  await click('[data-testid="landing-btn-hold"]');await phase('hold');const held=await snapshot();await delay(800);const held2=await snapshot();
  check('HOLD freezes both rates and trajectory',held.telemetry.progress===held2.telemetry.progress&&held2.telemetry.verticalSpeedMps===0&&held2.telemetry.horizontalSpeedMps===0);
  await shot('08-hold-desktop');await layout('desktop HOLD');
@@ -100,7 +103,9 @@ try{
  const yawAfter=await page.$eval('[data-testid="hud-surface-compass"]',e=>Number(e.dataset.yaw));check('compass responds to actual looking direction',Math.abs(yawBefore-yawAfter)>1);await shot('13-look-sky');
  if(moon){await click('[data-testid="landing-btn-look-earth"]');await delay(1200);await shot('14-look-earth');}
  await page.setViewport({width:390,height:844});await delay(300);await shot('15-surface-portrait');await layout('portrait surface');
- await click('[data-testid="hud-site-details"]');await shot('16-surface-details');await popupLayout('portrait surface');await click('[aria-label="关闭面板"]');
+ await click('[data-testid="hud-site-details"]');
+ check('north-up lens uses actual surface bearing',await page.$eval('[data-testid="hud-direction-lens"]',e=>Math.abs(Number(e.dataset.yaw)-Number(document.querySelector('[data-testid="hud-surface-compass"]').dataset.yaw))<.001));
+ await shot('16-surface-details');await popupLayout('portrait surface');await click('[aria-label="关闭面板"]');
  await click('[data-testid="landing-btn-return-orbit"]');await phase('ascending');const asc0=await snapshot();await delay(1500);const asc1=await snapshot();
  check('return starts below completion and advances',asc0.telemetry.progress<.3&&asc1.telemetry.progress>asc0.telemetry.progress&&asc1.telemetry.progress<1);
  await shot('17-ascending');await layout('portrait ascending');

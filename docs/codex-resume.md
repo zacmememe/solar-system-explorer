@@ -4,7 +4,7 @@
 
 工作目录 `D:\Game Zac\Personal Projects\太阳系漫游`；分支 `codex/restore-observation-experience`。日常唯一启动入口为根目录 `启动太阳系漫游.bat`，每次构建当前本地源码成功后才打开页面。
 
-最新待用户选择：F-HUD-VISUAL-OPTIONS-03 已交付三方向独立样张，见[HUD视觉方向比较](hud-visual-directions.md)与`D:\solar-evidence\hud-directions\HUD方案对比.html`。A任务弧/B轨道透镜/C地平线罗盘，每套观星/下降/地面三状态；当前产品HUD未替换。先等用户选型，不自行把原型接入引擎。原型微图与数值为示例，接入须消费实际HudFrame。取景另见耶泽罗地平线细长断片，记录在报告，后续先复现，不把设计稿当修复证据。
+最新HUD选择已落地：用户确认A任务弧为主，适当吸收B位置小图，F-HUD-TASK-ARC-04产品c2bc98e完成。先读[任务弧报告](hud-task-arc-report.md)：A常驻弧/B展开透镜、真实阶段与视向、只读绕行目标，378测试、月火及取消流程49张最终图/3份0错误报告。不要再询问A/B/C选型。原[三方向比较](hud-visual-directions.md)与`D:\solar-evidence\hud-directions\HUD方案对比.html`仍为静态样张，不当运行时证据；耶泽罗地平线断片仍在待办。
 
 最小阅读顺序：
 
@@ -13,7 +13,7 @@
 2. [最新下降返回与换落区报告](landing-continuity-report.md)：产品aa8d9d4、361测试、25张最终图；实际机位升空、结束不跳位、球外绕行、显式白昼选择与取消/倍速优先。再读 [远景、石块与土卫三报告](mars-materials-body-assets-report.md)：产品03b6220、343测试、49图证据与剩余粗糙处；[极简HUD与盖尔报告](minimal-hud-gale-report.md)：大屏98px薄条、完整信息进菜单，盖尔512m核心恢复2m源网格及独立净空。此前 [阶段HUD报告](phase-aware-hud-report.md)保留相机/书签/遥测语义；[盖尔旧方案](plans/gale-display-ground-refinement.md)为实施前诊断。前轮 [火星与天体真实感报告](surface-atmosphere-realism-report.md)包含火星大气/地面/夜间遮光、3张新观测卫星图和30体后续清单。导航上下文见 [导航与视觉报告](navigation-experience-report.md)：跨星避障、相机连续性、卫星母星构图、土星环影。地形上下文保留于 [月面连续性报告](lunar-boundary-continuity-report.md)，更早系统修复见 [系统报告](codex-system-polish-report.md)。
 3. [体验基础契约](experience-foundations.md)：物理空间/相机/时间/存档约束与真实 UI 验证方法。
 
-最新产品候选为 `281e65d7ee7646b405bbe8fe41c91ca0133b867b`（base4e9019a），生产包 `index-CKfEZ_r-.js` / CSS `index-CH4BTTPh.css`。55文件372测试通过；最终载具流程10图与0错误报告在`D:\solar-evidence\vehicle-space-only\final-confirmed`，`final/`是提示条修正前迭代。前轮aa8d9d4的下降连续性和25图证据仍保留。精确哈希、作者已看图范围和未验项目见对应报告；不得把本轮载具通过当作地形全面接受。后续仅文档/验证脚本提交不构成产品漂移；src、资产或配置变化要绑定新候选。所有既有HUD、地形、导航修复仍在历史中。核对git status，其他作者原有未跟踪文件不能删除或一并提交。
+最新产品候选为 `c2bc98e4e17e417bbe16cc67d29399898244360a`（base56f94e6），生产包 `index-p3DVOu2K.js` / CSS `index-CTwyNB9b.css`。55文件378测试通过；HUD最终证据在`D:\solar-evidence\hud-task-arc\final-mars`、`final-moon`、`final-controls`，iteration1为早期样式。前轮281e65d载具限制、aa8d9d4下降连续性与对应证据保留。精确哈希、作者已看图范围和未验项目见对应报告；不得把HUD通过当作地形全面接受。后续仅文档/验证脚本提交不构成产品漂移；src、资产或配置变化要绑定新候选。所有既有HUD、地形、导航修复仍在历史中。核对git status，其他作者原有未跟踪文件不能删除或一并提交。
 
 返航不再固定到50km，也不在结束时另起默认整球flyTo：从实际机位单调升空，终端轨迹保留到相机接手。用户在途中转头后，自由观察near必须受真实球面净空约束，不能只看自由支点距离；旧版曾切掉半块月球，反例保留在candidate/14。降落准备不再隐式选未来白昼；需要亮面时使用底部“··· → 时间倍率 → 切换到所选落区的白昼”。同天体换落区复用球外短弧，准备/绕行取消清理临时倍速，用户手动改速优先。盖尔高空区域影像矩形界线和低空远坡仍待改善，不把镜头连续性通过写成地形真实感通过。
 
