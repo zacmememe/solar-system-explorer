@@ -276,22 +276,20 @@ export function createRingShadowPlanetMaterial(
         float dotNL = max(dot(localNormal, normSunDir), 0.0);
 
         // 2. 光环在行星本体表面的几何解析投射阴影
-        float shadowFactor = 1.0;
-        // 沿阳光入射线到达赤道光环平面 (Y=0) 的交点参数: vLocalPosition.y + t * normSunDir.y = 0
-        if (abs(normSunDir.y) > 0.001) {
-          float t = -vLocalPosition.y / normSunDir.y;
-          // t > 0 说明光线从太阳朝向星球表面时，先穿过了赤道光环平面
-          if (t > 0.0) {
-            vec3 hitPoint = vLocalPosition + t * normSunDir;
-            float rHit = length(hitPoint.xz);
-            if (rHit >= innerRadius && rHit <= outerRadius) {
-              float u = clamp((rHit - innerRadius) / (outerRadius - innerRadius), 0.0, 1.0);
-              vec4 ringSample = texture2D(ringTexture, vec2(u, 0.5));
-              // 密集环区投射出极具真实感的深邃条带黑影
-              shadowFactor = 1.0 - ringSample.a * 0.88;
-            }
-          }
-        }
+        // Sample on all fragments so mip derivatives remain defined at the
+        // projected edge. Coverage spans one pixel instead of a hard branch.
+        float sunY = (normSunDir.y < 0.0 ? -1.0 : 1.0) * max(abs(normSunDir.y), 0.00001);
+        float t = -vLocalPosition.y / sunY;
+        vec3 hitPoint = vLocalPosition + t * normSunDir;
+        float rHit = length(hitPoint.xz);
+        float radialWidth = max(fwidth(rHit), 0.00001);
+        float rayWidth = max(fwidth(t), 0.00001);
+        float radialCoverage = smoothstep(innerRadius - radialWidth, innerRadius + radialWidth, rHit)
+          * (1.0 - smoothstep(outerRadius - radialWidth, outerRadius + radialWidth, rHit));
+        float frontCoverage = smoothstep(-rayWidth, rayWidth, t);
+        float u = (rHit - innerRadius) / (outerRadius - innerRadius);
+        vec4 ringSample = texture2D(ringTexture, vec2(u, 0.5));
+        float shadowFactor = 1.0 - ringSample.a * 0.88 * radialCoverage * frontCoverage;
 
         // 3. 漫反射 + 教学提亮支持
         float baseLight = mix(ambientLight, 0.65, teachingLight);
@@ -299,6 +297,8 @@ export function createRingShadowPlanetMaterial(
         vec3 finalColor = texColor.rgb * lightIntensity;
 
         gl_FragColor = vec4(finalColor, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
       }
     `,
   });

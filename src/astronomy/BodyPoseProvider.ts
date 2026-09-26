@@ -169,9 +169,15 @@ export class BodyPoseProvider {
   }
 
   public setPolicy(policy: PresentationPolicy, durationSec: number = 2.0): void {
-    if (this.targetPolicy === policy) return;
+    if (durationSec <= 0) {
+      this.targetPolicy = this.currentPolicy = policy;
+      this.transitionProgress = policy === 'PHYSICAL_OBSERVATION' ? 1 : 0;
+      return;
+    }
+    // A retargeted short flight must shorten an in-progress policy transition too.
+    // Progress stays continuous; only its future rate changes.
     this.targetPolicy = policy;
-    this.transitionDurationSec = Math.max(0.1, durationSec);
+    this.transitionDurationSec = Math.max(0.05, durationSec);
   }
 
   public setPresentationPolicy(policy: PresentationPolicy, durationSec: number = 2.0): void {
@@ -196,8 +202,19 @@ export class BodyPoseProvider {
     this.update(deltaSec);
   }
 
+  public predictTransitionProgress(secondsAhead: number): number {
+    const direction = this.targetPolicy === 'PHYSICAL_OBSERVATION' ? 1 : -1;
+    return THREE.MathUtils.clamp(this.transitionProgress + direction * Math.max(0,secondsAhead) / this.transitionDurationSec, 0, 1);
+  }
+
   public getTransitionProgress(): number {
     return this.transitionProgress;
+  }
+
+  /** Roll back a navigation request that cannot be planned, including a blend in progress. */
+  public capturePresentationRollback(): () => void {
+    const {currentPolicy,targetPolicy,transitionProgress,transitionDurationSec,physicalReferenceBodyId}=this;
+    return () => Object.assign(this,{currentPolicy,targetPolicy,transitionProgress,transitionDurationSec,physicalReferenceBodyId});
   }
 
   /**
@@ -471,8 +488,10 @@ export class BodyPoseProvider {
    */
   public getBodyPose(
     id: BodyId,
-    simTimeHours: number
+    simTimeHours: number,
+    secondsAhead = 0
   ): BodyPoseOutput {
+    const progress = this.predictTransitionProgress(secondsAhead);
     const data = BODIES[id];
     const navRadius = data ? getNavDisplayRadius(data.radiusKm, data.type) : 1.0;
     const physSunDir = this.getPhysicalSunDirection(id, simTimeHours);
@@ -494,7 +513,7 @@ export class BodyPoseProvider {
     }
 
     // 若完全处于宏观导航模式
-    if (this.transitionProgress <= 0.0) {
+    if (progress <= 0.0) {
       return {
         position: navPos,
         displayRadius: navRadius,
@@ -507,7 +526,7 @@ export class BodyPoseProvider {
     }
 
     // Smootherstep 缓动函数: 6t^5 - 15t^4 + 10t^3
-    const t = this.transitionProgress;
+    const t = progress;
     const smoothT = t * t * t * (t * (t * 6 - 15) + 10);
 
     // 物理观察策略：以参考行星系统为局部基准标尺线性化（P1 泛化：地月/木星系/土星系等同一规则）
@@ -521,7 +540,7 @@ export class BodyPoseProvider {
         renderSurfaceRadius: navRadius,
         renderFramingRadius: framingRadius,
         policy: this.currentPolicy,
-        policyTransitionProgress: this.transitionProgress,
+        policyTransitionProgress: progress,
         physicalSunDirection: physSunDir,
       };
     }
@@ -555,7 +574,7 @@ export class BodyPoseProvider {
         renderSurfaceRadius: blendedRadius,
         renderFramingRadius: blendedRadius,
         policy: this.currentPolicy,
-        policyTransitionProgress: this.transitionProgress,
+        policyTransitionProgress: progress,
         physicalSunDirection: physSunDir,
       };
     }
@@ -567,7 +586,7 @@ export class BodyPoseProvider {
       renderSurfaceRadius: navRadius,
       renderFramingRadius: framingRadius,
       policy: this.currentPolicy,
-      policyTransitionProgress: this.transitionProgress,
+      policyTransitionProgress: progress,
       physicalSunDirection: physSunDir,
     };
   }
@@ -630,4 +649,3 @@ export class BodyPoseProvider {
     };
   }
 }
-

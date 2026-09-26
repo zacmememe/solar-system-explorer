@@ -12,7 +12,7 @@ import { createJupiterMaterial } from '../src/rendering/JupiterMaterial';
 import { createMercuryMaterial } from '../src/rendering/MercuryMaterial';
 import { createAsteroidMoonMaterial } from '../src/rendering/AsteroidMoonMaterial';
 import { createIoMaterial, createEuropaMaterial, createGanymedeMaterial, createCallistoMaterial } from '../src/rendering/GalileanMoonsMaterial';
-import { createSaturnRingMaterial } from '../src/rendering/RingMaterial';
+import { createSaturnRingMaterial, createRingShadowPlanetMaterial } from '../src/rendering/RingMaterial';
 
 describe('批次 B2 着色器规范与色彩空间统一输出测试', () => {
   const renderingDir = path.resolve(__dirname, '../src/rendering');
@@ -109,6 +109,7 @@ describe('批次 B2 着色器规范与色彩空间统一输出测试', () => {
       ganymedeMat,
       callistoMat,
       ringMat,
+      createRingShadowPlanetMaterial({planetTexture:dummyTex,ringTexture:dummyTex,innerRadius:10,outerRadius:20}),
     ];
 
     for (const m of allMaterials) {

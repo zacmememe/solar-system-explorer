@@ -12,6 +12,7 @@
     "test:e2e": "tsx scripts/run-browser-acceptance.ts",
     "verify:foundations": "node scripts/verify-experience-foundations.mjs",
     "verify:observation": "node scripts/verify-observation-recovery.mjs",
+    "verify:navigation": "node scripts/verify-navigation-experience.mjs",
     "verify-assets": "tsx scripts/verify-assets.ts",
     "launch": "node scripts/launch.mjs",
     "deploy": "tsx scripts/deploy-to-vercel.ts",

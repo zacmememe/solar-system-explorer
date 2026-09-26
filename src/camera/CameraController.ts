@@ -14,6 +14,7 @@ import type { CameraCommand, CameraMode, CameraStateSnapshot, CameraAnchor, Came
 import type { MetricStation } from '../contracts/physics';
 import { BODIES, getNavDisplayRadius } from '../astronomy/bodies';
 import { TerrainHeightProvider } from '../surface/TerrainHeightProvider';
+import {flightArch, flightEase, planFlightArch, type NavigationScene} from './NavigationPath';
 import {
   geodeticToBodyFixedM,
   datumForBody,
@@ -33,6 +34,7 @@ export interface SurfaceStationPose {
 
 export interface CameraControllerOptions {
   camera: THREE.PerspectiveCamera;
+  navigationScene?: () => NavigationScene;
   minDistanceFactor?: number;
   maxDistanceFactor?: number;
 }
@@ -89,6 +91,13 @@ export class CameraController {
   private transitionTargetTargetPos: THREE.Vector3 = new THREE.Vector3();
   private transitionProgress: number = 0; // 0 to 1
   private transitionDurationSec: number = 2.5;
+  private transitionStartQuaternion = new THREE.Quaternion();
+  private transitionEndQuaternion = new THREE.Quaternion();
+  private navigationScene?: () => NavigationScene;
+  private flightDetour = new THREE.Vector3();
+  private flightSkew = 1;
+  private flightSceneRevision = '';
+  public navigationBlocked = false;
 
   // 命令令牌，防止异步与旧动画干扰
   private currentCommandId: number = 0;
@@ -106,6 +115,7 @@ export class CameraController {
 
   constructor(options: CameraControllerOptions) {
     this.camera = options.camera;
+    this.navigationScene = options.navigationScene;
     this.syncLogDollyFromRadius();
     this.updateCameraTransform();
   }
@@ -136,6 +146,7 @@ export class CameraController {
       maxDistance: this.maxDistance,
       commandId: this.currentCommandId,
       isTransitioning: this.isTransitioning,
+      navigationBlocked: this.navigationBlocked,
       spherical: {
         radius: this.spherical.radius,
         phi: this.spherical.phi,
@@ -169,6 +180,16 @@ export class CameraController {
    */
   public executeCommand(command: CameraCommand): number {
     const token = ++this.currentCommandId;
+    const startsFlight=['flyTo','overview','restoreBookmark','focusRegion'].includes(command.type);
+    if(startsFlight) {
+      // Every entry (including surface -> overview/bookmark) starts at the pose
+      // actually displayed, not the last orbit's stale spherical coordinates.
+      this.spherical.setFromVector3(this.camera.position.clone().sub(this.targetPosition));
+      this.spherical.makeSafe();
+      this.transitionStartQuaternion.copy(this.camera.quaternion);
+      this.flightDetour.set(0,0,0);this.flightSkew=1;
+      this.navigationBlocked=false;
+    }
 
     switch (command.type) {
       case 'select':
@@ -178,7 +199,7 @@ export class CameraController {
       case 'flyTo': {
         const dur = command.durationSec ?? (this.reduceMotion ? 0.15 : 2.5);
         this.lookTarget = command.lookTarget ?? { kind: 'center' };
-        this.initiateFlight(command.bodyId, dur, token, command.targetPos, command.exact, command.framingRadius);
+        this.initiateFlight(command.bodyId, dur, token, command.targetPos, command.exact, command.framingRadius, command.viewDirection);
         break;
       }
 
@@ -262,6 +283,7 @@ export class CameraController {
         break;
 
       case 'enterSurfaceLook': {
+        this.navigationBlocked = false;
         if (this.isTransitioning) {
           this.cancelFlight();
         }
@@ -345,6 +367,11 @@ export class CameraController {
       }
     }
 
+    if(startsFlight && this.isTransitioning) {
+      const endOffset=new THREE.Vector3().setFromSpherical(this.transitionTargetSpherical);
+      this.transitionEndQuaternion.setFromRotationMatrix(new THREE.Matrix4().lookAt(endOffset,new THREE.Vector3(),new THREE.Vector3(0,1,0)));
+      this.planNavigation();
+    }
     return token;
   }
 
@@ -390,7 +417,8 @@ export class CameraController {
     token: number,
     targetPos?: [number, number, number],
     exact?: boolean,
-    framingRadius?: number
+    framingRadius?: number,
+    viewDirection?: [number,number,number]
   ): void {
     if (token !== this.currentCommandId) return;
 
@@ -481,6 +509,10 @@ export class CameraController {
       }
     }
 
+    if(viewDirection) {
+      const view=new THREE.Spherical().setFromVector3(new THREE.Vector3(...viewDirection));
+      targetTheta=view.theta;targetPhi=THREE.MathUtils.clamp(view.phi,.01,Math.PI-.01);
+    }
     // 计算最短球面角路径，杜绝跨越 2PI 缝隙产生多圈剧烈乱转
     const deltaTheta = THREE.MathUtils.euclideanModulo(targetTheta - this.spherical.theta + Math.PI, 2 * Math.PI) - Math.PI;
     const finalTheta = this.spherical.theta + deltaTheta;
@@ -621,6 +653,13 @@ export class CameraController {
    */
   public cancelFlight(): void {
     if (this.isTransitioning) {
+      // Preserve the interpolated visible attitude when the user takes over.
+      const forward=this.camera.getWorldDirection(new THREE.Vector3());
+      const distance=Math.max(1e-6,this.camera.position.distanceTo(this.targetPosition));
+      this.targetPosition.copy(this.camera.position).addScaledVector(forward,distance);
+      this.spherical.setFromVector3(this.camera.position.clone().sub(this.targetPosition));
+      this.camera.up.set(0,1,0).applyQuaternion(this.camera.quaternion);
+      this.lookTarget = {kind:'center'};
       this.isTransitioning = false;
       this.mode = 'ORBIT_TARGET';
       this.anchor = {
@@ -634,6 +673,23 @@ export class CameraController {
       this.syncLogDollyFromRadius();
       this.updateCameraTransform();
     }
+  }
+
+  private planNavigation(): void {
+    if(!this.navigationScene)return;
+    const scene=this.navigationScene();this.flightSceneRevision=scene.revision;
+    const start=this.camera.position.clone();
+    const raw=(t:number,bodies:ReturnType<NavigationScene['sample']>)=>{
+      const body=bodies.find(b=>b.id===this.targetBodyId);
+      const target=body?.focusPosition ?? body?.position ?? this.latestGetBodyPos?.(this.targetBodyId).pos ?? this.targetPosition;
+      const w=flightEase(t),s=this.transitionStartSpherical,e=this.transitionTargetSpherical;
+      return this.transitionStartTargetPos.clone().lerp(target,w).add(new THREE.Vector3().setFromSpherical(
+        new THREE.Spherical(THREE.MathUtils.lerp(s.radius,e.radius,w),THREE.MathUtils.lerp(s.phi,e.phi,w),THREE.MathUtils.lerp(s.theta,e.theta,w))));
+    };
+    const end=raw(1,scene.sample(this.transitionDurationSec));
+    const detour=planFlightArch(scene,this.transitionDurationSec,raw,start,end);
+    if(detour){this.flightDetour.copy(detour.offset);this.flightSkew=detour.skew;}
+    else {this.navigationBlocked=true;this.cancelFlight();}
   }
 
   /**
@@ -725,6 +781,15 @@ export class CameraController {
     }
 
     if (this.isTransitioning) {
+      if(this.navigationScene && this.navigationScene().revision!==this.flightSceneRevision) {
+        this.transitionDurationSec=Math.max(.15,this.transitionDurationSec*(1-this.transitionProgress));
+        this.transitionProgress=0;
+        this.transitionStartTargetPos.copy(this.targetPosition);
+        this.transitionStartSpherical.setFromVector3(this.camera.position.clone().sub(this.targetPosition));
+        this.transitionStartQuaternion.copy(this.camera.quaternion);
+        this.planNavigation();
+        if(!this.isTransitioning)return;
+      }
       this.transitionProgress += deltaSec / this.transitionDurationSec;
       if (this.transitionProgress >= 1.0) {
         this.transitionProgress = 1.0;
@@ -763,6 +828,8 @@ export class CameraController {
         easeT
       );
       this.spherical.makeSafe();
+      const offset=new THREE.Vector3().setFromSpherical(this.spherical).addScaledVector(this.flightDetour,flightArch(t,this.flightSkew));
+      this.spherical.setFromVector3(offset);
 
       this.surfaceRadius = targetInfo.surfaceRadius ?? targetInfo.radius;
       this.framingRadius = targetInfo.framingRadius ?? targetInfo.radius;
@@ -957,6 +1024,7 @@ export class CameraController {
     const offset = new THREE.Vector3().setFromSpherical(this.spherical);
     this.camera.position.copy(this.targetPosition).add(offset);
 
+    if(this.isTransitioning)this.camera.up.set(0,1,0);
     // 观察朝向解耦：支持依附当前锚点天体，但视线正对 lookTarget 目标天体（如月球看地球）
     if (this.lookTarget.kind === 'body' && this.latestGetBodyPos) {
       const lookPos = this.latestGetBodyPos(this.lookTarget.bodyId).pos;
@@ -965,6 +1033,13 @@ export class CameraController {
       this.camera.lookAt(new THREE.Vector3(...this.lookTarget.point));
     } else {
       this.camera.lookAt(this.targetPosition);
+    }
+    if(this.isTransitioning) {
+      // A detour must not spin the view as its temporary pivot passes nearby.
+      // Center-framed travel turns smoothly between the two actual endpoint
+      // attitudes; explicit sky/body look targets keep their own intent.
+      const destination=this.lookTarget.kind==='center' ? this.transitionEndQuaternion : this.camera.quaternion.clone();
+      this.camera.quaternion.slerpQuaternions(this.transitionStartQuaternion,destination,flightEase(this.transitionProgress));
     }
 
     // 动态调整近裁剪面，彻底杜绝近地观察时地表被裁剪 (CAM-04)

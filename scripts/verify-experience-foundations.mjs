@@ -28,7 +28,7 @@ async function save(name) {
   await click('bookmark-modal-close-btn');return id;
 }
 async function restore(id){await click('toolbar-bookmark-btn');await click('bookmark-tab-custom');await click(id);await delay(400);}
-async function test(name,fn){console.log('START',name);try{const detail=await fn();report.checks.push({name,pass:true,detail});console.log('PASS',name);}catch(e){report.checks.push({name,pass:false,error:String(e)});await shot(`${name}-FAIL`).catch(()=>{});console.log('FAIL',name,String(e));}finally{await writeFile(path.join(out,'report.json'),JSON.stringify(report,null,2));}}
+async function test(name,fn){console.log('START',name);try{const detail=await fn();report.checks.push({name,pass:true,detail});console.log('PASS',name);}catch(e){report.checks.push({name,pass:false,error:String(e),diagnostic:await page.evaluate(()=>({camera:window.__solarEngine?.getCameraSnapshot(),landing:window.__solarEngine?.getLandingTelemetry(),availability:window.__solarEngine?.getLandingAvailability()})).catch(()=>null)});await shot(`${name}-FAIL`).catch(()=>{});console.log('FAIL',name,String(e));}finally{await writeFile(path.join(out,'report.json'),JSON.stringify(report,null,2));}}
 try {
   await page.goto(report.url,{waitUntil:'domcontentloaded'});await page.waitForFunction(()=>window.__solarEngine?.getBodyNode('moon'));
   report.bundle=await page.$$eval('script[src]',els=>els.map(e=>e.src));report.browser=await browser.version();
@@ -69,7 +69,11 @@ try {
       if(moon){await travel('earth');await travel('moon',true);}else await travel('mars');
       await page.waitForSelector('[data-testid="landing-site-select"]');await page.select('[data-testid="landing-site-select"]',id);
       await page.waitForFunction(id=>{const a=window.__solarEngine.getLandingAvailability();return a.siteId===id&&['land','travel-to-site'].includes(a.action);},{timeout:60000},id);
-      await delay(400);if(await page.$('[data-testid="lunar-landing-travel-site-btn"]'))await click('lunar-landing-travel-site-btn');
+      await page.waitForFunction(()=>{
+        const a=window.__solarEngine.getLandingAvailability();
+        return a.action==='land' ? !!document.querySelector('[data-testid="lunar-landing-start-btn"]')
+          : a.action==='travel-to-site' && !!document.querySelector('[data-testid="lunar-landing-travel-site-btn"]');
+      },{timeout:30000});if(await page.$('[data-testid="lunar-landing-travel-site-btn"]'))await click('lunar-landing-travel-site-btn');
       await page.waitForSelector('[data-testid="lunar-landing-start-btn"]',{timeout:30000});await click('lunar-landing-start-btn');await page.waitForFunction(()=>window.__solarEngine.getLandingTelemetry().state==='DESCENDING',{timeout:30000});
       await page.waitForFunction(()=>document.querySelector('.hud-rate').textContent.replace(/\s/g,'')===window.__solarEngine.getTimeScale()+'×');
       const speed=await page.evaluate(()=>({value:window.__solarEngine.getTimeScale(),ui:document.querySelector('.hud-rate').textContent.replace(/\s/g,'')}));assert.equal(speed.ui,`${speed.value}×`);

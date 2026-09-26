@@ -684,7 +684,7 @@ export const App: React.FC = () => {
       />
 
       {/* 交互提示气泡 Toast（纯提示，不拦截指针——避免盖住顶部导航；3.5s 自动消失） */}
-      {toastMessage && (
+      {(toastMessage || cameraSnapshot?.navigationBlocked) && (
         <div
           style={{
             position: 'absolute',
@@ -707,7 +707,7 @@ export const App: React.FC = () => {
             pointerEvents: 'none',
           }}
         >
-          <span>{toastMessage}</span>
+          <span>{toastMessage || '当前路线暂无法安全到达，请暂停时间或换个观察方向后重试。'}</span>
         </div>
       )}
     </div>

@@ -33,6 +33,7 @@ import {
 } from '../rendering/EarthMaterial';
 import { SurfaceTileManager } from '../surface/SurfaceTileManager';
 import { buildTerrainBoundaryBridge } from '../surface/TerrainBoundary';
+import {satelliteViewDirection, type NavigationScene} from '../camera/NavigationPath';
 import { SurfaceDatasetManifest } from '../contracts/surface';
 import { loadEarthTileManifest } from '../surface/manifestLoader';
 import {
@@ -1161,6 +1162,7 @@ export class SolarEngine {
     // 相机控制器：唯一相机写入者
     this.cameraController = new CameraController({
       camera: this.camera,
+      navigationScene: () => this.getNavigationScene(),
     });
 
     // 资源管理器并注册全部生产资产
@@ -1312,7 +1314,9 @@ export class SolarEngine {
 
       // 3. 行星表面网格（挂在 poleFrame 下，绕本地 Y 轴自转）
       const displayRadius = getNavDisplayRadius(data.radiusKm, data.type);
-      const sphereGeo = new THREE.SphereGeometry(displayRadius, 48, 36);
+      // Giant planets have no terrain LOD; keep their close-up silhouette smooth.
+      const giant = ['jupiter','saturn','uranus','neptune'].includes(id);
+      const sphereGeo = new THREE.SphereGeometry(displayRadius, giant ? 128 : 48, giant ? 96 : 36);
       const defaultMat = new THREE.MeshStandardMaterial({
         color: data.colorHex ?? 0x888888,
         roughness: 0.85,
@@ -2192,6 +2196,8 @@ export class SolarEngine {
   }
 
   public executeCameraCommand(cmd: CameraCommand): void {
+    const restorePresentation = this.bodyPoseProvider.capturePresentationRollback();
+    const previousTravel = this.presentationTravel;
     if (['flyTo', 'overview', 'restoreBookmark', 'focusRegion'].includes(cmd.type)) this.navigationRevision++;
     if ((cmd.type === 'flyTo' && !cmd.exact) || cmd.type === 'overview') {
       // Travel is an explicit presentation transition, not a physical flight.
@@ -2202,22 +2208,34 @@ export class SolarEngine {
         from.set(id, {position: node.mesh.getWorldPosition(new THREE.Vector3()),
           radius: node.displayRadius * node.mesh.getWorldScale(new THREE.Vector3()).x});
       }
-      this.presentationTravel = {elapsed:0, duration:this.reduceMotion ? 0.15 : 1.2, from};
+      const flightDuration = cmd.type === 'flyTo' ? (cmd.durationSec ?? (this.reduceMotion ? 0.15 : 2.5)) : (this.reduceMotion ? 0.15 : 2.5);
+      const presentationDuration = Math.min(1.2, Math.max(0.05, flightDuration));
+      this.presentationTravel = {elapsed:0, duration:presentationDuration, from};
       if (cmd.type === 'flyTo') {
         const body = BODIES[cmd.bodyId];
         const refId = body.type === 'moon' ? body.parentId! : cmd.bodyId;
         this.bodyPoseProvider.setPhysicalReferenceBody(refId);
-        this.setPresentationPolicy('PHYSICAL_OBSERVATION');
+        this.setPresentationPolicy('PHYSICAL_OBSERVATION', presentationDuration);
         const reference = BODIES[refId];
         const radius = body.type === 'moon'
           ? getNavDisplayRadius(reference.radiusKm, reference.type) * body.radiusKm / reference.radiusKm
           : getNavDisplayRadius(body.radiusKm, body.type);
         const destination = this.bodyPoseProvider.getBodyPose(cmd.bodyId, this.simTimeHours).position.clone();
         if (body.type === 'moon') destination.add(new THREE.Vector3(...getPlanetNavPosition(refId, this.simTimeHours)));
+        const arrivalTime=this.simTimeHours+(this.isPaused?0:flightDuration*this.timeScale/3600);
+        const sunlight=this.bodyPoseProvider.getPhysicalSunDirection(cmd.bodyId,arrivalTime);
+        let view=sunlight.clone().applyAxisAngle(new THREE.Vector3(0,1,0),.42);
+        if(body.type==='moon') {
+          const parent=new THREE.Vector3(...getPlanetNavPosition(refId,arrivalTime));
+          const child=this.bodyPoseProvider.getBodyPose(cmd.bodyId,arrivalTime,flightDuration).position.clone().add(parent);
+          view=satelliteViewDirection(child,parent,getNavDisplayRadius(reference.radiusKm,reference.type),this.camera.fov,this.camera.aspect,sunlight);
+        }
         cmd = {...cmd, framingRadius:radius * (body.ringConfig?.outerRadiusRatio ?? 1),
+          viewDirection:cmd.viewDirection ?? (cmd.lookTarget ? undefined : [view.x,view.y,view.z]),
           targetPos: cmd.targetPos ?? [destination.x, destination.y, destination.z]};
       } else {
-        this.setPresentationPolicy('NAV_SCHEMATIC');
+        this.bodyPoseProvider.setPhysicalReferenceBody('sun');
+        this.setPresentationPolicy('NAV_SCHEMATIC', presentationDuration);
       }
     }
     // R4（260925 审计七）：用户明确前往新目标（旅行类命令）→ 撤销旧下降/返轨
@@ -2260,15 +2278,6 @@ export class SolarEngine {
     }
     if (cmd.type === 'flyTo' || cmd.type === 'overview' || cmd.type === 'restoreBookmark') {
       soundEffects.playWarp();
-      // R3-a（260925 审计七）：全景 = 显式导航示意域——物理观察残留（下降/
-      // 返轨后未回导航）时恢复 NAV，否则太阳保持物理模式隐藏、全景无太阳
-      if (
-        cmd.type === 'overview' &&
-        this.bodyPoseProvider.getPolicy() === 'PHYSICAL_OBSERVATION' &&
-        this.landingController.getState() === 'ORBIT'
-      ) {
-        this.setPresentationPolicy('NAV_SCHEMATIC');
-      }
     } else if (cmd.type === 'select') {
       soundEffects.playClick();
       if (this.callbacks.onSelectBody) {
@@ -2276,6 +2285,10 @@ export class SolarEngine {
       }
     }
     this.cameraController.executeCommand(cmd);
+    if (isTravelCommand && this.cameraController.navigationBlocked) {
+      restorePresentation();
+      this.presentationTravel = previousTravel;
+    }
     this.emitSnapshot();
   }
 
@@ -3825,7 +3838,7 @@ export class SolarEngine {
   public updateEphemerisPoses(deltaSec: number = 0): void {
     const isPhysicalObservation = this.bodyPoseProvider.getPolicy() === 'PHYSICAL_OBSERVATION';
     // P1：物理观察模式下，以当前相机目标所在的行星系统为线性化参考系（地月/木星系/土星系同一规则）
-    if (isPhysicalObservation) {
+    if (isPhysicalObservation && this.cameraController.getSnapshot().anchor?.kind !== 'free') {
       const camSnap = this.cameraController.getSnapshot();
       const focusId = camSnap.targetBodyId || camSnap.selectedBodyId || 'earth';
       const focusData = BODIES[focusId];
@@ -4047,27 +4060,26 @@ export class SolarEngine {
    * direction/angular size and relative depth; only the overview uses schematic sizes.
    * Positions here are render coordinates, never ephemeris or simulation state.
    */
-  private updateCelestialPresentation(deltaSec: number): void {
+  private calculateCelestialPresentation(simTimeHours: number, secondsAhead = 0) {
     const provider = this.bodyPoseProvider;
     const referenceId = provider.getPhysicalReferenceBody();
     const reference = BODIES[referenceId];
-    const referenceKm = provider.getPhysicalPositionKm(referenceId, this.simTimeHours);
-    const referenceScene = new THREE.Vector3(...getPlanetNavPosition(referenceId, this.simTimeHours));
+    const referenceKm = provider.getPhysicalPositionKm(referenceId, simTimeHours);
+    const referenceScene = new THREE.Vector3(...getPlanetNavPosition(referenceId, simTimeHours));
     const unitsPerKm = getNavDisplayRadius(reference.radiusKm, reference.type) /
       (BodyPoseProvider.PHYSICAL_RADII_KM[referenceId] ?? reference.radiusKm);
-    const blend = THREE.MathUtils.smootherstep(provider.getTransitionProgress(), 0, 1);
+    const blend = THREE.MathUtils.smootherstep(provider.predictTransitionProgress(secondsAhead), 0, 1);
     const travel = this.presentationTravel;
-    if (travel) travel.elapsed = Math.min(travel.duration, travel.elapsed + deltaSec);
-    const travelBlend = travel ? THREE.MathUtils.smootherstep(travel.elapsed / travel.duration, 0, 1) : 1;
+    const travelBlend = travel ? THREE.MathUtils.smootherstep(Math.min(travel.duration, travel.elapsed + secondsAhead) / travel.duration, 0, 1) : 1;
     const poses = new Map<BodyId, {position: THREE.Vector3; radius: number}>();
     for (const [id, node] of this.bodyNodes) {
-      const pose = provider.getBodyPose(id, this.simTimeHours);
+      const pose = provider.getBodyPose(id, simTimeHours, secondsAhead);
       const position = pose.position.clone();
       const parentId = node.data.type === 'moon' ? node.data.parentId : undefined;
-      if (parentId) position.add(new THREE.Vector3(...getPlanetNavPosition(parentId, this.simTimeHours)));
+      if (parentId) position.add(new THREE.Vector3(...getPlanetNavPosition(parentId, simTimeHours)));
       let radius = pose.renderSurfaceRadius;
       if (id !== referenceId && parentId !== referenceId && blend > 0) {
-        const projected = projectDistantBody(provider.getPhysicalPositionKm(id, this.simTimeHours),
+        const projected = projectDistantBody(provider.getPhysicalPositionKm(id, simTimeHours),
           BodyPoseProvider.PHYSICAL_RADII_KM[id] ?? node.data.radiusKm,
           referenceKm, referenceScene, unitsPerKm);
         position.lerp(projected.position, blend);
@@ -4080,6 +4092,32 @@ export class SolarEngine {
       }
       poses.set(id, {position, radius});
     }
+    return poses;
+  }
+
+  private getNavigationScene(): NavigationScene {
+    const rate = this.isPaused ? 0 : this.timeScale;
+    const startTime = this.simTimeHours;
+    const fastestHours = Math.min(...Object.values(BODIES).filter(b=>b.type==='moon').map(b=>Math.abs(b.orbitPeriodDays)*24));
+    return {revision: `${rate}:${this.navigationClockRevision}:${this.bodyPoseProvider.getPhysicalReferenceBody()}:${this.camera.aspect}`, samples: Math.max(192,Math.ceil(2.5*rate/3600/fastestHours*160)),
+      sample: seconds => {
+        const time=startTime+seconds*rate/3600;
+        const poses=this.calculateCelestialPresentation(time,seconds);
+        return [...poses].map(([id,p])=>{
+          const body=BODIES[id], future=this.bodyPoseProvider.getBodyPose(id,time,seconds);
+          const travelActive = this.presentationTravel && this.presentationTravel.elapsed + seconds < this.presentationTravel.duration;
+          const focusPosition = travelActive ? future.position.clone() : p.position.clone();
+          if(travelActive && body.type==='moon')focusPosition.add(new THREE.Vector3(...getPlanetNavPosition(body.parentId!,time)));
+          const shape=body.dimensionsKm ? Math.max(...body.dimensionsKm)/(2*body.radiusKm) : 1;
+          return {id,position:p.position,focusPosition,radius:p.radius*Math.max(1,shape,body.ringConfig?.outerRadiusRatio ?? 1)};
+        });
+      }};
+  }
+
+  private updateCelestialPresentation(deltaSec: number): void {
+    const travel=this.presentationTravel;
+    if(travel)travel.elapsed=Math.min(travel.duration,travel.elapsed+deltaSec);
+    const poses=this.calculateCelestialPresentation(this.simTimeHours);
     for (const [id, node] of this.bodyNodes) {
       const pose = poses.get(id)!;
       node.systemGroup.visible = true;
@@ -4186,14 +4224,17 @@ export class SolarEngine {
     const target=station?.bodyId ?? bm.targetBodyId;
     const body=BODIES[target];
     this.cameraController.executeCommand({type:'cancelFlight'});
-    // Set the camera target before refreshing poses; it owns physical reference selection.
-    this.cameraController.executeCommand({type:'restoreBookmark',targetBodyId:target,spherical:bm.spherical,lookTarget:bm.lookTarget,durationSec:this.reduceMotion?0.15:1.2});
     this.bodyPoseProvider.setPhysicalReferenceBody(body.type==='moon' ? body.parentId! : target);
     this.setPresentationPolicy(station?'PHYSICAL_OBSERVATION':bm.presentationPolicy,0);
-    this.setSimTimeHours(bm.simTimeHours);
+    this.simTimeHours = bm.simTimeHours;
+    this.navigationClockRevision++;
     if (bm.simulation) {
       this.setPaused(bm.simulation.isPaused);
       this.setTimeScale(bm.simulation.timeScale);
+    }
+    if (!station) {
+      this.cameraController.executeCommand({type:'restoreBookmark',targetBodyId:target,spherical:bm.spherical,lookTarget:bm.lookTarget,durationSec:this.reduceMotion?0.15:1.2});
+      this.updateEphemerisPoses(0);
     }
     this.setVehicle(bm.vehicleId ?? null);
     this.setViewCameraMode(bm.vehicleId ? bm.viewCameraMode : 'PLANET_OBSERVE');
@@ -4207,6 +4248,7 @@ export class SolarEngine {
       this.preferredLandingSites.set(site.bodyId,site.id);
       this.landingController.restoreSurfaceStation(site.id,station.latDeg,longitude,station.eyeHeightM);
       this.cameraController.executeCommand({type:'enterSurfaceLook',bodyId:site.bodyId,lat:station.latDeg,lon:longitude,eyeHeightM:station.eyeHeightM,initialYawDeg:station.orientationDeg?.yawDeg ?? 0,initialPitchDeg:station.orientationDeg?.pitchDeg ?? 0});
+      this.updateEphemerisPoses(0);
       this.cameraController.update(0,id=>this.getBodyWorldPose(id));
       if (bm.lookTarget?.kind==='body') this.cameraController.executeCommand({type:'lookAtSkyTarget',targetBodyId:bm.lookTarget.bodyId});
       this.prevLandingState='SURFACE_LOOK';
@@ -4233,9 +4275,12 @@ export class SolarEngine {
     return this.cameraController.getSurfaceStationPose();
   }
 
+  private navigationClockRevision = 0;
+
   public setSimTimeHours(hours: number): void {
     if (Number.isFinite(hours)) {
       this.simTimeHours = hours;
+      this.navigationClockRevision++;
       // 立即刷新所有天体公转与自转姿态，保证后续相机指令获取到最新瞬时四元数
       this.updateEphemerisPoses(0);
       this.cameraController.update(0, (id: BodyId) => this.getBodyWorldPose(id));
