@@ -30,6 +30,8 @@ export interface CameraStateSnapshot {
   selectedBodyId: BodyId | null;
   sourceBodyId?: BodyId | null;
   transitionProgress?: number;
+  /** Intended framing on arrival; observing the Sun and overview are different intents. */
+  destinationMode?: 'OVERVIEW' | 'ORBIT_TARGET';
   distanceToTarget: number;
   minDistance: number;
   maxDistance: number;

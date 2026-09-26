@@ -150,7 +150,9 @@ describe('月球落地闭环测试 (真实 DTM 栅格后端)', () => {
       expect(controller.getState()).toBe('DESCENDING');
       expect(lastTelemetry.altitudeAGLM).toBeGreaterThan(10000);
       // 遥测携带地形溯源与速度语义
-      expect(lastTelemetry.terrain.fidelity).toBe('measured-dem');
+      // Start projection (20.1,30.5) is outside the admitted station window.
+      expect(lastTelemetry.terrain.fidelity).toBe('datum-sphere');
+      expect(lastTelemetry.terrain.sourceId).toBeNull();
       expect(lastTelemetry.verticalSpeedSemantics).toBe('commanded-clearance-rate');
 
       // 2. 推进
@@ -185,6 +187,7 @@ describe('月球落地闭环测试 (真实 DTM 栅格后端)', () => {
       expect(controller.getState()).toBe('SURFACE_LOOK');
       const surfaceTelemetry = controller.getTelemetry();
       expect(surfaceTelemetry.altitudeAGLM).toBe(1.7);
+      expect(surfaceTelemetry.terrain.fidelity).toBe('measured-dem');
       // 站点 MSL = 真实 DEM 高程 + 眼高（契约值驱动）
       expect(surfaceTelemetry.altitudeMSLM).toBeCloseTo(
         LANDING_SITES['taurus-littrow'].elevationDatumOffsetM + 1.7,

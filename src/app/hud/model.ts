@@ -70,21 +70,16 @@ export function buildContextMap(frame: HudFrame, centerId: BodyId, width: number
     const body = BODIES[id];
     const bPos = frame.bodies.find(b => b.id === id)?.position;
     const actualDist = bPos ? Math.hypot(...relative(bPos)) : 0;
+    const positionAt = centerId === 'sun' ? getPlanetNavPosition : getSatelliteNavPosition;
+    const currentNavDist = Math.hypot(...positionAt(id, frame.simTimeHours));
+    const trackScale = actualDist > 0 && currentNavDist > 0 ? actualDist / currentNavDist : 1;
 
     return {
       id,
       points: Array.from({ length: 97 }, (_, i) => {
         const t = frame.simTimeHours + Math.abs(body.orbitPeriodDays) * 24 * i / 96;
-        if (centerId === 'sun') {
-          return getPlanetNavPosition(id, t);
-        }
-        const navPos = getSatelliteNavPosition(id, t);
-        const navDist = Math.hypot(...navPos);
-        if (actualDist > 0 && navDist > 0 && actualDist > navDist * 1.5) {
-          const scale = actualDist / navDist;
-          return [navPos[0] * scale, navPos[1] * scale, navPos[2] * scale] as [number, number, number];
-        }
-        return navPos;
+        const navPos = positionAt(id, t);
+        return navPos.map(v => v * trackScale) as [number, number, number];
       }),
     };
   });

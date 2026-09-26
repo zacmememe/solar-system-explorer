@@ -103,7 +103,7 @@ async function runR5Verification() {
 
     // 验证遥测仪表面板出现，并处于 DESCENDING 状态
     await page.waitForSelector('[data-testid="lunar-landing-telemetry-hud"]', { timeout: 5000 });
-    const stateTag = await page.$eval('[data-testid="landing-state-tag"]', (el) => el.textContent || '');
+    const stateTag = await page.$eval('[data-testid="landing-state-tag"]', (el) => el.getAttribute('data-state') || '');
     const aglAlt = await page.$eval('[data-testid="telemetry-agl-value"]', (el) => el.textContent || '');
     console.log(`下降启动状态: ${stateTag}, 初始离地高度 (AGL): ${aglAlt}`);
 
@@ -124,7 +124,7 @@ async function runR5Verification() {
     await page.click('[data-testid="landing-btn-hold"]');
     await new Promise((r) => setTimeout(r, 600));
 
-    const holdStateTag = await page.$eval('[data-testid="landing-state-tag"]', (el) => el.textContent || '');
+    const holdStateTag = await page.$eval('[data-testid="landing-state-tag"]', (el) => el.getAttribute('data-state') || '');
     const holdAlt = await page.$eval('[data-testid="telemetry-agl-value"]', (el) => el.textContent || '');
     console.log(`悬停状态: ${holdStateTag} (期望: HOLD), 悬停高度: ${holdAlt}`);
 
@@ -161,7 +161,7 @@ async function runR5Verification() {
     `);
     await new Promise((r) => setTimeout(r, 1200));
 
-    const surfaceState = await page.$eval('[data-testid="landing-state-tag"]', (el) => el.textContent || '');
+    const surfaceState = await page.$eval('[data-testid="landing-state-tag"]', (el) => el.getAttribute('data-state') || '');
     const surfaceAgl = await page.$eval('[data-testid="telemetry-agl-value"]', (el) => el.textContent || '');
     console.log(`地表停驻状态: ${surfaceState} (期望: SURFACE_LOOK), 触地高度: ${surfaceAgl}`);
 
@@ -197,7 +197,7 @@ async function runR5Verification() {
     await page.click('[data-testid="landing-btn-return-orbit"]');
     await new Promise((r) => setTimeout(r, 600));
 
-    const ascendState = await page.$eval('[data-testid="landing-state-tag"]', (el) => el.textContent || '');
+    const ascendState = await page.$eval('[data-testid="landing-state-tag"]', (el) => el.getAttribute('data-state') || '');
     console.log(`升空状态: ${ascendState} (期望: ASCENDING)`);
 
     // 推进升空完成回轨

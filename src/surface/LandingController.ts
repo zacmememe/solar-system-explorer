@@ -110,6 +110,8 @@ export class LandingController {
 
   /** 当前下降进度（跨腿折算 0..1，供 HUD 进度条） */
   public getProgress(): number {
+    if (this.state === 'ASCENDING') return Math.max(0, Math.min(1, 1 - this.ascendSec / Math.max(1, this.ascendTotalSec)));
+    if (this.state === 'PREPARING' || this.state === 'ORBIT') return 0;
     if (this.state === 'SURFACE_LOOK') return 1;
     const total = this.legs.reduce((s, l) => s + l.durationSec, 0);
     if (total <= 0) return 0;
@@ -467,10 +469,10 @@ export class LandingController {
     if (this.state === 'DESCENDING') {
       verticalSpeedMps = Number(traj.commandedClearanceRateMps.toFixed(1));
     } else if (this.state === 'ASCENDING') {
-      verticalSpeedMps = Number(Math.abs(traj.commandedClearanceRateMps).toFixed(1));
+      verticalSpeedMps = Number(traj.commandedClearanceRateMps.toFixed(1));
     }
 
-    const sample = this.heightProvider.getHeightSample(this.site.bodyId, this.targetLat, this.targetLon);
+    const sample = this.heightProvider.getHeightSample(this.site.bodyId, traj.lat, traj.lon);
     const provenance = this.heightProvider.getAdmissionState(this.site.bodyId);
 
     return {
@@ -480,7 +482,7 @@ export class LandingController {
       altitudeMSLM: Number(traj.altitudeMSLM.toFixed(1)),
       verticalSpeedMps,
       verticalSpeedSemantics: 'commanded-clearance-rate',
-      horizontalSpeedMps: Number(traj.commandedTangentialSpeedMps.toFixed(1)),
+      horizontalSpeedMps: this.state === 'DESCENDING' ? Number(traj.commandedTangentialSpeedMps.toFixed(1)) : 0,
       progress: Number(this.getProgress().toFixed(3)),
       currentLat: Number(traj.lat.toFixed(4)),
       currentLon: Number(traj.lon.toFixed(4)),

@@ -2626,8 +2626,8 @@ export class SolarEngine {
    * forward = n·cos(yaw) + e·sin(yaw)；lookDir = forward·cos(pitch) + u·sin(pitch)
    * → yaw = atan2(f·e, f·n)，pitch = asin(f·u)。
    */
-  private extractMoonSurfaceOrientation(latDeg: number, lonDeg: number): { yawDeg: number; pitchDeg: number } {
-    const moonPose = this.getBodyWorldPose(this.activeLandingBodyId);
+  private extractMoonSurfaceOrientation(latDeg: number, lonDeg: number, bodyId = this.activeLandingBodyId, limitPitch = true): { yawDeg: number; pitchDeg: number } {
+    const moonPose = this.getBodyWorldPose(bodyId);
     const latRad = THREE.MathUtils.degToRad(latDeg);
     const lonRad = THREE.MathUtils.degToRad(lonDeg);
     const cosLat = Math.cos(latRad);
@@ -2643,7 +2643,7 @@ export class SolarEngine {
     const yawDeg = THREE.MathUtils.radToDeg(Math.atan2(f.dot(eW), f.dot(nW)));
     return {
       yawDeg: ((yawDeg % 360) + 360) % 360,
-      pitchDeg: Math.max(-85, Math.min(85, pitchDeg)),
+      pitchDeg: limitPitch ? Math.max(-85, Math.min(85, pitchDeg)) : pitchDeg,
     };
   }
 
@@ -3319,14 +3319,29 @@ export class SolarEngine {
       node.mesh.getWorldPosition(position);
       bodies.push({ id, position: [position.x, position.y, position.z] });
     }
+    const camera = this.cameraController.getSnapshot();
+    const anchor = camera.anchor;
+    const station = this.cameraController.getSurfaceStationPose()?.station;
+    const surface = camera.mode === 'SURFACE_LOOK' && anchor?.kind === 'surface' && station
+      ? { bodyId: anchor.bodyId, lat: anchor.lat, lon: anchor.lon,
+          eyeHeightM: anchor.eyeHeightM, datumHeightM: station.heightM + anchor.eyeHeightM,
+          ...this.extractMoonSurfaceOrientation(anchor.lat, anchor.lon, anchor.bodyId, false) }
+      : null;
     this.callbacks.onHudSnapshot({
       sequence: ++this.hudSequence,
       simTimeHours: this.simTimeHours,
       isPaused: this.isPaused,
       timeScale: this.timeScale,
-      camera: this.cameraController.getSnapshot(),
+      camera,
       observerPosition: [this.camera.position.x, this.camera.position.y, this.camera.position.z],
       bodies,
+      surface,
+      landing: {
+        telemetry: this.landingController.getTelemetry(),
+        availability: this.getLandingAvailability(),
+        sites: this.getLandingSiteChoices(),
+        preparation: this.getLandingPreparationStatus(),
+      },
     });
   }
 

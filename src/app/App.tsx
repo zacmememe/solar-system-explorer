@@ -9,7 +9,6 @@ import { HangarModal } from '../vehicles/HangarModal';
 import { PostcardModal } from '../vehicles/PostcardModal';
 import { BookmarkModal } from './BookmarkModal';
 import { MissionHUD } from './hud/MissionHUD';
-import { LunarLandingHUD, LandingDockRow } from './LunarLandingHUD';
 import { createHudStore } from './hud/store';
 import './app.css';
 import type { BookmarkItem } from '../contracts/bookmark';
@@ -619,7 +618,7 @@ export const App: React.FC = () => {
         showLabels={showLabels} teachingLight={teachingLight} reduceMotion={reduceMotion}
         venusRadarMode={venusRadarMode} titanInfraredMode={titanInfraredMode}
         vehicleName={activeVehicle?.name ?? ''}
-        landingSlot={engineRef.current ? <LandingDockRow engine={engineRef.current} /> : undefined}
+        engine={engineRef.current}
         onPause={togglePause} onSpeed={changeSpeed} onViewMode={handleCameraModeChange}
         onToggleClouds={toggleClouds} onToggleAtmosphere={toggleAtmosphere}
         onToggleLabels={() => setShowLabels(value => !value)} onToggleLight={toggleTeachingLight}
@@ -635,10 +634,6 @@ export const App: React.FC = () => {
         <p style={{ lineHeight: 1.7 }}>需要支持 WebGL2 的浏览器与图形环境。这里不会以空白画面或模拟读数冒充成功。</p>
       </div>}
 
-      {/* 批次 R5：月球着陆与地表停驻遥测仪表 HUD（P3b-A：入口由引擎权威可用性驱动） */}
-      <LunarLandingHUD
-        engine={engineRef.current}
-      />
 
       {/* 航天器机库全屏模态窗口 */}
       {showHangar && (

@@ -92,9 +92,9 @@ try {
   await page.waitForSelector('[data-testid="lunar-landing-start-btn"]',{timeout:45000});await click('lunar-landing-start-btn');
   await page.waitForSelector('[data-testid="landing-btn-hold"]',{timeout:45000});await click('landing-btn-hold');
   await shot('09-mobile-hold');
-  assert.equal(await page.$eval('.landing-details',d=>d.open),false);
-  await page.click('.landing-details summary');await shot('10-mobile-details');
-  await page.click('.landing-details summary');
+  assert.equal(await page.$eval('[data-testid="hud-site-details"]',d=>d.getAttribute('aria-expanded')),'false');
+  await click('hud-site-details');await shot('10-mobile-details');
+  await click('hud-site-details');
   await click('landing-btn-return-hold');
   await page.waitForFunction(()=>window.__solarEngine.getLandingTelemetry().state==='ORBIT',{timeout:45000});
   report.checks.push('mobile details disclosure and visible return control');

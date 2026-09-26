@@ -1,6 +1,6 @@
 /* Broadcast-inspired, not a SpaceX asset or branded replica. No external fonts. */
 .mission-hud {
-  --hud-text: #f3f4f5; --hud-muted: #b5b9bf; --hud-rule: rgb(255 255 255 / .21);
+  --hud-text: #f3f4f5; --hud-muted: #b5b9bf; --hud-rule: rgb(255 255 255 / .21); --hud-glass: rgb(16 19 23 / .83);
   position: absolute; inset: auto 0 0; z-index: 16; pointer-events: none;
   color: var(--hud-text); font: 12px/1.4 system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased;
@@ -58,8 +58,7 @@
 .hud-landing-row select:focus-visible { outline: 2px solid #f5f5f5; outline-offset: 2px; }
 .hud-landing-action { min-height: 32px; padding: 2px 12px !important; border: 1px solid var(--hud-rule);
   font-size: 12px; color: var(--hud-text); }
-.hud-landing-action.is-primary { border-color: rgb(56 189 248 / .6);
-  background: linear-gradient(135deg, rgb(14 165 233 / .28), rgb(2 132 199 / .16)); font-weight: 600; }
+.hud-landing-action.is-primary { border-color: rgb(255 255 255 / .4); background: rgb(255 255 255 / .13); font-weight: 500; }
 .hud-landing-wait { pointer-events: none; display: inline-flex; align-items: center; gap: 4px;
   max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   color: var(--hud-muted); font-size: 11px; padding: 4px 8px; border: 1px solid rgb(148 163 184 / .3);
@@ -72,11 +71,11 @@
 .hud-transfer-caption { color: var(--hud-muted); }
 .hud-transfer-caption strong { color: var(--hud-text); font-weight: 400; }
 .hud-popover { pointer-events: auto; position: absolute; bottom: calc(100% + 14px); width: min(380px, calc(100vw - 24px));
-  max-height: min(520px, calc(100dvh - 250px)); overflow: auto; overscroll-behavior: contain;
-  padding: 12px 18px 18px; background: rgb(9 12 17 / .96); border: 1px solid var(--hud-rule);
+  max-height: min(480px, calc(100dvh - var(--hud-height, 200px) - 140px)); overflow: auto; overscroll-behavior: contain;
+  padding: 12px 18px 18px; background: linear-gradient(145deg, rgb(255 255 255 / .09), rgb(255 255 255 / .02)), var(--hud-glass); backdrop-filter: blur(18px); border: 1px solid var(--hud-rule);
   border-radius: 8px; box-shadow: 0 12px 40px rgb(0 0 0 / .35); }
 .hud-popover-time, .hud-popover-observe { left: 24px; }
-.hud-popover-details { right: 24px; }
+.hud-popover-details, .hud-popover-mission { right: 24px; }
 .hud-popover-heading { display: flex; justify-content: space-between; align-items: center; }
 .hud-popover-heading h2 { font-size: 15px; font-weight: 500; line-height: 1.4; margin: 0; }
 .hud-popover-heading button { width: 44px; font-size: 22px; margin-right: -12px; }
@@ -114,9 +113,96 @@
   .hud-landing-row select { width: 100%; max-width: 100%; min-height: 44px; min-width: 0; }
   .hud-landing-row .hud-landing-action { min-height: 44px; width: 100%; }
   .hud-landing-wait { max-width: 100%; white-space: normal; }
-  .hud-popover-time, .hud-popover-observe, .hud-popover-details { left: 12px; right: 12px; width: auto; }
+  .hud-popover-time, .hud-popover-observe, .hud-popover-details, .hud-popover-mission { left: 12px; right: 12px; width: auto; }
   .hud-transfer { min-height: 92px; padding-top: 3px; }
   .hud-scrim { top: -20px; }
 }
 @media (prefers-reduced-motion: reduce) { .mission-hud * { transition: none !important; } }
 .mission-hud.reduce-motion * { transition: none !important; }
+
+/* Phase-aware instrument deck: white ink, fine rules, translucent surfaces. */
+.hud-layout { max-width: 1680px; margin: 0 auto; }
+.hud-context-heading { border-bottom: 1px solid var(--hud-rule); margin-bottom: 6px; }
+.hud-context-graphic { padding-top: 5px; }
+.hud-hero-reading { font-size: clamp(28px,3.1vw,42px); font-weight: 300; letter-spacing: -.045em; line-height: 1.3; white-space: nowrap; }
+.hud-secondary-reading { display: flex; align-items: baseline; gap: 10px; font-size: 11px; color: var(--hud-muted); margin-top: 3px; }
+.hud-secondary-reading strong { font-weight: 400; color: var(--hud-text); }
+.has-mission .hud-layout { grid-template-columns: minmax(170px,1fr) minmax(340px,640px) minmax(220px,1fr); gap: clamp(18px,3vw,52px); }
+.has-mission .hud-time-eyebrow { margin-top: 16px; font-size: 10px; }
+.has-mission .hud-time-line { height: 36px; }
+.has-mission .hud-rate > span { font-size: 22px; }
+.has-mission .hud-rate > small { font-size: 12px; }
+.has-mission .hud-pause svg { width: 15px; height: 15px; }
+.has-mission .hud-flight-actions { margin-top: 2px; font-size: 11px; }
+.hud-profile-summary, .hud-direction-reading { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 12px; padding-top: 10px; }
+.hud-profile-summary > span:last-child { color: var(--hud-muted); font-size: 11px; }
+.hud-direction-reading { padding-top: 8px; color: var(--hud-muted); }
+.hud-direction-reading strong { margin-left: 6px; font-size: 20px; color: var(--hud-text); font-weight: 300; }
+.hud-altitude-profile svg, .hud-compass svg { display: block; width: 100%; height: 62px; }
+.hud-altitude-profile text, .hud-compass text { fill: var(--hud-muted); font-size: 11px; font-family: inherit; }
+.hud-instrument-line { fill: none; stroke: var(--hud-rule); stroke-width: 1; }
+.hud-instrument-active { fill: none; stroke: var(--hud-text); stroke-width: 1.5; }
+.hud-instrument-caption { color: var(--hud-muted); font-size: 10px; letter-spacing: .03em; margin: 2px 0 8px; }
+.hud-mission-actions { display: flex; gap: 8px; flex-wrap: wrap; padding-top: 7px; }
+.mission-hud .hud-mission-actions button { border: 1px solid var(--hud-rule); border-radius: 4px; padding: 0 14px; min-height: 44px; font-size: 12px; }
+.mission-hud .hud-mission-actions .is-primary { background: rgb(255 255 255 / .13); border-color: rgb(255 255 255 / .4); }
+.hud-return-hint { min-height: 44px; display: flex; align-items: center; color: var(--hud-muted); font-size: 11px; }
+.hud-site-name { font-size: 18px; font-weight: 400; line-height: 1.5; margin: 5px 0; text-wrap: balance; }
+.hud-local-coordinates { font-size: 12px; color: var(--hud-muted); margin: 6px 0; }
+.mission-hud .hud-explain { padding-right: 0; font-size: 12px; }
+.hud-target-note { color: var(--hud-muted); font-size: 12px; }
+.hud-preparation { display: flex; gap: 14px; align-items: center; min-height: 100px; }
+.hud-preparation strong { font-size: 15px; font-weight: 400; }
+.hud-preparation p { font-size: 12px; color: var(--hud-muted); margin: 6px 0; }
+.hud-preparation-dot { width: 8px; height: 8px; border: 1px solid var(--hud-text); border-radius: 50%; flex-shrink: 0; }
+.has-mission .hud-scrim { top: -40px; }
+@media (max-width: 1100px) {
+ .has-mission .hud-layout { grid-template-columns: 165px minmax(290px,1fr) 190px; gap: 16px; }
+ .hud-site-name { font-size: 16px; }
+}
+@media (max-width: 760px) and (min-height: 501px) {
+ .has-mission .hud-layout { grid-template-columns: 1fr 1fr; grid-template-areas: 'context context' 'flight target'; gap: 12px 14px; }
+ .has-mission .hud-time-eyebrow { display: none; }
+ .has-mission .hud-time-line { display: inline-flex; margin-top: 2px; }
+ .has-mission .hud-flight-actions { display: flex; gap: 0; margin-top: 0; }
+ .has-mission .hud-flight-actions button { padding: 0 5px; }
+ .hud-hero-reading { font-size: 29px; }
+ .hud-secondary-reading { flex-wrap: wrap; gap: 3px 8px; }
+ .hud-mission-actions { gap: 6px; }
+ .mission-hud .hud-mission-actions button { flex: 1; padding: 0 7px; font-size: 11px; white-space: nowrap; }
+ .hud-site-name { font-size: 14px; }
+ .hud-local-coordinates { font-size: 10px; }
+ .hud-instrument-caption { margin-bottom: 0; }
+ .hud-profile-summary { font-size: 11px; }
+ .hud-context-heading { height: 28px; }
+ .hud-popover { max-height: calc(100dvh - var(--hud-height,300px) - 160px); }
+}
+@media (max-height: 500px) {
+ .hud-layout, .has-mission .hud-layout { grid-template-columns: 150px minmax(260px,1fr) 170px; grid-template-areas: 'flight context target'; gap: 14px; padding: 0 14px 8px; }
+ .hud-flight { grid-area: flight; } .hud-context { grid-area: context; } .hud-target { grid-area: target; }
+ .hud-hero-reading { font-size: 26px; }
+ .has-mission .hud-time-eyebrow, .has-mission .hud-secondary-reading, .hud-instrument-caption { display: none; }
+ .has-mission .hud-time-line { height: 30px; }
+ .hud-site-name { font-size: 13px; }
+ .hud-local-coordinates { font-size: 10px; }
+ .hud-mission-actions { gap: 5px; padding-top: 2px; }
+ .mission-hud .hud-mission-actions button { padding: 0 6px; font-size: 10px; }
+ .hud-altitude-profile svg, .hud-compass svg { height: 45px; }
+ .hud-profile-summary { padding-top: 2px; font-size: 10px; }
+ .hud-direction-reading { padding-top: 0; }
+ .hud-direction-reading strong { font-size: 16px; }
+ .hud-flight-actions button { padding: 0 5px; font-size: 10px; }
+ .hud-target-heading strong { font-size: 16px; } .hud-radius > span { font-size: 24px; }
+ .hud-popover { max-height: calc(100dvh - var(--hud-height,170px) - 85px); }
+ .hud-scrim { top: -15px; }
+}
+
+@media (max-width: 760px) and (min-height: 501px) {
+ .has-mission .hud-layout { padding-bottom: max(56px, calc(env(safe-area-inset-bottom) + 48px)); }
+ .has-mission .hud-time-line { position: absolute; bottom: max(8px,env(safe-area-inset-bottom)); left: 14px; margin: 0; }
+ .has-mission .hud-flight-actions { position: absolute; bottom: max(4px,env(safe-area-inset-bottom)); right: 14px; margin: 0; }
+ .has-mission .hud-explain { min-height: 44px; }
+}
+.hud-popover-heading { position: sticky; top: -12px; background: rgb(20 23 27 / .98); z-index: 1; }
+
+.hud-map-label { fill: var(--hud-muted); font-size: 11px; font-family: inherit; }

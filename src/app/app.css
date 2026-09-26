@@ -1,13 +1,5 @@
 /* Application shell and navigation bar styling */
-.landing-details { margin-bottom: 10px; }
-.landing-details > summary { cursor: pointer; min-height: 40px; padding: 10px 0;
-  color: #bae6fd; font-size: 12px; }
-.landing-details > summary span { float: right; margin-left: 8px; color: #94a3b8; }
-.landing-details > summary:focus-visible { outline: 2px solid #bae6fd; outline-offset: 2px; }
-/* F-LANDING-HUD-01：原悬浮着陆选择器已并入底部 HUD 当前天体区（hud-landing-row） */
-@media (max-width: 760px) { .landing-telemetry { top: 150px !important; right: 8px !important; width: min(300px, calc(100vw - 16px)) !important; max-height: calc(100vh - 360px) !important; } }
-@media (max-height: 500px) { .landing-telemetry { top: 82px !important; max-height: calc(100vh - 150px) !important; } }
-.app-top-container {
+ .app-top-container {
   position: absolute;
   top: 12px;
   left: 14px;

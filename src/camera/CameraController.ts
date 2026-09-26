@@ -90,6 +90,7 @@ export class CameraController {
   private transitionStartTargetPos: THREE.Vector3 = new THREE.Vector3();
   private transitionTargetTargetPos: THREE.Vector3 = new THREE.Vector3();
   private transitionProgress: number = 0; // 0 to 1
+  private transitionDestinationMode: 'OVERVIEW' | 'ORBIT_TARGET' = 'ORBIT_TARGET';
   private transitionDurationSec: number = 2.5;
   private transitionStartQuaternion = new THREE.Quaternion();
   private transitionEndQuaternion = new THREE.Quaternion();
@@ -141,6 +142,7 @@ export class CameraController {
       selectedBodyId: this.selectedBodyId,
       sourceBodyId: this.sourceBodyId,
       transitionProgress: this.transitionProgress,
+      destinationMode: this.isTransitioning ? this.transitionDestinationMode : undefined,
       distanceToTarget: this.spherical.radius,
       minDistance: this.minDistance,
       maxDistance: this.maxDistance,
@@ -182,6 +184,7 @@ export class CameraController {
     const token = ++this.currentCommandId;
     const startsFlight=['flyTo','overview','restoreBookmark','focusRegion'].includes(command.type);
     if(startsFlight) {
+      this.transitionDestinationMode = command.type === 'overview' ? 'OVERVIEW' : 'ORBIT_TARGET';
       // Every entry (including surface -> overview/bookmark) starts at the pose
       // actually displayed, not the last orbit's stale spherical coordinates.
       this.spherical.setFromVector3(this.camera.position.clone().sub(this.targetPosition));
@@ -794,7 +797,7 @@ export class CameraController {
       if (this.transitionProgress >= 1.0) {
         this.transitionProgress = 1.0;
         this.isTransitioning = false;
-        this.mode = 'ORBIT_TARGET';
+        this.mode = this.transitionDestinationMode;
         this.anchor = { kind: 'body', bodyId: this.targetBodyId };
         const targetInfo = getPos(this.targetBodyId);
         this.surfaceRadius = targetInfo.surfaceRadius ?? targetInfo.radius;
