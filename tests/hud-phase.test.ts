@@ -87,9 +87,10 @@ describe('mission telemetry counterexamples',()=>{
   expect(a).toBeGreaterThan(0);expect(b).toBeGreaterThan(a);expect(b).toBeLessThan(1);
   c.update(30);expect(c.getState()).toBe('ORBIT');expect(c.getProgress()).toBe(0);
  });
- it('return from above the 50km framing height retains the negative guided rate',()=>{
+ it('return above the old 50km ceiling climbs and reports the actual positive guided rate',()=>{
   const c=new LandingController();c.startDescent();c.completePreparation(undefined,undefined,{latDeg:20.1,lonDeg:30.5,clearanceM:200000});
   c.holdDescent();c.returnToOrbit();c.update(2);
-  expect(c.getTelemetry().verticalSpeedMps).toBeLessThan(0);
+  expect(c.getTelemetry().altitudeMSLM).toBeGreaterThan(200000);
+  expect(c.getTelemetry().verticalSpeedMps).toBeGreaterThan(0);
  });
 });

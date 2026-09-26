@@ -283,9 +283,10 @@ export class SolarEngine {
   private landingMissionId = 0;
   private landingPrep: {
     missionId: number;
-    phase: 'policy' | 'lighting' | 'capture';
+    phase: 'policy' | 'approach' | 'capture';
     userInputRevisionAtStart: number;
   } | null = null;
+  private landingSiteTravel = false;
   /** 最近一次准备阶段为光照做出的模拟时刻调整（HUD 如实提示；null=未调整） */
   private lastLandingLightingAdjustHours: number | null = null;
   /** P3b-A：同帧捕获的起始四元数（含滚转；验收核对用——导引当前值见 landingGuidedQuat） */
@@ -2200,6 +2201,24 @@ export class SolarEngine {
   }
 
   public executeCameraCommand(cmd: CameraCommand): void {
+    if (cmd.type === 'cancelFlight' && this.landingController.getState() === 'PREPARING') {
+      this.cancelLandingPreparation();
+      this.emitSnapshot();
+      return;
+    }
+    const isTravelCommand = ['flyTo','overview','restoreBookmark','focusRegion'].includes(cmd.type);
+    // Restore the previous journey's clock BEFORE predicting the new flight.
+    if (this.landingSiteTravel && (isTravelCommand || cmd.type === 'cancelFlight' || cmd.type === 'select')) {
+      this.landingSiteTravel = false;
+      if (cmd.type === 'select') this.cameraController.executeCommand({type:'cancelFlight'});
+      this.landingController.restoreTimeScaleOverride(scale=>this.setTimeScale(scale));
+    }
+    if (isTravelCommand && (this.landingController.getState() !== 'ORBIT' || this.landingPrep)) {
+      this.landingPrep = null;
+      this.landingGuideActive = false;
+      this.landingGuidedQuat = null;
+      this.landingController.cancel(scale=>this.setTimeScale(scale));
+    }
     const restorePresentation = this.bodyPoseProvider.capturePresentationRollback();
     const previousTravel = this.presentationTravel;
     if (['flyTo', 'overview', 'restoreBookmark', 'focusRegion'].includes(cmd.type)) this.navigationRevision++;
@@ -2246,9 +2265,6 @@ export class SolarEngine {
     // 任务及准备/导引许可，从当前真实机位开始新旅程。改前 flyTo 不终止
     // DESCENDING，animate 下一帧继续 applyLandingFrame 把相机抢回——两套
     // 任务轮流写相机。仅 select 不在此列（选中不移镜，仍走下方准备收回）
-    const isTravelCommand =
-      cmd.type === 'flyTo' || cmd.type === 'overview' ||
-      cmd.type === 'restoreBookmark' || cmd.type === 'focusRegion';
     if (isTravelCommand) {
       const st = this.landingController.getState();
       if (st !== 'ORBIT' || this.landingPrep) {
@@ -2260,17 +2276,7 @@ export class SolarEngine {
     }
     // P2：用户改选其它天体时收回过期的着陆准备（不自动重发；S4c 按活动站点判）
     if (cmd.type === 'select' && cmd.bodyId !== this.activeLandingBodyId) {
-      this.landingController.cancelPreparation();
-      this.landingPrep = null;
-    }
-    // P3b-A：准备期内的任何相机命令（用户导航/改选）使旧自动启动许可失效——
-    // 重置准备流水线从当前状态重新走（Pro §8.1；若世界已不可用，step 会收回）
-    if (this.landingPrep && this.landingController.getState() === 'PREPARING') {
-      this.landingPrep = {
-        missionId: this.landingPrep.missionId,
-        phase: 'policy',
-        userInputRevisionAtStart: this.cameraController.getUserInputRevision(),
-      };
+      this.cancelLandingPreparation();
     }
     if (cmd.type === 'flyTo' && !cmd.targetPos) {
       const node = this.bodyNodes.get(cmd.bodyId);
@@ -2397,24 +2403,28 @@ export class SolarEngine {
       bodyId: this.activeLandingBodyId,
       site: this.activeLandingSite,
     };
-    const bodyPose = this.getBodyWorldPose(resolved.bodyId);
-    const siteDir = new THREE.Vector3(...latLonDirection(resolved.site.centerLat, resolved.site.centerLon));
-    const siteWorld = siteDir.clone().applyQuaternion(bodyPose.quaternion).normalize();
-    const dist = this.camera.position.distanceTo(bodyPose.pos);
-    const target = bodyPose.pos.clone().addScaledVector(siteWorld, dist);
+    this.landingController.acquireTimeScaleOverride(()=>this.timeScale, scale=>this.setTimeScale(scale), true);
+    this.landingSiteTravel = true;
+    this.flyAroundToLandingSite(resolved.site);
+  }
+
+  private flyAroundToLandingSite(site: LandingSite): void {
+    const pose = this.getBodyWorldPose(site.bodyId);
+    const from = this.camera.position.clone().sub(pose.pos);
+    const normal = new THREE.Vector3(...latLonDirection(site.centerLat, site.centerLon)).applyQuaternion(pose.quaternion);
+    const angle = from.angleTo(normal);
     this.cameraController.executeCommand({
-      type: 'flyTo',
-      bodyId: resolved.bodyId,
-      durationSec: 2.8,
-      targetPos: [target.x, target.y, target.z],
-      exact: true,
+      type: 'focusRegion', bodyId:site.bodyId, lat:site.centerLat, lon:site.centerLon,
+      altitude:Math.max(pose.surfaceRadius * 0.15, from.length() - pose.surfaceRadius),
+      durationSec:this.reduceMotion ? 0.4 : Math.max(3, Math.min(12, angle / THREE.MathUtils.degToRad(18))),
+      surfaceArc:true,
     });
   }
 
   /** P3b-A：准备流水线状态（HUD 提示光照调整等信息；startQuat 供验收核对首帧姿态） */
   public getLandingPreparationStatus(): {
     active: boolean;
-    phase: 'policy' | 'lighting' | 'capture' | null;
+    phase: 'policy' | 'approach' | 'capture' | null;
     lightingAdjustedSimHours: number | null;
     startQuat: [number, number, number, number] | null;
   } {
@@ -2473,7 +2483,15 @@ export class SolarEngine {
     soundEffects.playWarp();
     this.setPresentationPolicy('PHYSICAL_OBSERVATION');
     this.landingController.startDescent();
+    this.landingController.acquireTimeScaleOverride(()=>this.timeScale, scale=>this.setTimeScale(scale));
     return true;
+  }
+
+  public cancelLandingPreparation(): void {
+    if (this.landingController.getState() !== 'PREPARING') return;
+    if (this.landingPrep?.phase === 'approach') this.cameraController.executeCommand({type:'cancelFlight'});
+    this.landingPrep = null;
+    this.landingController.cancelPreparation(scale=>this.setTimeScale(scale));
   }
 
   /**
@@ -2485,11 +2503,15 @@ export class SolarEngine {
     const prep = this.landingPrep;
     if (!prep) {
       // 无引擎准备上下文（如外部直接调用控制器）时收回，避免卡死在 PREPARING
-      this.landingController.cancelPreparation();
+      this.landingController.cancelPreparation(scale=>this.setTimeScale(scale));
       return;
     }
     // 用户输入 → 许可失效，重新准备（Pro §4.1/§8.1：重新从当前机位准备，不回拉）
     if (this.cameraController.getUserInputRevision() !== prep.userInputRevisionAtStart) {
+      if (prep.phase === 'approach') {
+        this.cancelLandingPreparation();
+        return;
+      }
       this.landingPrep = {
         missionId: prep.missionId,
         phase: 'policy',
@@ -2503,14 +2525,19 @@ export class SolarEngine {
     // 注意 2：不做距离守卫——策略过渡期月球场面位置/尺度瞬变、相机跟随滞后，
     // 距离瞬时超限会被误杀（实测）；用户飞离必然伴随 isTransitioning，已被覆盖。
     const camSnap = this.cameraController.getSnapshot();
+    if (prep.phase === 'approach') {
+      if (camSnap.navigationBlocked) { this.cancelLandingPreparation(); return; }
+      if (camSnap.isTransitioning) return;
+      prep.phase = 'capture';
+    }
     if (camSnap.isTransitioning) {
       this.landingPrep = null;
-      this.landingController.cancelPreparation();
+      this.landingController.cancelPreparation(scale=>this.setTimeScale(scale));
       return;
     }
     if (camSnap.targetBodyId !== this.activeLandingBodyId && camSnap.selectedBodyId !== this.activeLandingBodyId) {
       this.landingPrep = null;
-      this.landingController.cancelPreparation();
+      this.landingController.cancelPreparation(scale=>this.setTimeScale(scale));
       return;
     }
 
@@ -2520,16 +2547,15 @@ export class SolarEngine {
         return;
       }
       if (this.bodyPoseProvider.getTransitionProgress() < 1) return; // 等待过渡完成（帧驱动）
-      prep.phase = 'lighting';
-      return;
-    }
-    if (prep.phase === 'lighting') {
-      // 光照选时前置到准备阶段（用户已批准的推荐白昼取舍）；此后下降过程不再改时间。
-      const before = this.simTimeHours;
-      this.ensureLandingLighting(this.activeLandingBodyId, this.activeLandingSite.id);
-      if (Math.abs(this.simTimeHours - before) > 1e-9) {
-        this.lastLandingLightingAdjustHours = this.simTimeHours;
-        this.emitSnapshot();
+      // Preserve the current world/time. Choosing a new site must not silently
+      // fast-forward its day and move the body underneath the observer.
+      const body = this.getBodyWorldPose(this.activeLandingBodyId);
+      const radial = this.camera.position.clone().sub(body.pos);
+      const target = new THREE.Vector3(...latLonDirection(this.activeLandingSite.centerLat, this.activeLandingSite.centerLon)).applyQuaternion(body.quaternion);
+      if (radial.angleTo(target) > THREE.MathUtils.degToRad(12)) {
+        prep.phase = 'approach';
+        this.flyAroundToLandingSite(this.activeLandingSite);
+        return;
       }
       prep.phase = 'capture';
       return;
@@ -2566,7 +2592,7 @@ export class SolarEngine {
       } catch (err) {
         // 对跖等路径能力上限：拒绝启动（Pro §3.2——不修改起点规避）
         console.error('[SolarEngine] 下降起点路径不可解，已取消准备：', err);
-        this.landingController.cancelPreparation();
+        this.landingController.cancelPreparation(scale=>this.setTimeScale(scale));
       }
     }
   }
@@ -2666,6 +2692,16 @@ export class SolarEngine {
     this.updateEphemerisPoses(0);
   }
 
+  /** Explicit time-menu action; never run this as part of a landing transition. */
+  public chooseLandingDaylight(): void {
+    const camera = this.cameraController.getSnapshot();
+    if (this.landingController.getState() !== 'ORBIT' || camera.isTransitioning || camera.mode === 'SURFACE_LOOK') return;
+    const resolved = this.resolveLandingSiteForCamera(camera);
+    if (!resolved) return;
+    this.ensureLandingLighting(resolved.bodyId, resolved.site.id);
+    this.emitSnapshot();
+  }
+
   /**
    * 当前相机在天体 body-fixed 系下的地面投射与净空（用于下降起点连续）。
    * P3b-B：clearanceM 为基准面净空 H =（镜头到天体中心距离 − 基准球半径），不扣地面
@@ -2714,8 +2750,9 @@ export class SolarEngine {
   public returnToLunarOrbit(): void {
     // P3b-B（Pro §8.5）：升空导引从当前实际画面出发（速率受限收敛），不倒放
     this.landingGuidedQuat = this.camera.quaternion.clone();
+    this.landingStartQuat = this.camera.quaternion.clone();
     this.landingGuideActive = true;
-    this.landingController.returnToOrbit();
+    this.landingController.returnToOrbit(this.computeGroundPose(this.activeLandingBodyId));
   }
 
   /**
@@ -2726,7 +2763,7 @@ export class SolarEngine {
    * （4–10°/s 比例律），替代 12s 开环混合——任何起点姿态无 SNAP 接入。
    * positionFrozen=true（HOLD 恢复导引）：轨迹冻结，仅姿态收敛，收敛完自动停发。
    */
-  private applyLandingFrame(deltaSec: number, positionFrozen: boolean): void {
+  private applyLandingFrame(deltaSec: number, positionFrozen: boolean, returning = false): void {
     const traj = this.landingController.evaluateTrajectory();
     const site = this.activeLandingSite;
     const hp = TerrainHeightProvider.getInstance();
@@ -2736,11 +2773,17 @@ export class SolarEngine {
     const w = smootherstep(Math.max(0, Math.min(1, (band - 500) / 2500)));
     const eyeHeightM = Math.max(
       0.5,
-      (1 - w) * (traj.datumAltitudeM - elevHere) + w * (traj.datumAltitudeM - site.elevationDatumOffsetM)
+      returning ? traj.datumAltitudeM - elevHere : (1 - w) * (traj.datumAltitudeM - elevHere) + w * (traj.datumAltitudeM - site.elevationDatumOffsetM)
     );
 
     let orientationQuat: [number, number, number, number] | undefined;
-    if (this.landingGuideActive && this.landingGuidedQuat) {
+    if (returning && this.landingGuideActive && this.landingStartQuat) {
+      const body = this.getBodyWorldPose(this.activeLandingBodyId);
+      const radial = new THREE.Vector3(...latLonDirection(traj.lat, traj.lon)).applyQuaternion(body.quaternion);
+      const goal = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(radial, new THREE.Vector3(), new THREE.Vector3(0,1,0)));
+      const progress = this.landingController.getState() === 'ORBIT' ? 1 : this.landingController.getProgress();
+      orientationQuat = this.landingStartQuat.clone().slerp(goal, smootherstep(progress)).toArray() as [number,number,number,number];
+    } else if (!returning && this.landingGuideActive && this.landingGuidedQuat) {
       const radiusM = site.datumRadiusKm * 1000;
       const dip = horizonDip(radiusM, Math.max(0, traj.datumAltitudeM));
       const pitchGoalDeg = THREE.MathUtils.clamp(
@@ -3406,6 +3449,10 @@ export class SolarEngine {
     // P1 修复：仅在本控制器刚刚完成"升空返轨"(ASCENDING -> ORBIT 边沿)时才收回 SURFACE_LOOK；
     // 书签恢复等外部进入的地表观察不被空闲的着陆状态机逐帧抢占 (用户保有控制权)
     const landingState = this.landingController.getState();
+    if (this.landingSiteTravel && !this.cameraController.getSnapshot().isTransitioning) {
+      this.landingSiteTravel = false;
+      if (landingState === 'ORBIT') this.landingController.restoreTimeScaleOverride(scale=>this.setTimeScale(scale));
+    }
     const userRev = this.cameraController.getUserInputRevision();
     if (landingState === 'PREPARING' || landingState === 'DESCENDING' || landingState === 'ASCENDING') {
       this.landingController.update(deltaSec, (s) => this.setTimeScale(s));
@@ -3430,7 +3477,10 @@ export class SolarEngine {
         } else if (userRev !== this.landingUserRevAtDescend) {
           this.landingGuideActive = false;
         }
-        this.applyLandingFrame(deltaSec, false);
+        this.applyLandingFrame(deltaSec, false, true);
+        if (this.landingController.getState() === 'ORBIT') {
+          this.cameraController.executeCommand({type:'finishSurfaceReturn', bodyId:this.activeLandingBodyId, preserveView:!this.landingGuideActive});
+        }
       }
     } else if (landingState === 'HOLD') {
       // B3：悬停时相机在冻结锚点上自由环顾——把实际视线同步进遥测（HUD 如实显示）
@@ -3445,16 +3495,6 @@ export class SolarEngine {
           this.applyLandingFrame(deltaSec, true);
         }
       }
-    } else if (
-      landingState === 'ORBIT' &&
-      this.prevLandingState === 'ASCENDING' &&
-      this.cameraController.getSnapshot().mode === 'SURFACE_LOOK'
-    ) {
-      this.cameraController.executeCommand({
-        type: 'flyTo',
-        bodyId: this.activeLandingBodyId,
-        durationSec: 1.5,
-      });
     }
     if (landingState === 'SURFACE_LOOK' && this.prevLandingState === 'DESCENDING') {
       // B2（Pro §5.5）：接地边沿——从最终画面提取实际视线写入姿态基。

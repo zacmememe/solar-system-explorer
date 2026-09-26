@@ -53,7 +53,7 @@ export function SurfaceGraphic({frame}: {frame: HudFrame}) {
   if(phase==='surface_look')return <Compass frame={frame}/>;
   if(phase==='preparing')return <div className="hud-preparation" role="status">
     <span className="hud-preparation-dot" />
-    <div><strong>{prep?.phase==='lighting'?'选择落区白昼':prep?.phase==='capture'?'确认当前机位':prep?.phase==='policy'?'准备当地观察':'准备地形数据'}</strong>
+    <div><strong>{prep?.phase==='approach'?'绕行至落区上空':prep?.phase==='capture'?'确认当前机位':prep?.phase==='policy'?'准备当地观察':'准备地形数据'}</strong>
       <p>{prep?.lightingAdjustedSimHours!=null ? <span data-testid="landing-prep-lighting-notice">已调整模拟时刻至站点白昼 · T+{Math.round(prep.lightingAdjustedSimHours)} h</span> : '准备就绪后开始下降，可随时取消。'}</p>
     </div>
   </div>;
@@ -84,7 +84,7 @@ export function SurfaceSummary({frame}: {frame: HudFrame}) {
       <strong>{bearingLabel(pose.yawDeg)} {Math.round((pose.yawDeg%360+360)%360)%360}°</strong>
       <span>{pose.pitchDeg>=0?'仰':'俯'} {Math.abs(pose.pitchDeg).toFixed(0)}°</span></> : '等待视线'}
   </div>;
-  if(phase==='preparing')return <span className="hud-compact-note" role="status">{frame.landing?.preparation.phase==='lighting'?'选择落区白昼':'准备当地观察'}</span>;
+  if(phase==='preparing')return <span className="hud-compact-note" role="status">{frame.landing?.preparation.phase==='approach'?'绕行至落区上空':'准备当地观察'}</span>;
   const progress=Math.max(0,Math.min(1,frame.landing?.telemetry.progress??0));
   return <div className="hud-compact-altitude" data-testid="hud-altitude-profile">
     <span className="hud-reading-label">离地</span><strong data-testid="telemetry-agl-value">{formatAltitude(height)}</strong>
@@ -100,7 +100,7 @@ export function SurfaceActions({frame,engine,secondary=false}: {frame: HudFrame;
     {hudPhase(frame)==='surface_look' && <button data-testid="landing-btn-reset-look" onClick={()=>engine.resetMoonSurfaceLook()}>重设地平线</button>}
   </div>;
   return <div className="hud-mission-actions" aria-label="当前阶段操作">
-    {state==='PREPARING' && <button data-testid="landing-btn-cancel-prep" onClick={()=>engine.getLandingController().cancelPreparation()}>取消准备</button>}
+    {state==='PREPARING' && <button data-testid="landing-btn-cancel-prep" onClick={()=>engine.cancelLandingPreparation()}>取消准备</button>}
     {state==='DESCENDING' && <>
       <button className="is-primary" data-testid="landing-btn-hold" onClick={()=>engine.pauseLanding()}>Ⅱ 悬停环顾</button>
       <button data-testid="landing-btn-cancel" onClick={()=>engine.returnToLunarOrbit()}>取消下降 · 返回</button>

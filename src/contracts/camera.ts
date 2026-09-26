@@ -46,6 +46,7 @@ export interface CameraStateSnapshot {
 }
 
 export type CameraCommand =
+  | { type: 'finishSurfaceReturn'; bodyId: BodyId; preserveView: boolean }
   | { type: 'select'; bodyId: BodyId }
   | { type: 'flyTo'; bodyId: BodyId; durationSec?: number; targetPos?: [number, number, number]; viewDirection?: [number, number, number]; lookTarget?: CameraLookTarget; /** Destination framing, independent of a small distant sky proxy. */ framingRadius?: number; /** P3b-A：true 时 targetPos 为精确相机终点（世界系）；缺省沿用向阳面构图导引 */ exact?: boolean }
   | { type: 'cancelFlight' }
@@ -68,6 +69,8 @@ export type CameraCommand =
       lat: number;
       lon: number;
       altitude?: number;
+      /** Same-body short great-circle route, retaining the visible starting pose. */
+      surfaceArc?: boolean;
       durationSec?: number;
     }
   | {

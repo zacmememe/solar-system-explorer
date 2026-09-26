@@ -41,6 +41,8 @@ export class LandingController {
   private ascendTotalSec: number = 18.0;
   /** P3b-B：返轨起点（returnToOrbit 时从当前实际轨迹位姿捕获，重规划基准） */
   private ascendFrom: { latDeg: number; lonDeg: number; datumM: number } | null = null;
+  private ascendTargetM = 50000;
+  private completedAscent = false;
   /** P3b-B：路线切向航向最后稳定值（接近落点退化时保持，返轨/接地沿用） */
   private lastTangentHeadingDeg: number = 225;
 
@@ -59,6 +61,7 @@ export class LandingController {
 
   // 物理时间调谐记忆
   private simTimeAdjusted = false;
+  private timeScaleChosenByUser = false;
   private originalTimeScale = 1.0;
 
   private listeners: Set<TelemetryListener> = new Set();
@@ -143,6 +146,8 @@ export class LandingController {
    */
   public startDescent(): void {
     if (this.state === 'DESCENDING' || this.state === 'SURFACE_LOOK' || this.state === 'PREPARING') return;
+    this.completedAscent = false;
+    this.timeScaleChosenByUser = false;
     this.state = 'PREPARING';
     this.notifyTelemetry();
   }
@@ -158,11 +163,25 @@ export class LandingController {
   }
 
   /** 用户改选/离开月球：收回过期的 PREPARING（不自动重发） */
-  public cancelPreparation(): void {
+  public cancelPreparation(setTimeScale?: (scale: number) => void): void {
     if (this.state === 'PREPARING') {
-      this.state = 'ORBIT';
-      this.notifyTelemetry();
+      this.cancel(setTimeScale);
     }
+  }
+
+  public acquireTimeScaleOverride(getTimeScale: () => number, setTimeScale: (scale:number) => void, newJourney = false): void {
+    if (newJourney) this.timeScaleChosenByUser = false;
+    if (this.timeScaleChosenByUser) return;
+    if (getTimeScale() > 1) {
+      if (!this.simTimeAdjusted) this.originalTimeScale = getTimeScale();
+      this.simTimeAdjusted = true;
+      setTimeScale(1);
+    }
+  }
+
+  public restoreTimeScaleOverride(setTimeScale: (scale:number) => void): void {
+    if (this.simTimeAdjusted) setTimeScale(this.originalTimeScale);
+    this.simTimeAdjusted = false;
   }
 
   private beginDescent(
@@ -175,12 +194,7 @@ export class LandingController {
     this.targetLon = this.site.centerLon;
     // 天文时间协同：临时下调到 1x
     if (getTimeScale && setTimeScale) {
-      const cur = getTimeScale();
-      if (cur > 1.0) {
-        this.originalTimeScale = cur;
-        this.simTimeAdjusted = true;
-        setTimeScale(1.0);
-      }
+      this.acquireTimeScaleOverride(getTimeScale, setTimeScale);
     }
 
     // 构造连续腿：起点 = 当前机位地面投射（缺省默认切入点）
@@ -249,13 +263,20 @@ export class LandingController {
     this.notifyTelemetry();
   }
 
-  public returnToOrbit(): void {
+  public returnToOrbit(actualPose?: DescentStartPose): void {
     if (this.state === 'SURFACE_LOOK' || this.state === 'HOLD' || this.state === 'DESCENDING') {
       // P3b-B（Pro §8.5）：返轨从当前实际位姿重规划——不再把半路返轨当作已到
       // 落点后倒放完整主腿。当前位置水平不动，垂直爬升到轨道高度。
       const traj = this.evaluateTrajectory();
-      this.ascendFrom = { latDeg: traj.lat, lonDeg: traj.lon, datumM: traj.altitudeMSLM };
-      const climbM = Math.max(1000, this.ORBIT_ALTITUDE_M - this.ascendFrom.datumM);
+      this.ascendFrom = actualPose
+        ? { latDeg: actualPose.latDeg, lonDeg: actualPose.lonDeg, datumM: actualPose.clearanceM }
+        : { latDeg: traj.lat, lonDeg: traj.lon, datumM: traj.altitudeMSLM };
+      const radiusM = this.site.datumRadiusKm * 1000;
+      // An abort above the old 50 km ceiling must still climb. Keep the current
+      // side of the body and leave room for a local orbital view, not a reset.
+      this.ascendTargetM = Math.max(radiusM * 0.18, this.ascendFrom.datumM + radiusM * 0.08, this.ascendFrom.datumM * 1.35);
+      this.completedAscent = false;
+      const climbM = this.ascendTargetM - this.ascendFrom.datumM;
       this.ascendTotalSec = Math.max(6, Math.min(18, 4 + 7 * Math.log10(climbM / 100)));
       this.ascendSec = this.ascendTotalSec;
       this.state = 'ASCENDING';
@@ -273,6 +294,7 @@ export class LandingController {
   /** A deliberate user speed choice revokes the temporary landing override. */
   public releaseTimeScaleOverride(): void {
     this.simTimeAdjusted = false;
+    this.timeScaleChosenByUser = true;
   }
 
   public cancel(setTimeScale?: (scale: number) => void): void {
@@ -281,6 +303,8 @@ export class LandingController {
     this.legIndex = 0;
     this.elapsedSec = 0;
     this.userInterrupted = false;
+    this.completedAscent = false;
+    this.ascendFrom = null;
 
     if (this.simTimeAdjusted && setTimeScale) {
       setTimeScale(this.originalTimeScale);
@@ -314,9 +338,15 @@ export class LandingController {
         this.notifyTelemetry();
       }
     } else if (this.state === 'ASCENDING') {
-      this.ascendSec -= deltaSec;
+      this.ascendSec = Math.max(0, this.ascendSec - deltaSec);
       if (this.ascendSec <= 0) {
-        this.cancel(setTimeScale);
+        // Retain the actual endpoint for the engine's final rendered frame.
+        // cancel() clears it and would make that frame jump to the landing site.
+        this.completedAscent = true;
+        this.state = 'ORBIT';
+        if (this.simTimeAdjusted && setTimeScale) setTimeScale(this.originalTimeScale);
+        this.simTimeAdjusted = false;
+        this.notifyTelemetry();
       } else {
         this.notifyTelemetry();
       }
@@ -360,7 +390,7 @@ export class LandingController {
       };
     }
 
-    if (this.state === 'ASCENDING') {
+    if (this.state === 'ASCENDING' || (this.state === 'ORBIT' && this.completedAscent)) {
       // P3b-B（Pro §8.5）：从捕获的当前位姿直上爬升（水平不动）到轨道高度。
       // 不再倒放主腿——半路返轨的起点就是当前实际位置。
       const from =
@@ -376,9 +406,9 @@ export class LandingController {
       const total = Math.max(1, this.ascendTotalSec);
       const t = Math.max(0, Math.min(1, 1 - this.ascendSec / total));
       const s = smootherstep(t);
-      const H = from.datumM + (this.ORBIT_ALTITUDE_M - from.datumM) * s;
+      const H = from.datumM + (this.ascendTargetM - from.datumM) * s;
       const elevM = this.heightProvider.getHeightMeters(this.site.bodyId, from.latDeg, from.lonDeg);
-      const rate = ((this.ORBIT_ALTITUDE_M - from.datumM) * smootherstepDerivative(t)) / total;
+      const rate = ((this.ascendTargetM - from.datumM) * smootherstepDerivative(t)) / total;
       return {
         lat: from.latDeg,
         lon: from.lonDeg,

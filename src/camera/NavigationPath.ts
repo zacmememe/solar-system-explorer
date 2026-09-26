@@ -12,6 +12,13 @@ export interface NavigationScene {
     revision: string;
 }
 export const flightEase = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
+/** Short great-circle offset with continuous radial height, including polar/seam crossings. */
+export function surfaceArcOffset(from: THREE.Vector3, to: THREE.Vector3, progress: number): THREE.Vector3 {
+    const a = from.clone().normalize(), b = to.clone().normalize();
+    const rotation = new THREE.Quaternion().setFromUnitVectors(a, b);
+    a.applyQuaternion(new THREE.Quaternion().slerp(rotation, progress));
+    return a.multiplyScalar(THREE.MathUtils.lerp(from.length(), to.length(), progress));
+}
 /** Zero value, velocity and acceleration at both ends. */
 export const flightArch = (t: number, skew = 1) => {
     const u = t / (t + skew * (1 - t));

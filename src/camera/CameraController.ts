@@ -14,7 +14,7 @@ import type { CameraCommand, CameraMode, CameraStateSnapshot, CameraAnchor, Came
 import type { MetricStation } from '../contracts/physics';
 import { BODIES, getNavDisplayRadius } from '../astronomy/bodies';
 import { TerrainHeightProvider } from '../surface/TerrainHeightProvider';
-import {flightArch, flightEase, planFlightArch, type NavigationScene} from './NavigationPath';
+import {flightArch, flightEase, planFlightArch, surfaceArcOffset, type NavigationScene} from './NavigationPath';
 import {
   geodeticToBodyFixedM,
   datumForBody,
@@ -98,6 +98,7 @@ export class CameraController {
   private flightDetour = new THREE.Vector3();
   private flightSkew = 1;
   private flightSceneRevision = '';
+  private regionArc = false;
   public navigationBlocked = false;
 
   // 命令令牌，防止异步与旧动画干扰
@@ -184,6 +185,7 @@ export class CameraController {
     const token = ++this.currentCommandId;
     const startsFlight=['flyTo','overview','restoreBookmark','focusRegion'].includes(command.type);
     if(startsFlight) {
+      this.regionArc = false;
       this.transitionDestinationMode = command.type === 'overview' || (command.type === 'restoreBookmark' && command.destinationMode === 'OVERVIEW') ? 'OVERVIEW' : 'ORBIT_TARGET';
       // Every entry (including surface -> overview/bookmark) starts at the pose
       // actually displayed, not the last orbit's stale spherical coordinates.
@@ -195,6 +197,33 @@ export class CameraController {
     }
 
     switch (command.type) {
+      case 'finishSurfaceReturn': {
+        const body = this.latestGetBodyPos?.(command.bodyId);
+        if (!body) break;
+        this.isTransitioning = false;
+        this.mode = 'ORBIT_TARGET';
+        this.targetBodyId = this.selectedBodyId = command.bodyId;
+        this.surfaceQuatOverride = null;
+        this.lookTarget = {kind:'center'};
+        this.camera.up.set(0,1,0).applyQuaternion(this.camera.quaternion);
+        this.targetPosition.copy(body.pos);
+        if (command.preserveView) {
+          const distance = this.camera.position.distanceTo(body.pos);
+          this.targetPosition.copy(this.camera.position).addScaledVector(this.camera.getWorldDirection(new THREE.Vector3()), distance);
+          this.anchor = {kind:'free', pivotScene:this.targetPosition.toArray() as [number,number,number]};
+          this.surfaceRadius = 0;
+          this.minDistance = 1e-6;
+        } else {
+          this.anchor = {kind:'body', bodyId:command.bodyId};
+          this.surfaceRadius = body.surfaceRadius ?? body.radius;
+          this.minDistance = this.surfaceRadius * 1.02;
+        }
+        this.spherical.setFromVector3(this.camera.position.clone().sub(this.targetPosition));
+        this.maxDistance = Math.max(this.spherical.radius * 100, 100);
+        this.syncLogDollyFromRadius();
+        this.updateCameraTransform();
+        break;
+      }
       case 'select':
         this.selectedBodyId = command.bodyId;
         break;
@@ -261,24 +290,20 @@ export class CameraController {
         break;
 
       case 'zoomInput':
+        if (this.mode === 'SURFACE_LOOK') break;
         this.userInputRevision++;
         if (this.isTransitioning) {
           this.cancelFlight();
-        }
-        if (this.mode === 'SURFACE_LOOK') {
-          break; // 地面人眼停驻状态下不响应宏观对数 Dolly
         }
         this.applyLogDollyInput(command.logDelta);
         this.updateCameraTransform();
         break;
 
       case 'zoom':
+        if (this.mode === 'SURFACE_LOOK') break;
         this.userInputRevision++;
         if (this.isTransitioning) {
           this.cancelFlight();
-        }
-        if (this.mode === 'SURFACE_LOOK') {
-          break;
         }
         // 兼容旧 zoom 命令：将绝对距离转为等效相对 logDelta，避免突跳触底
         this.applyLogDollyInput(command.deltaDist / Math.max(1.0, this.spherical.radius));
@@ -364,7 +389,8 @@ export class CameraController {
           command.lon,
           command.altitude ?? 0.08,
           dur,
-          token
+          token,
+          command.surfaceArc ?? false
         );
         break;
       }
@@ -484,13 +510,13 @@ export class CameraController {
     // P3b-A exact 模式：targetPos 为精确相机终点（世界系）——把终点换算为绕目标天体
     // 的球坐标偏移（供"前往着陆区"等需要精确到达的导航；普通 flyTo 仍走向阳面构图）。
     if (exact && targetPos) {
-      const offset = new THREE.Vector3(targetPos[0], targetPos[1], targetPos[2]).sub(this.targetPosition);
+      const offset = new THREE.Vector3(targetPos[0], targetPos[1], targetPos[2]).sub(poseInfo?.pos ?? this.targetPosition);
       if (offset.lengthSq() > 1e-12) {
         const sph = new THREE.Spherical().setFromVector3(offset);
         this.transitionTargetSpherical.set(
-          Math.max(this.minDistance, sph.radius),
+          Math.max((poseInfo?.surfaceRadius ?? poseInfo?.radius ?? this.surfaceRadius) * 1.02, sph.radius),
           THREE.MathUtils.clamp(sph.phi, 0.01, Math.PI - 0.01),
-          sph.theta
+          this.spherical.theta + THREE.MathUtils.euclideanModulo(sph.theta - this.spherical.theta + Math.PI, 2 * Math.PI) - Math.PI
         );
         return;
       }
@@ -592,7 +618,8 @@ export class CameraController {
     lon: number,
     altitude: number,
     durationSec: number,
-    token: number
+    token: number,
+    surfaceArc = false
   ): void {
     if (token !== this.currentCommandId) return;
 
@@ -627,6 +654,11 @@ export class CameraController {
     // 核心修复 (P0: REGION-FRAME)：应用天体地表姿态四元数（含地轴倾角与当前自转姿态）
     // 使得相机视线正对当前自转朝向的真实经纬度目标点！
     const targetInfo = this.latestGetBodyPos ? this.latestGetBodyPos(targetId) : null;
+    if (surfaceArc && this.sourceBodyId === targetId && targetInfo) {
+      this.regionArc = true;
+      this.transitionStartTargetPos.copy(targetInfo.pos);
+      this.transitionStartSpherical.setFromVector3(this.camera.position.clone().sub(targetInfo.pos));
+    }
     const bodyQuat = targetInfo?.quaternion || new THREE.Quaternion();
     const normalWorld = normal.clone().applyQuaternion(bodyQuat).normalize();
 
@@ -634,8 +666,9 @@ export class CameraController {
     const targetSph = new THREE.Spherical().setFromVector3(normalWorld);
 
     // 目标半径：物理地表半径 + altitude 净高度
-    const safeAltitude = Math.max(this.collisionClearance, altitude);
-    const targetRadius = Math.max(this.minDistance, this.surfaceRadius + safeAltitude);
+    const bodyRadius = targetInfo?.surfaceRadius ?? targetInfo?.radius ?? this.surfaceRadius;
+    const safeAltitude = Math.max(bodyRadius * 0.02, altitude);
+    const targetRadius = bodyRadius + safeAltitude;
     targetSph.radius = targetRadius;
 
     // 最短球面角路径，防止跨周期大圈翻转
@@ -686,6 +719,7 @@ export class CameraController {
       const body=bodies.find(b=>b.id===this.targetBodyId);
       const target=body?.focusPosition ?? body?.position ?? this.latestGetBodyPos?.(this.targetBodyId).pos ?? this.targetPosition;
       const w=flightEase(t),s=this.transitionStartSpherical,e=this.transitionTargetSpherical;
+      if(this.regionArc)return this.transitionStartTargetPos.clone().lerp(target,w).add(surfaceArcOffset(new THREE.Vector3().setFromSpherical(s),new THREE.Vector3().setFromSpherical(e),w));
       return this.transitionStartTargetPos.clone().lerp(target,w).add(new THREE.Vector3().setFromSpherical(
         new THREE.Spherical(THREE.MathUtils.lerp(s.radius,e.radius,w),THREE.MathUtils.lerp(s.phi,e.phi,w),THREE.MathUtils.lerp(s.theta,e.theta,w))));
     };
@@ -831,7 +865,7 @@ export class CameraController {
         easeT
       );
       this.spherical.makeSafe();
-      const offset=new THREE.Vector3().setFromSpherical(this.spherical).addScaledVector(this.flightDetour,flightArch(t,this.flightSkew));
+      const offset=(this.regionArc ? surfaceArcOffset(new THREE.Vector3().setFromSpherical(this.transitionStartSpherical),new THREE.Vector3().setFromSpherical(this.transitionTargetSpherical),easeT) : new THREE.Vector3().setFromSpherical(this.spherical)).addScaledVector(this.flightDetour,flightArch(t,this.flightSkew));
       this.spherical.setFromVector3(offset);
 
       this.surfaceRadius = targetInfo.surfaceRadius ?? targetInfo.radius;
@@ -1047,10 +1081,20 @@ export class CameraController {
 
     // 动态调整近裁剪面，彻底杜绝近地观察时地表被裁剪 (CAM-04)
     const isBody = this.anchor.kind === 'body';
-    const clearance = isBody
+    let clearance = isBody
       ? Math.max(1e-7, this.spherical.radius - this.surfaceRadius)
       : Math.max(0.001, this.spherical.radius);
-    const nearFloor = this.anchor.kind === 'body' ? Math.max(1e-8, Math.min(1e-4, this.surfaceRadius * 0.001)) : 1e-4;
+    let nearRadius = this.surfaceRadius;
+    if (this.anchor.kind === 'free') {
+      // The free pivot is a viewing aid, not an empty-space guarantee. After
+      // turning during ascent it can be much farther away than the ground.
+      const body = this.latestGetBodyPos?.(this.targetBodyId);
+      if (body) {
+        nearRadius = body.surfaceRadius ?? body.radius;
+        clearance = Math.min(clearance, Math.max(1e-7, this.camera.position.distanceTo(body.pos) - nearRadius));
+      }
+    }
+    const nearFloor = nearRadius > 0 ? Math.max(1e-8, Math.min(1e-4, nearRadius * 0.001)) : 1e-4;
     const dynamicNear = CameraController.nearFromClearance(clearance, 0.1, nearFloor);
 
     if (Math.abs(this.camera.near - dynamicNear) > 1e-6) {

@@ -193,6 +193,10 @@ export function MissionHUD(props: MissionHUDProps) {
           <div className="hud-speed-grid">{SPEEDS.map(speed => <button key={speed} data-speed={speed} aria-pressed={speed === timeScale}
             onClick={() => props.onSpeed(speed)} disabled={!ready}>{speedLabel(speed)}</button>)}</div>
           {frame && <p>模拟已推进 {(frame.simTimeHours / 24).toFixed(2)} 天{isPaused ? ' · 已暂停' : ''}。初始方位为演示设定，不对应今天的真实星空。</p>}
+          {!!frame?.landing?.sites.length && <>
+            <button className="hud-action" data-testid="landing-daylight" onClick={()=>props.engine?.chooseLandingDaylight()}>切换到所选落区的白昼</button>
+            <p>此操作会改变模拟时刻。降落与换落区本身保持当前昼夜。</p>
+          </>}
         </>}
         {panel === 'observe' && <>
           <div className="hud-menu-time"><span>天体时间{isPaused?' · 已暂停':''}</span>

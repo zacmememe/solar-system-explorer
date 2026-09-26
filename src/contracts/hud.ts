@@ -11,7 +11,7 @@ export interface HudLandingFrame {
   readonly sites: readonly LandingSite[];
   readonly preparation: {
     readonly active: boolean;
-    readonly phase: 'policy' | 'lighting' | 'capture' | null;
+    readonly phase: 'policy' | 'approach' | 'capture' | null;
     readonly lightingAdjustedSimHours: number | null;
   };
 }
