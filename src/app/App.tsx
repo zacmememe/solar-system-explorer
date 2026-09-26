@@ -120,6 +120,7 @@ export const App: React.FC = () => {
       engine.setTimeScale(50.0);
 
       return () => {
+        if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
         hudStore.publish(null);
         engine.dispose();
         engineRef.current = null;

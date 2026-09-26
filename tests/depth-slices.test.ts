@@ -168,7 +168,7 @@ it('R1: single-slab world (earth-scale near) also brackets the sphere; world sli
   expect(out[0].far).toBeLessThanOrEqual(8000);
 });
 
-it('R1: without a display sphere the pass falls back to the full authoritative range, not the last slab', () => {
+it('without a display sphere the normalized display uses its own finite fallback range', () => {
   const camera = new THREE.PerspectiveCamera(45, 1, 2e-8, 8000);
   camera.updateMatrixWorld();
   const scene = new THREE.Scene();
@@ -182,6 +182,16 @@ it('R1: without a display sphere the pass falls back to the full authoritative r
     },
   };
   new DepthSliceRenderer().render(renderer, scene, camera, { displayLayer: VEHICLE_DISPLAY_LAYER });
-  expect(displayCam.near).toBe(2e-8);
-  expect(displayCam.far).toBe(8000);
+  expect(displayCam.near).toBe(0.01);
+  expect(displayCam.far).toBe(10);
+});
+
+it('high world near planes cannot crop the camera-relative vehicle', () => {
+  const camera = new THREE.PerspectiveCamera(45, 1, 10, 8000);
+  camera.updateMatrixWorld();
+  const { out } = captureDisplayProjection(camera, {center: new THREE.Vector3(0, 0, -2.1), radius: .4});
+  expect(out[0].near).toBeLessThan(1.7);
+  expect(out[0].far).toBeGreaterThan(2.5);
+  expect(Math.abs(out[0].ndcZ)).toBeLessThan(1);
+  expect(camera.near).toBe(10);
 });

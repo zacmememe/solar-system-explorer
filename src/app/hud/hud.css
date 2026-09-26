@@ -110,8 +110,9 @@
   .hud-target-footer button { padding-left: 0; }
   /* F-LANDING-HUD-01：窄屏着陆行整行换行、左对齐，按钮保持可点高度 */
   .hud-landing-row { justify-content: flex-start; flex-wrap: wrap; row-gap: 4px; }
-  .hud-landing-row select { max-width: min(200px, 52vw); min-height: 36px; }
-  .hud-landing-action { min-height: 36px; }
+  .hud-landing-label { display: none; }
+  .hud-landing-row select { width: 100%; max-width: 100%; min-height: 44px; min-width: 0; }
+  .hud-landing-row .hud-landing-action { min-height: 44px; width: 100%; }
   .hud-landing-wait { max-width: 100%; white-space: normal; }
   .hud-popover-time, .hud-popover-observe, .hud-popover-details { left: 12px; right: 12px; width: auto; }
   .hud-transfer { min-height: 92px; padding-top: 3px; }

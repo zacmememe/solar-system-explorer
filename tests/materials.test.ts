@@ -51,6 +51,9 @@ describe('批次 B2 着色器规范与色彩空间统一输出测试', () => {
 
     for (const file of files) {
       const content = fs.readFileSync(path.join(renderingDir, file), 'utf8');
+      // Utilities that clone a material inherit its shader; only shader definitions
+      // own output chunks. Keep MAT-03's checks on instantiated materials below.
+      if (!/fragmentShader\s*:/.test(content)) continue;
       // Three.js WebGLProgram 默认在片元着色器全局前缀自动注入 pars，材质内部只需包含尾部映射转换 chunk
       expect(content).toContain('#include <colorspace_fragment>');
       expect(content).toContain('#include <tonemapping_fragment>');

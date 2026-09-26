@@ -11,7 +11,7 @@
 
 import * as THREE from 'three';
 import { DepthSliceRenderer, VEHICLE_DISPLAY_LAYER } from './DepthSliceRenderer';
-import { makeHolePatchMaterial, patchOpacityUniform, setSurfaceLayerOpacity } from '../rendering/HolePatchMaterial';
+import { makeHolePatchMaterial, setSurfaceLayerOpacity } from '../rendering/HolePatchMaterial';
 import { projectDistantBody, discIsOccluded } from '../astronomy/observerProjection';
 import { CameraController } from '../camera/CameraController';
 import { normalizeWheelDelta, pinchLogDelta } from '../camera/inputKernels';
@@ -159,7 +159,7 @@ interface MoonSiteStack {
   /** F-LUNAR-LIMB-01：挖孔补片（细层渐显隐藏期间以原球面填孔，防斜视/球缘缺口） */
   patchMesh?: THREE.Mesh;
   /** R2：补片克隆材质（独立 uOpacity，随细层渐显连续淡出） */
-  patchMaterial?: THREE.ShaderMaterial;
+  patchMaterial?: THREE.Material;
   lolaMaterials: (THREE.MeshStandardMaterial | THREE.ShaderMaterial)[];
   rockFieldMaterial: THREE.MeshStandardMaterial | null;
   collarMaterial: THREE.MeshStandardMaterial | null;
@@ -178,7 +178,7 @@ interface MarsSiteStack {
   terrainMaterial?: THREE.MeshStandardMaterial;
   capMesh?: THREE.Mesh;
   patchMesh?: THREE.Mesh;
-  patchMaterial?: THREE.ShaderMaterial;
+  patchMaterial?: THREE.Material;
   l1Materials: THREE.ShaderMaterial[];
   rockFieldMaterial: THREE.MeshStandardMaterial | null;
   collarMaterial: THREE.MeshStandardMaterial | null;
@@ -241,6 +241,11 @@ export class SolarEngine {
   private uranusPlanetMaterial: THREE.ShaderMaterial | null = null;
   private neptunePlanetMaterial: THREE.ShaderMaterial | null = null;
   private moonMaterial: THREE.ShaderMaterial | null = null;
+  // Stable across asynchronous body-texture replacement; surfaces can finish first.
+  private readonly moonSurfaceLighting = {
+    sunDirection: { value: new THREE.Vector3(1, 0, 0) },
+    teachingLight: { value: 0 },
+  };
   private phobosMaterial: THREE.ShaderMaterial | null = null;
   private deimosMaterial: THREE.ShaderMaterial | null = null;
   private ioMaterial: THREE.ShaderMaterial | null = null;
@@ -377,12 +382,7 @@ export class SolarEngine {
       // 自动同步；他站维持 MeshStandardMaterial 不动。
       const isBlendSite = stack.siteId === 'tranquility-base';
       const bodyShaderMat = satMesh.material as THREE.ShaderMaterial;
-      const sharedLight = isBlendSite && bodyShaderMat.uniforms
-        ? {
-            sunDirection: bodyShaderMat.uniforms.sunDirection,
-            teachingLight: bodyShaderMat.uniforms.teachingLight,
-          }
-        : undefined;
+      const sharedLight = isBlendSite ? this.moonSurfaceLighting : undefined;
       const valleyWin = rasterSource.windowBounds;
       const valleyMat = isBlendSite
         ? createMoonMaterial(null, {
@@ -1733,7 +1733,7 @@ export class SolarEngine {
       if (!moonTex) return;
       const moonNode = this.bodyNodes.get('moon');
       if (moonNode) {
-        this.moonMaterial = createMoonMaterial(moonTex);
+        this.moonMaterial = createMoonMaterial(moonTex, { shared: this.moonSurfaceLighting });
         this.moonMaterial.uniforms.teachingLight.value = this.teachingLight ? 1.0 : 0.0;
         safeDisposeMaterial(moonNode.mesh.material);
         moonNode.mesh.material = this.moonMaterial;
@@ -1745,9 +1745,11 @@ export class SolarEngine {
         // F-LUNAR-LIMB-01：挖孔补片与盖板同律——材质换装时保持与本体一致。
         // P1：换装重建克隆时释放旧克隆材质（uniform 与本体共享，纹理不受 dispose 影响）。
         for (const s of this.moonSiteStacks.values()) {
+          if (s.capMesh) s.capMesh.material = this.moonMaterial;
           if (s.patchMesh) {
             const old = s.patchMesh.material;
             s.patchMesh.material = makeHolePatchMaterial(this.moonMaterial);
+            s.patchMaterial = s.patchMesh.material;
             if (Array.isArray(old)) old.forEach((m) => m.dispose());
             else if (old) old.dispose();
           }
@@ -1884,9 +1886,11 @@ export class SolarEngine {
         if (cap) cap.material = this.marsMaterial;
         // F-LUNAR-LIMB-01：火星挖孔补片同律换装（P1：释放旧克隆，纹理共享不受影响）
         for (const s of this.marsSiteStacks.values()) {
+          if (s.capMesh) s.capMesh.material = this.marsMaterial;
           if (s.patchMesh) {
             const old = s.patchMesh.material;
             s.patchMesh.material = makeHolePatchMaterial(this.marsMaterial);
+            s.patchMaterial = s.patchMesh.material;
             if (Array.isArray(old)) old.forEach((m) => m.dispose());
             else if (old) old.dispose();
           }
@@ -3534,9 +3538,8 @@ export class SolarEngine {
         const patch = activeMoonStack.patchMesh;
         if (patch) {
           const patchOpacity = 1 - Math.max(opacity, l1Opacity);
-          const patchU = patchOpacityUniform(patch.material);
-          if (patchU) patchU.value = patchOpacity;
-          patch.visible = patchU ? patchOpacity > 0.001 : true;
+          setSurfaceLayerOpacity(patch.material as THREE.Material, patchOpacity);
+          patch.visible = patchOpacity > 0.001;
         }
 
         // S3a 碎石场距离淡入：<6km 全显，6–9km smoothstep 渐隐（远距亚像素无意义）
@@ -3598,9 +3601,8 @@ export class SolarEngine {
         // F-LUNAR-LIMB-01/R2：火星挖孔补片连续淡出（镜像月面；layerOpacity）
         if (activeMarsStack.patchMesh) {
           const patchOpacity = 1 - Math.max(opacity, l1Opacity);
-          const patchU = patchOpacityUniform(activeMarsStack.patchMesh.material);
-          if (patchU) patchU.value = patchOpacity;
-          activeMarsStack.patchMesh.visible = patchU ? patchOpacity > 0.001 : true;
+          setSurfaceLayerOpacity(activeMarsStack.patchMesh.material as THREE.Material, patchOpacity);
+          activeMarsStack.patchMesh.visible = patchOpacity > 0.001;
         }
         if (this.marsRockFieldMaterial) {
           const t = Math.min(1, Math.max(0, (9000 - siteDistM) / 3000));
@@ -3993,8 +3995,9 @@ export class SolarEngine {
         const satSunDir = this.bodyPoseProvider.getPhysicalSunDirection(id, this.simTimeHours);
 
         // 月球专属：更新世界空间太阳方向向量至 MoonMaterial
-        if (id === 'moon' && this.moonMaterial) {
-          this.moonMaterial.uniforms.sunDirection.value.copy(satSunDir);
+        if (id === 'moon') {
+          this.moonSurfaceLighting.sunDirection.value.copy(satSunDir);
+          this.moonSurfaceLighting.teachingLight.value = this.teachingLight ? 1 : 0;
         }
 
         // 火卫一专属：更新世界空间太阳方向向量至 AsteroidMoonMaterial

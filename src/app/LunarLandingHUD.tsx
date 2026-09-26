@@ -46,7 +46,7 @@ function useLandingEngineState(engine: SolarEngine | null) {
     return () => window.clearInterval(id);
   }, [engine]);
 
-  return { telemetry, availability, prepStatus, sites };
+  return { telemetry, availability, prepStatus, sites, setAvailability };
 }
 
 /**
@@ -55,7 +55,7 @@ function useLandingEngineState(engine: SolarEngine | null) {
  * 合成一行；长英文名/数据徽章/出处说明不进入常驻行。语义与原悬浮入口一致。
  */
 export const LandingDockRow: React.FC<LunarLandingHUDProps> = ({ engine }) => {
-  const { telemetry, availability, sites } = useLandingEngineState(engine);
+  const { telemetry, availability, sites, setAvailability } = useLandingEngineState(engine);
   if (!engine) return null;
   const state = telemetry?.state || 'ORBIT';
   const inOrbitLandingFlow = state === 'ORBIT' || availability?.action === 'exit-observe';
@@ -70,7 +70,10 @@ export const LandingDockRow: React.FC<LunarLandingHUDProps> = ({ engine }) => {
             data-testid="landing-site-select"
             aria-label="选择着陆地点"
             value={availability.siteId}
-            onChange={event => { engine.selectLandingSite(event.target.value); }}
+            onChange={event => {
+              engine.selectLandingSite(event.target.value);
+              setAvailability(engine.getLandingAvailability());
+            }}
           >
             {sites.map(site => <option key={site.id} value={site.id}>{site.name}</option>)}
           </select>
@@ -115,6 +118,7 @@ export const LandingDockRow: React.FC<LunarLandingHUDProps> = ({ engine }) => {
 };
 
 export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine }) => {
+  const [detailsOpen, setDetailsOpen] = useState(() => !window.matchMedia('(max-width: 760px), (max-height: 500px)').matches);
   const { telemetry, prepStatus } = useLandingEngineState(engine);
 
   if (!engine) return null;
@@ -212,6 +216,12 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine }) => {
             </span>
           </div>
 
+          <details className="landing-details" open={detailsOpen}
+            onToggle={event => setDetailsOpen(event.currentTarget.open)}>
+            <summary aria-label="展开或收起着陆遥测">
+              {telemetry.site.name} · {formatAltitude(telemetry.altitudeAGLM)}
+              <span>{detailsOpen ? '收起详情' : '查看详情'}</span>
+            </summary>
           {/* 地点与科学出处说明 */}
           <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 12, borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: 8 }}>
             <div style={{ fontWeight: 600, color: '#e2e8f0' }}>{telemetry.site.subtitle}</div>
@@ -303,7 +313,8 @@ export const LunarLandingHUD: React.FC<LunarLandingHUDProps> = ({ engine }) => {
             {state === 'SURFACE_LOOK' && `👀 位于${telemetry.site.name}，眼高 ${formatAltitude(telemetry.altitudeAGLM)}，可原地转头与仰望天空。`}
           </div>
 
-          {/* 操作行动按钮栏 */}
+          </details>
+          {/* 操作行动按钮栏（始终可用，不随详情折叠） */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {state === 'PREPARING' && (
               <button

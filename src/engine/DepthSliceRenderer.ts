@@ -71,17 +71,21 @@ export class DepthSliceRenderer {
         // 载具不被世界深度吞没，也不重复出现在世界 pass 中。
         // R1：投影范围不得继承世界最近切片——月面量级下末段 far 可为 2e-4，
         // 会整体裁掉相机前 ~2 单位的载具。有包围球时按其相机空间深度取
-        // 有限 near/far（余量 10%），否则回退权威相机全范围。
-        let dNear = camera.near;
-        let dFar = camera.far;
+        // 有限 near/far（余量 10%），否则回退展示坐标的 0.01–10 范围。
+        // Display geometry is camera-relative, not part of the world's metric range.
+        // In particular, a high-altitude world's near plane must not clip the cockpit.
+        let dNear = 0.01;
+        let dFar = 10;
         const sphere = options?.displaySphere;
         if (sphere && sphere.radius > 0 && Number.isFinite(sphere.radius)) {
           this.tmpMat4.copy(camera.matrixWorld).invert();
           const camSpaceZ = this.tmpVec3.copy(sphere.center).applyMatrix4(this.tmpMat4).z;
           const dist = Math.max(0, -camSpaceZ);
           const margin = sphere.radius * 1.1;
-          dNear = THREE.MathUtils.clamp(dist - margin, camera.near, camera.far);
-          dFar = THREE.MathUtils.clamp(dist + margin, Math.min(dNear * 2, camera.far), camera.far);
+          if (Number.isFinite(dist)) {
+            dNear = Math.max(0.0001, dist - margin);
+            dFar = Math.max(dNear + 0.001, dist + margin);
+          }
         }
         renderer.clearDepth();
         this.passCamera.layers.set(displayLayer);

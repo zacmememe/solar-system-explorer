@@ -5,7 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { createMoonMaterial } from '../src/rendering/MoonMaterial';
-import { makeHolePatchMaterial, patchOpacityUniform } from '../src/rendering/HolePatchMaterial';
+import { makeHolePatchMaterial, patchOpacityUniform, setSurfaceLayerOpacity } from '../src/rendering/HolePatchMaterial';
 
 describe('P1：挖孔补片材质光照同步', () => {
   it('光照 uniform（sunDirection/teachingLight）与本体共享同一对象——本体更新即补片同步', () => {
@@ -44,6 +44,31 @@ describe('P1：挖孔补片材质光照同步', () => {
     const plain = new THREE.MeshStandardMaterial({ color: 0x888888 });
     const patch = makeHolePatchMaterial(plain);
     expect(patchOpacityUniform(patch)).toBeNull();
+    expect(patch.transparent).toBe(true);
+    setSurfaceLayerOpacity(patch, 0);
+    expect(patch.opacity).toBe(0); // missing body texture must not leave an opaque sphere over terrain
+  });
+
+  it('a surface built before the body texture uses the same live lighting after replacement', () => {
+    const shared = {sunDirection: {value: new THREE.Vector3(1,0,0)}, teachingLight: {value: 0}};
+    const surface = createMoonMaterial(null, {shared});
+    const body = createMoonMaterial(new THREE.Texture(), {shared});
+    body.uniforms.sunDirection.value.set(0, 1, 0);
+    body.uniforms.teachingLight.value = 1;
+    expect(surface.uniforms.sunDirection.value.toArray()).toEqual([0,1,0]);
+    expect(surface.uniforms.teachingLight.value).toBe(1);
+    setSurfaceLayerOpacity(surface, .2);
+    expect(body.uniforms.uOpacity.value).toBe(1);
+  });
+
+  it('Mars and ordinary fallback opacity fade without modifying the body or writing depth', () => {
+    const body = new THREE.ShaderMaterial({uniforms: {layerOpacity: {value: 1}}});
+    const patch = makeHolePatchMaterial(body);
+    setSurfaceLayerOpacity(patch, .3);
+    expect(patch.uniforms.layerOpacity.value).toBe(.3);
+    expect(body.uniforms.layerOpacity.value).toBe(1);
+    setSurfaceLayerOpacity(patch, 1);
+    expect(patch.depthWrite).toBe(false);
     expect(patch.transparent).toBe(true);
   });
 });

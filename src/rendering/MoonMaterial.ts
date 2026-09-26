@@ -78,8 +78,9 @@ export function createMoonMaterial(
         // 地理固定的边缘混合带：到窗口边最近距离在 bandFrac 内权重 0→1，
         // 中心恒 1（纯高清），四角连续（min 距离场，无十字线/圆形硬边）
         vec2 ed = min(vUv, 1.0 - vUv);
-        float edgeDist = min(ed.x, ed.y);
-        float wHi = smoothstep(0.0, 1.0, clamp(edgeDist / max(uBandFrac, 1e-4), 0.0, 1.0));
+        // Product of smooth edge weights also has continuous derivatives at corners.
+        vec2 edgeWeight = smoothstep(vec2(0.0), vec2(max(uBandFrac, 1e-4)), ed);
+        float wHi = edgeWeight.x * edgeWeight.y;
         vec4 rawTex = mix(loRaw, hiRaw, wHi);
       `
     : `

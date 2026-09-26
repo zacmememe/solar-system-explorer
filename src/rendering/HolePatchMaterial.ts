@@ -13,23 +13,24 @@ import * as THREE from 'three';
 
 export const PATCH_OPAQUE_KEYS = ['uOpacity', 'layerOpacity'] as const;
 
-export function makeHolePatchMaterial(src: THREE.Material): THREE.ShaderMaterial {
-  const m = src.clone() as THREE.ShaderMaterial;
+export function makeHolePatchMaterial<T extends THREE.Material>(src: T): T {
+  const m = src.clone() as T;
   m.transparent = true;
   m.depthWrite = false;
-  const srcUniforms = (src as THREE.ShaderMaterial).uniforms;
-  if (srcUniforms && m.uniforms) {
+  const srcUniforms = src instanceof THREE.ShaderMaterial ? src.uniforms : undefined;
+  const uniforms = m instanceof THREE.ShaderMaterial ? m.uniforms : undefined;
+  if (srcUniforms && uniforms) {
     for (const key of Object.keys(srcUniforms)) {
       if (!(PATCH_OPAQUE_KEYS as readonly string[]).includes(key)) {
         // 共享 uniform 对象引用：本体更新 value 时补片同步生效
-        m.uniforms[key] = srcUniforms[key];
+        uniforms[key] = srcUniforms[key];
       }
     }
   }
   return m;
 }
 
-/** 补片材质是否带可控透明度 uniform（回退材质没有时保持常显填充） */
+/** Shader opacity if present; ordinary fallback materials use Material.opacity. */
 export function patchOpacityUniform(m: THREE.Material | THREE.Material[] | undefined): THREE.IUniform<any> | null {
   const single = Array.isArray(m) ? m[0] : m;
   if (!single) return null;
@@ -44,12 +45,9 @@ export function patchOpacityUniform(m: THREE.Material | THREE.Material[] | undef
  * 既有 MeshStandardMaterial 层保持 opacity 字段，行为不变。
  */
 export function setSurfaceLayerOpacity(m: THREE.Material, o: number): void {
-  const u = (m as THREE.ShaderMaterial).uniforms;
-  if (u && u.uOpacity) {
-    u.uOpacity.value = o;
-    m.transparent = o < 0.999;
-  } else {
-    m.transparent = o < 0.999;
-    m.opacity = o;
-  }
+  const opacity = Number.isFinite(o) ? THREE.MathUtils.clamp(o, 0, 1) : 0;
+  const u = patchOpacityUniform(m);
+  if (u) u.value = opacity;
+  m.opacity = opacity;
+  m.transparent = opacity < 1 || !m.depthWrite;
 }
