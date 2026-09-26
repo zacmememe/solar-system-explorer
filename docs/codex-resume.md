@@ -1,6 +1,6 @@
 # 重置后从这里接手
 
-用户已明确让 Codex 暂时承担主力开发，zcode 本轮已停止。不必重新询问是否可接手；先核对唯一动态队列中的活跃作者，避免与后来的会话撞写。
+当前分工已更新：用户指定 zcode / GLM-5.3 Flash 接手，Codex 暂停常规重度开发，并明确授权产品基线`b98e909`合入main。先读[新的详细接力指引](zcode-glm53-flash-handoff.md)和唯一queue。本页以下是Codex历轮实现索引，旧的“未合main”“Codex主力”表述不再决定当前分工；历史验证/独立审查记录不倒填。
 
 工作目录 `D:\Game Zac\Personal Projects\太阳系漫游`；分支 `codex/restore-observation-experience`。日常唯一启动入口为根目录 `启动太阳系漫游.bat`，每次构建当前本地源码成功后才打开页面。
 

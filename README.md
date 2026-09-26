@@ -12,7 +12,7 @@
 
 载具仅用于太空观察。进入落区绕行或降落后自动结束伴飞，下降、悬停、地面和升空期间不显示机库或载具视角；返回高空后可重新选择，不自动带回上次的飞船。
 
-当前任务分支机库提供ISS、卡西尼、旅行者1号、朱诺与航天飞机，模型按构图展示；阿波罗完整赴月组合仍待合格素材。接入、来源与验证见[五款载具报告](docs/selected-vehicles-10.md)，本轮地形与首次准备优化见[系统打磨记录](docs/system-polish-10.md)。
+当前机库提供ISS、卡西尼、旅行者1号、朱诺与航天飞机，模型按构图展示；阿波罗完整赴月组合仍待合格素材。接入、来源与验证见[五款载具报告](docs/selected-vehicles-10.md)，本轮地形与首次准备优化见[系统打磨记录](docs/system-polish-10.md)。
 
 ## 本地开发
 
@@ -22,7 +22,7 @@
 
 项目继续在原来的 D 盘目录中本地开发，GitHub 保存提交后的版本。
 
-Codex 重置后的接手入口：[本轮接手索引](docs/codex-resume.md)；实际作者与任务状态仍以本机 `review-exports/coordination/queue.md` 为准。
+zcode / GLM-5.3 Flash 当前接力入口：[详细接力指引](docs/zcode-glm53-flash-handoff.md)。Codex历史接手入口：[接手索引](docs/codex-resume.md)。用户已授权将产品基线`b98e909`合入main；实际作者与任务状态仍以本机 `review-exports/coordination/queue.md` 为准。
 
 ```powershell
 # 已有 node_modules 时无需重复安装。

@@ -1,6 +1,7 @@
 # 本项目协作约定
 
 - 使用中文沟通。先读 `README.md`、相关源码和当前已确认的任务方案。分工与日常交接见 `docs/review-workflow.md`。
+- 用户已指定 zcode / GLM-5.3 Flash 接手 Codex 当前成果；接力先读 `docs/zcode-glm53-flash-handoff.md`，保留其中用户确认的体验不变量与反例。具体作者、任务和分支仍只认唯一 queue。
 - zcode 与 Antigravity 是日常主力，按任务分别承担工程/数据与视觉/体验；当前 Anti 额度暂停时由 zcode 继续已批准工作。Codex 只在关键系统判断和疑难问题介入，Pro 做阶段深审。具体流程见 `docs/review-workflow.md`。
 - 开工先核对任务 ID、作者会话、目录、分支和 base。动态任务状态只认 `D:\Game Zac\Personal Projects\太阳系漫游\review-exports\coordination\queue.md`，由指定值班会话串行维护；不在各 worktree 复制新看板。
 - 一任务一位活跃作者；同一工作目录同一时间只保留一个代码写作者，按任务用短分支/worktree，禁止操作其他活跃作者的目录或进程。保留其他工具或用户尚未提交的修改；不要自动覆盖、清理或回滚。共享单位/时间/接口先定语义，再并行实现。
