@@ -584,7 +584,11 @@ export class VehicleMeshBuilder {
     });
     const solarMat = new THREE.MeshStandardMaterial({
       map: solarTex,
-      metalness: 0.92,
+      // Covered solar cells are not a continuous metal surface. At .92 the
+      // dark cell texture loses almost all diffuse response in space lighting.
+      // Keep the texture/specular roughness; do not brighten with emission.
+      name: 'iss-solar-cells',
+      metalness: 0,
       roughness: 0.18,
       side: THREE.DoubleSide,
     });
