@@ -10,6 +10,8 @@ export interface HudLandingFrame {
   readonly telemetry: LandingTelemetry;
   readonly availability: LandingAvailability;
   readonly sites: readonly LandingSite[];
+  /** Explicit orbit-side travel to a landing site; not a generic camera reframe. */
+  readonly siteTravel?: {readonly siteId:string;readonly name:string} | null;
   readonly preparation: {
     readonly active: boolean;
     readonly phase: 'policy' | 'approach' | 'capture' | null;

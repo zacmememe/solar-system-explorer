@@ -1,5 +1,5 @@
-/* Restrained observer strip. Full instruments are available on demand. */
-.mission-hud { --hud-text:#f3f4f5; --hud-muted:#b9bec5; --hud-rule:rgb(255 255 255 / .2);
+/* A task arc: light instruments between location and actions; B lenses expand on demand. */
+.mission-hud { --hud-text:#edf6f8; --hud-muted:#b8c8ce; --hud-rule:rgb(224 240 246 / .23);
  position:absolute; inset:auto 0 0; z-index:16; pointer-events:none; color:var(--hud-text);
  font:12px/1.45 system-ui,-apple-system,'Segoe UI',sans-serif; font-variant-numeric:tabular-nums; }
 .mission-hud *, .mission-hud *::before, .mission-hud *::after { box-sizing:border-box; }
@@ -9,14 +9,17 @@
 .mission-hud button:focus-visible, .mission-hud select:focus-visible { outline:2px solid white; outline-offset:2px; }
 .mission-hud button:disabled { opacity:.45; cursor:not-allowed; }
 .mission-hud button[aria-pressed='true'] { background:rgb(255 255 255 / .13); }
-.hud-scrim { position:absolute; inset:-12px 0 0; z-index:-1; background:linear-gradient(to top,rgb(3 6 10 / .9),rgb(3 6 10 / .55) 64%,transparent); }
-.hud-layout { display:grid; grid-template-columns:minmax(160px,1fr) minmax(180px,1.15fr) auto; align-items:center;
- gap:clamp(24px,3vw,80px); padding:14px clamp(24px,3vw,76px) max(14px,env(safe-area-inset-bottom)); min-height:86px; }
+.hud-scrim { position:absolute; inset:-12px 0 0; z-index:-1; background:linear-gradient(to top,rgb(3 9 13 / .79),rgb(3 9 13 / .44) 58%,transparent); }
+.hud-layout { display:grid; grid-template-columns:minmax(0,1fr) clamp(220px,calc(100vw - 1020px),780px) minmax(0,1fr); align-items:end;
+ gap:clamp(18px,2vw,48px); padding:8px clamp(24px,2.7vw,60px) max(10px,env(safe-area-inset-bottom)); min-height:96px; }
 .hud-target, .hud-context { min-width:0; }
-.hud-object-name { display:block; font-size:17px; font-weight:500; letter-spacing:.03em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.hud-target { align-self:center; }
+.hud-target-kicker { display:block; font-size:9px; letter-spacing:.18em; color:#94adb8; text-transform:uppercase; margin-bottom:5px; }
+.hud-object-name { display:block; font-size:21px; font-weight:450; letter-spacing:.03em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .hud-stage { display:block; color:var(--hud-muted); font-size:10px; letter-spacing:.12em; margin-top:3px; }
+.hud-stage::before { content:'';display:inline-block;width:4px;height:4px;border-radius:50%;background:#cee5eb;margin:0 7px 2px 0; }
 .hud-flight, .hud-utility, .hud-mission-actions { display:flex; align-items:center; gap:6px; }
-.hud-flight { justify-content:flex-end; gap:16px; }
+.hud-flight { justify-content:flex-end; gap:12px; padding-bottom:7px; }
 .hud-utility { border-left:1px solid var(--hud-rule); padding-left:10px; }
 .hud-utility button { color:var(--hud-muted); padding:0 10px; }
 .hud-options { font-size:21px !important; letter-spacing:2px; }
@@ -35,7 +38,8 @@
 .hud-transfer small { color:var(--hud-muted); }
 .hud-landing-row { display:flex; align-items:center; gap:8px; pointer-events:auto; }
 .hud-landing-label { color:var(--hud-muted); font-size:11px; white-space:nowrap; }
-.hud-landing-row select { min-width:0; max-width:210px; min-height:44px; padding:0 9px; border:1px solid var(--hud-rule); border-radius:5px; background:rgb(12 16 22 / .64); }
+.hud-landing-row select { min-width:0; max-width:190px; min-height:44px; padding:0 9px; border:1px solid var(--hud-rule); border-radius:5px; background:rgb(12 20 26 / .55); }
+.hud-landing-label { display:none; }
 .mission-hud .hud-landing-action { white-space:nowrap; border:1px solid var(--hud-rule); }
 .hud-landing-action.is-primary { background:rgb(255 255 255 / .11); }
 .hud-landing-wait { color:var(--hud-muted); font-size:11px; }
@@ -66,6 +70,11 @@
 .mission-hud .hud-restore { float:right; margin:10px 24px; background:rgb(8 10 15 / .7); }
 .hud-context-heading { display:flex; align-items:center; justify-content:space-between; }
 .hud-context-graphic svg { display:block; overflow:visible; margin:20px 0; }
+.hud-context-graphic.is-compact { position:relative; }
+.hud-context-graphic.is-compact svg { margin:0; overflow:hidden; }
+.hud-preview-caption { position:absolute;right:0;bottom:1px;font-size:9px;color:#a1b7c1;letter-spacing:.05em; }
+.hud-context-graphic.is-lens { border:1px solid var(--hud-rule);border-radius:24px;background:radial-gradient(ellipse at center,rgb(211 235 244 / .07),transparent 70%);padding:5px 12px 12px; }
+.hud-context-graphic.is-lens svg { margin:8px 0; }
 .hud-orbit { fill:none; stroke:rgb(255 255 255 / .22); stroke-width:1; vector-effect:non-scaling-stroke; }
 .hud-orbit.is-selected { stroke:rgb(255 255 255 / .55); }
 .hud-body { fill:#9da3ab; } .hud-body.is-selected { fill:white; }
@@ -83,16 +92,43 @@
 .hud-instrument-active { fill:none; stroke:var(--hud-text); stroke-width:1.5; }
 .hud-instrument-caption { color:var(--hud-muted); font-size:10px; margin:2px 0 12px; }
 .hud-preparation { padding:16px 0; } .hud-preparation strong { font-weight:500; }
+.hud-task-arc svg { display:block;overflow:visible; }
+.hud-task-arc svg text { font:10px system-ui,sans-serif;letter-spacing:.06em;fill:var(--hud-muted); }
+.hud-task-arc svg path { vector-effect:non-scaling-stroke; }
+.hud-arc-track { fill:none;stroke:rgb(208 230 239 / .38);stroke-width:1; }
+.hud-arc-complete { fill:none;stroke:#e4f5fb;stroke-width:1.15; }
+.hud-arc-tick { fill:none;stroke:rgb(224 240 246 / .5);stroke-width:1; }
+.hud-arc-pointer { fill:#dff5ff;stroke:#dff5ff;stroke-width:1; }
+.hud-arc-past { fill:#e4f5fb; } .hud-arc-next { fill:#637b85; }
+.hud-arc-cursor circle:first-child { fill:#15222b;stroke:#b9deed;stroke-width:1; }
+.hud-arc-cursor circle:last-child { fill:#eefbff; }
+.hud-arc-reading { height:34px;display:flex;align-items:baseline;justify-content:center;gap:10px;white-space:nowrap; }
+.hud-arc-reading strong { font-size:34px;line-height:34px;font-weight:300;letter-spacing:-.025em; }
+.hud-arc-reading strong small { font-size:12px;color:var(--hud-muted);letter-spacing:.08em;margin-left:5px; }
+.hud-arc-reading.is-text strong { font-size:19px;font-weight:350;letter-spacing:.08em;overflow:hidden;text-overflow:ellipsis; }
+.hud-arc-reading-label { font-size:10px;color:var(--hud-muted);letter-spacing:.13em; }
+.hud-arc-unit { font-size:12px;color:var(--hud-muted); }
+.hud-direction-lens { display:flex;gap:16px;align-items:center;border:1px solid var(--hud-rule);border-radius:22px;margin:14px 0;padding:10px;background:radial-gradient(ellipse at 25% 50%,rgb(215 238 248 / .08),transparent 70%); }
+.hud-direction-lens svg { width:144px;height:124px;flex:none; }
+.hud-direction-lens text { fill:var(--hud-muted);font:9px system-ui,sans-serif; }
+.hud-lens-ring { fill:none;stroke:var(--hud-rule);stroke-width:1; } .hud-lens-ring.is-inner { stroke-dasharray:2 4; }
+.hud-lens-sector { fill:rgb(208 237 249 / .12); }
+.hud-lens-bearing { fill:none;stroke:#def4fd;stroke-width:1.4; }
+.hud-direction-lens > div { display:flex;flex-direction:column;gap:5px; }
+.hud-direction-lens strong { font-size:19px;font-weight:400; } .hud-direction-lens small { font-size:10px;color:var(--hud-muted); }
+.hud-sr-only { position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap; }
+@media (min-width:901px) and (max-width:1600px) { .hud-landing-row select { max-width:145px; } }
 @media (max-width:1250px) {
- .hud-layout { grid-template-columns:minmax(140px,.8fr) minmax(140px,1fr) auto; gap:18px; padding-left:20px; padding-right:20px; }
+ .hud-layout { grid-template-columns:minmax(125px,.7fr) minmax(220px,1fr) auto; gap:16px; padding-left:20px; padding-right:20px; }
  .hud-flight { gap:8px; } .hud-utility { gap:0; padding-left:5px; }
  .hud-object-name { font-size:15px; } .hud-landing-label { display:none; }
- .hud-landing-row select { max-width:170px; } .hud-mini-progress { min-width:30px; }
+ .hud-landing-row select { max-width:145px; } .hud-mini-progress { min-width:30px; }
+ .hud-flight { gap:5px; } .hud-utility button { padding:0 7px; }
 }
 @media (max-width:900px) {
- .hud-layout { grid-template-columns:1fr 1fr; grid-template-areas:'target context' 'flight flight'; gap:8px 12px; padding:10px 14px max(10px,env(safe-area-inset-bottom)); }
+ .hud-layout { grid-template-columns:minmax(90px,.7fr) minmax(190px,1.3fr); grid-template-areas:'target context' 'flight flight'; gap:6px 10px; padding:6px 14px max(8px,env(safe-area-inset-bottom)); }
  .hud-target { grid-area:target; } .hud-context { grid-area:context; }
- .hud-flight { grid-area:flight; justify-content:space-between; }
+ .hud-flight { grid-area:flight; justify-content:space-between; padding:0;flex-wrap:wrap; }
  .hud-utility { margin-left:auto; } .hud-compact-altitude, .hud-compact-bearing { justify-content:flex-end; gap:8px; }
  .hud-compact-altitude strong { font-size:22px; } .hud-compact-bearing strong { font-size:16px; }
  .hud-layout .hud-mini-progress { display:none; } .hud-transfer { justify-content:flex-end; gap:6px; }
@@ -100,6 +136,13 @@
  .hud-landing-row select { max-width:100%; } .hud-landing-row .hud-landing-action { padding:0 8px; }
  .mission-hud .hud-mission-actions button { font-size:11px; padding:0 9px; }
  .hud-popover { left:12px; right:12px; width:auto; }
+ .hud-target-kicker { font-size:8px;letter-spacing:.1em; }
+ .hud-task-arc svg text { font-size:9px;letter-spacing:0; }
+ .hud-arc-reading strong { font-size:27px; } .hud-arc-reading.is-text strong { font-size:16px; }
+ .hud-preview-caption { font-size:8px; } .hud-arc-reading-label { font-size:9px;letter-spacing:0; }
+ .hud-space-instrument .hud-arc-reading-label { display:none; }
+ .hud-landing-row { flex-wrap:nowrap; }
+ .hud-landing-row select { max-width:150px; }
 }
 @media (max-width:500px) { .hud-utility button { padding:0 8px; } .hud-flight { gap:4px; } .hud-mission-actions { gap:4px; }
  .has-mission .hud-utility .hud-pause { display:none; } }

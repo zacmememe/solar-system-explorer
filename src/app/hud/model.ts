@@ -58,11 +58,11 @@ export interface ContextMap {
  *  x is horizontal; z is foreshortened; elevation contributes slightly.
  *  This is a diagram, not a distance scale and not a JPL ephemeris.
  */
-export function buildContextMap(frame: HudFrame, centerId: BodyId, width: number, height: number): ContextMap {
+export function buildContextMap(frame: HudFrame, centerId: BodyId, width: number, height: number, includeIds?: readonly BodyId[]): ContextMap {
   const w = Math.max(120, width), h = Math.max(60, height);
   const center: HudVector = frame.bodies.find(b => b.id === centerId)?.position ?? [0, 0, 0];
   const ids = Object.values(BODIES)
-    .filter(b => centerId === 'sun' ? b.type === 'planet' : b.type === 'moon' && b.parentId === centerId)
+    .filter(b => (centerId === 'sun' ? b.type === 'planet' : b.type === 'moon' && b.parentId === centerId) && (!includeIds || includeIds.includes(b.id)))
     .map(b => b.id);
   const relative = (p: HudVector): HudVector => [p[0] - center[0], p[1] - center[1], p[2] - center[2]];
 

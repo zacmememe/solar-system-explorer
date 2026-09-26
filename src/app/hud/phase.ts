@@ -1,13 +1,14 @@
 import type { HudFrame } from '../../contracts/hud';
 import type { LandingState } from '../../contracts/landing';
 
-export type HudPhase = 'loading' | 'overview' | 'observe' | 'free' | 'transfer' | Lowercase<Exclude<LandingState, 'ORBIT'>>;
+export type HudPhase = 'loading' | 'overview' | 'observe' | 'free' | 'transfer' | 'site_travel' | Lowercase<Exclude<LandingState, 'ORBIT'>>;
 
 /** Explicit priority: landing motion owns its display even during a camera reframe. */
 export function hudPhase(frame: HudFrame | null): HudPhase {
   if (!frame) return 'loading';
   const state = frame.landing?.telemetry.state;
   if (state && state !== 'ORBIT') return state.toLowerCase() as HudPhase;
+  if (frame.landing?.siteTravel) return 'site_travel';
   if (frame.camera.isTransitioning) return 'transfer';
   if (frame.camera.mode === 'SURFACE_LOOK') return 'surface_look';
   if (frame.camera.mode === 'OVERVIEW') return 'overview';
@@ -19,6 +20,7 @@ export const PHASE_LABEL: Record<HudPhase, string> = {
   loading: '连接观察机位', overview: '太阳系全景', observe: '天体观察', free: '自由观察',
   transfer: '切换观测目标', preparing: '准备降落', descending: '正在下降', hold: '悬停环顾',
   surface_look: '地表探索', ascending: '返回观星机位',
+  site_travel: '绕行前往落区',
 };
 export const isSurfacePhase = (p: HudPhase) => ['preparing','descending','hold','surface_look','ascending'].includes(p);
 

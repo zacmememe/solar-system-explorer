@@ -7,6 +7,7 @@ import {getPlanetNavPosition,getSatelliteNavPosition} from '../src/astronomy/bod
 import {LandingController} from '../src/surface/LandingController';
 import {CameraController} from '../src/camera/CameraController';
 import * as THREE from 'three';
+import {compassTicks,journeyArc} from '../src/app/hud/arc';
 
 const frame=():{-readonly [K in keyof HudFrame]:HudFrame[K]}=>({sequence:1,simTimeHours:0,isPaused:true,timeScale:50,observerPosition:[0,0,0],bodies:[],
  camera:{mode:'ORBIT_TARGET',targetBodyId:'moon',selectedBodyId:'moon',distanceToTarget:3,minDistance:1,maxDistance:10,commandId:1,isTransitioning:false,spherical:{radius:3,theta:0,phi:1}}});
@@ -92,5 +93,41 @@ describe('mission telemetry counterexamples',()=>{
   c.holdDescent();c.returnToOrbit();c.update(2);
   expect(c.getTelemetry().altitudeMSLM).toBeGreaterThan(200000);
   expect(c.getTelemetry().verticalSpeedMps).toBeGreaterThan(0);
+ });
+});
+
+describe('task arc semantics',()=>{
+ it('distinguishes explicit landing-site travel from a same-body reframe',()=>{
+  const f=frame();f.landing={...mission(),siteTravel:{siteId:'jezero',name:'耶泽罗'}};f.camera.isTransitioning=true;
+  expect(hudPhase(f)).toBe('site_travel');expect(journeyArc(f).labels.at(-1)).toBe('落区上空');
+  f.landing={...f.landing,siteTravel:null};expect(hudPhase(f)).toBe('transfer');
+ });
+ it('preparation has no fabricated descent progress or default height',()=>{
+  const f=frame();f.landing=mission();f.landing.telemetry.state='PREPARING';f.landing.telemetry.progress=.9;
+  expect(journeyArc(f).progress).toBeNull();expect(observedAltitude(f)).toBeNull();
+ });
+ it('HOLD retains the descent cursor and ascent starts a different segment',()=>{
+  const f=frame();f.landing=mission();f.landing.telemetry.state='DESCENDING';f.landing.telemetry.progress=.64;
+  const before=journeyArc(f);f.landing.telemetry.state='HOLD';expect(journeyArc(f).cursor).toBe(before.cursor);
+  f.landing.telemetry.state='ASCENDING';f.landing.telemetry.progress=0;
+  expect(journeyArc(f).kind).toBe('ascent');expect(journeyArc(f).cursor).toBe(0);
+ });
+ it('does not hide a legitimate current-segment replan reset',()=>{
+  const f=frame();f.camera.isTransitioning=true;f.camera.transitionProgress=.8;expect(journeyArc(f).progress).toBe(.8);
+  f.camera.transitionProgress=.04;expect(journeyArc(f).progress).toBe(.04);
+ });
+ it('north ticks move a single degree across the wrap without jumping 359 degrees',()=>{
+  const oldNorth=compassTicks(359,420).find(t=>t.bearing===0)!;
+  const newNorth=compassTicks(0,420).find(t=>t.bearing===0)!;
+  expect(oldNorth.x-newNorth.x).toBeCloseTo((420-48)/150);expect(newNorth.x).toBe(210);
+  expect(compassTicks(Number.NaN,420)).toEqual([]);
+ });
+ it('compact diagrams filter scope while retaining the actual dot/track correspondence',()=>{
+  const f=frame(),p=getSatelliteNavPosition('moon',0);
+  f.bodies=[{id:'earth',position:[0,0,0]},{id:'moon',position:p},{id:'mars',position:[10,20,30]}];
+  const map=buildContextMap(f,'earth',500,64,['moon']);
+  expect(map.points.map(p=>p.id)).toEqual(['earth','moon']);
+  const point=map.points[1],match=/^M([\d.-]+),([\d.-]+)/.exec(map.paths[0].d)!;
+  expect(Number(match[1])).toBeCloseTo(point.at.x,1);expect(Number(match[2])).toBeCloseTo(point.at.y,1);
  });
 });

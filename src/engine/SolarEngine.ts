@@ -289,6 +289,7 @@ export class SolarEngine {
     userInputRevisionAtStart: number;
   } | null = null;
   private landingSiteTravel = false;
+  private landingSiteTravelTarget: LandingSite | null = null;
   /** 最近一次准备阶段为光照做出的模拟时刻调整（HUD 如实提示；null=未调整） */
   private lastLandingLightingAdjustHours: number | null = null;
   /** P3b-A：同帧捕获的起始四元数（含滚转；验收核对用——导引当前值见 landingGuidedQuat） */
@@ -2406,6 +2407,7 @@ export class SolarEngine {
       site: this.activeLandingSite,
     };
     this.landingController.acquireTimeScaleOverride(()=>this.timeScale, scale=>this.setTimeScale(scale), true);
+    this.landingSiteTravelTarget = resolved.site;
     this.landingSiteTravel = true;
     this.syncVehicleContext();
     this.flyAroundToLandingSite(resolved.site);
@@ -3415,6 +3417,8 @@ export class SolarEngine {
         telemetry: this.landingController.getTelemetry(),
         availability: this.getLandingAvailability(),
         sites: this.getLandingSiteChoices(),
+        siteTravel: this.landingSiteTravel && this.landingSiteTravelTarget
+          ? {siteId:this.landingSiteTravelTarget.id,name:this.landingSiteTravelTarget.name} : null,
         preparation: this.getLandingPreparationStatus(),
       },
     });

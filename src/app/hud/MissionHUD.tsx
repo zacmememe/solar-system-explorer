@@ -4,12 +4,13 @@ import type { BodyId } from '../../contracts/body';
 import type { ViewCameraMode } from '../../contracts/vehicle';
 import type { HudFrame } from '../../contracts/hud';
 import type { HudStore } from './store';
-import { buildContextMap, clamp01, formatPeriod, hasMoons, materialNote, orbitMetric, parentSystem, SPEEDS, speedLabel } from './model';
+import { buildContextMap, formatPeriod, hasMoons, materialNote, orbitMetric, parentSystem, SPEEDS, speedLabel } from './model';
 import './hud.css';
 import type { SolarEngine } from '../../engine/SolarEngine';
 import { LandingDockRow } from '../LunarLandingHUD';
 import { PHASE_LABEL, hudPhase, isSurfacePhase } from './phase';
-import { SurfaceReadouts, SurfaceSummary, SurfaceGraphic, SurfaceActions, SurfaceLocation, SurfaceDetails } from './SurfaceJourney';
+import { SurfaceReadouts, SurfaceGraphic, SurfaceActions, SurfaceLocation, SurfaceDetails } from './SurfaceJourney';
+import {DirectionLens,TaskArc} from './TaskArc';
 
 type Panel = 'time' | 'observe' | 'details' | 'mission' | 'navigation' | null;
 export interface MissionHUDProps {
@@ -40,7 +41,7 @@ export interface MissionHUDProps {
   onCancelTransition(): void;
 }
 
-function ContextGraphic({ frame, centerId, selectedId }: { frame: HudFrame; centerId: BodyId; selectedId: BodyId }) {
+function ContextGraphic({ frame, centerId, selectedId, compact=false }: { frame: HudFrame; centerId: BodyId; selectedId: BodyId; compact?:boolean }) {
   const root = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(400);
   useEffect(() => {
@@ -50,32 +51,24 @@ function ContextGraphic({ frame, centerId, selectedId }: { frame: HudFrame; cent
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const height = 88;
-  const map = buildContextMap(frame, centerId, width, height);
-  return <div className="hud-context-graphic" ref={root}>
-    <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} role="img"
+  const height = compact?64:150;
+  const previewIds=compact&&centerId!=='sun' ? (selectedId!==centerId?[selectedId]:Object.values(BODIES).filter(b=>b.parentId===centerId).sort((a,b)=>b.radiusKm-a.radiusKm).slice(0,2).map(b=>b.id)) : undefined;
+  const map = buildContextMap(frame, centerId, width, height,previewIds);
+  return <div className={`hud-context-graphic${compact?' is-compact':' is-lens'}`} ref={root}>
+    <svg width="100%" height={compact?46:height} viewBox={`0 0 ${width} ${height}`} role="img"
       aria-label={`${BODIES[centerId].name}系统相对位置示意，圆点为天体，三角为观察机位`}
-      data-testid="hud-context-map" data-sequence={frame.sequence} data-center={centerId}>
+      data-testid={compact?'hud-context-preview':'hud-context-map'} data-sequence={frame.sequence} data-center={centerId}>
       {map.paths.map(p => <path key={p.id} d={p.d} className={p.id === selectedId ? 'hud-orbit is-selected' : 'hud-orbit'} />)}
       {map.points.map(p => <g key={p.id} data-body={p.id} transform={`translate(${p.at.x},${p.at.y})`}>
         {p.id === selectedId && <circle r="9" className="hud-selection-ring" />}
         <circle r={p.id === centerId ? 4 : p.id === selectedId ? 3.8 : 2.3} className={p.id === selectedId ? 'hud-body is-selected' : 'hud-body'} />
-        {(p.id===selectedId || p.id===centerId) && <text x={p.at.x>width-60?-10:10} y={p.id===centerId?16:-12} textAnchor={p.at.x>width-60?'end':'start'} className="hud-map-label">{BODIES[p.id].name}</text>}
+        {!compact && (p.id===selectedId || p.id===centerId) && <text x={p.at.x>width-60?-10:10} y={p.id===centerId?16:-12} textAnchor={p.at.x>width-60?'end':'start'} className="hud-map-label">{BODIES[p.id].name}</text>}
       </g>)}
       <path d="M 0,-7 L 5,5 L 0,2 L -5,5 Z" transform={`translate(${map.observer.x},${map.observer.y})`}
         className="hud-observer" data-testid="hud-observer" />
     </svg>
-    <div className="hud-map-caption">○ 天体　△ {map.observerOutside ? '观察机位在图外（边缘指示）' : '观察机位'}　·　示意比例</div>
-  </div>;
-}
-
-function TransferGraphic({ progress, name, source }: { progress: number; name: string; source: string }) {
-  const value = clamp01(progress);
-  return <div className="hud-transfer" role="progressbar" aria-label={`切换观测目标至${name}`}
-    aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(value * 100)} data-testid="hud-transfer">
-    <span className="hud-compact-note">{source} → {name}</span>
-    <span className="hud-mini-progress"><i style={{width:`${value*100}%`}}/></span>
-    <small>{Math.round(value*100)}%</small>
+    {!compact&&<div className="hud-map-caption">○ 天体　△ {map.observerOutside ? '观察机位在图外（边缘指示）' : '观察机位'}　·　示意比例</div>}
+    {compact&&<span className="hud-preview-caption">{map.observerOutside?'△ 机位在图外 · 示意':'相对位置 · 示意'}</span>}
   </div>;
 }
 
@@ -92,8 +85,9 @@ export function MissionHUD(props: MissionHUDProps) {
   const phase = hudPhase(frame);
   const surfaceMode = isSurfacePhase(phase);
   const center = phase==='overview' || solarScope || !hasMoons(system) ? 'sun' : system;
+  const previewCenter=phase==='overview'||!hasMoons(system)?'sun':system;
   const destinationId = frame?.camera.targetBodyId;
-  const destinationName = frame?.camera.destinationMode==='OVERVIEW' || !destinationId ? '太阳系全景' : BODIES[destinationId].name;
+  const destinationName = phase==='site_travel' ? frame?.landing?.siteTravel?.name.split(' · ')[0]??'落区上空' : frame?.camera.destinationMode==='OVERVIEW' || !destinationId ? '太阳系全景' : BODIES[destinationId].name;
   const sourceName = frame?.camera.sourceBodyId ? BODIES[frame.camera.sourceBodyId].name : '当前机位';
   const ready = frame !== null;
   const isPaused = frame?.isPaused ?? false;
@@ -163,16 +157,18 @@ export function MissionHUD(props: MissionHUDProps) {
       <div className="hud-scrim" aria-hidden="true" />
       <div className="hud-layout">
         <section className="hud-target" aria-label="当前对象">
-          <strong className="hud-object-name">{heading}</strong>
+          <span className="hud-target-kicker">{surfaceMode?`${BODIES[frame?.surface?.bodyId??frame?.landing?.telemetry.site.bodyId??body.id].nameEn} / SURFACE`:phase==='overview'?'SOLAR SYSTEM':`${body.nameEn} / OBSERVATION`}</span>
+          <strong className="hud-object-name" title={heading}>{heading}</strong>
           <span className="hud-stage" data-testid="landing-state-tag" data-state={frame?.landing?.telemetry.state}>{PHASE_LABEL[phase]}</span>
         </section>
         <section className="hud-context" aria-label={surfaceMode?'当前旅程':'空间关系'} data-testid={surfaceMode?'lunar-landing-telemetry-hud':undefined}>
           {!frame ? <span className="hud-compact-note">正在连接观察机位</span>
-            : surfaceMode ? <SurfaceSummary frame={frame}/>
-            : transitioning ? <TransferGraphic progress={frame.camera.transitionProgress||0} name={destinationName} source={sourceName}/>
-            : <LandingDockRow engine={props.engine} landing={frame.landing}/>}
+            : surfaceMode||transitioning||phase==='site_travel' ? <TaskArc frame={frame} destination={destinationName} source={sourceName}/>
+            : <div className="hud-space-instrument"><ContextGraphic compact frame={frame} centerId={previewCenter} selectedId={phase==='overview'?'sun':body.id}/>
+              <div className="hud-arc-reading is-text"><span className="hud-arc-reading-label">观察范围</span><strong>{previewCenter==='sun'?'太阳系':BODIES[previewCenter].name+'系'}</strong></div></div>}
         </section>
         <section className="hud-flight" aria-label="旅程操作与选项">
+          {!surfaceMode&&!transitioning&&frame&&<LandingDockRow engine={props.engine} landing={frame.landing}/>}
           {surfaceMode && frame && <SurfaceActions frame={frame} engine={props.engine}/>}
           {!surfaceMode && transitioning && <div className="hud-mission-actions"><button onClick={props.onCancelTransition} data-testid="hud-cancel-transfer">停止转场</button></div>}
           <div className="hud-utility">
@@ -223,7 +219,8 @@ export function MissionHUD(props: MissionHUDProps) {
         </>}
         {panel === 'mission' && frame && <>
           <SurfaceLocation frame={frame}/><SurfaceReadouts frame={frame}/>
-          <SurfaceGraphic frame={frame}/><SurfaceActions frame={frame} engine={props.engine} secondary/>
+          {phase==='surface_look'?<DirectionLens frame={frame}/>:<SurfaceGraphic frame={frame}/>}
+          <SurfaceActions frame={frame} engine={props.engine} secondary/>
           <SurfaceDetails frame={frame}/>
         </>}
         {panel === 'navigation' && frame && <>
