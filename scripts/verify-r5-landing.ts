@@ -162,7 +162,9 @@ async function runR5Verification() {
     await new Promise((r) => setTimeout(r, 1200));
 
     const surfaceState = await page.$eval('[data-testid="landing-state-tag"]', (el) => el.getAttribute('data-state') || '');
-    const surfaceAgl = await page.$eval('[data-testid="telemetry-agl-value"]', (el) => el.textContent || '');
+    await page.click('[data-testid="hud-site-details"]');
+    const surfaceAgl = await page.$eval('[data-testid="telemetry-agl-detail"]', (el) => el.textContent || '');
+    await page.keyboard.press('Escape');
     console.log(`地表停驻状态: ${surfaceState} (期望: SURFACE_LOOK), 触地高度: ${surfaceAgl}`);
 
     // 保存截帧 61: 陶拉斯—利特罗谷底地表停驻 (1.7m 人眼视高)

@@ -3,6 +3,7 @@ import puppeteer from 'puppeteer-core';
 import {mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {sampleBrowserPerformance} from './lib/browser-performance.ts';
+import {journeyAction,timePanel} from './lib/hud-ui.mjs';
 const out=process.env.EVIDENCE_DIR||'D:/solar-evidence/surface-realism';
 await mkdir(out,{recursive:true});
 const browser=await puppeteer.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true,userDataDir:path.join(out,`profile-${process.pid}`),defaultViewport:{width:1440,height:900},args:['--use-gl=angle','--use-angle=d3d11'],protocolTimeout:240000});
@@ -48,11 +49,11 @@ try{
    await drag(0,-260);await shot(id+'-sky');await drag(300);await shot(id+'-sky-opposite');
    if(process.env.SKY_CYCLE==='1'&&!moon&&id==='jezero'){
      for(const phase of ['twilight','night']){
-       await page.click('[aria-label="调整时间流速"]');await page.click('[data-speed="21600"]');await page.click('[aria-label="关闭面板"]');
+       await timePanel(page);await page.click('[data-speed="21600"]');await page.click('[aria-label="关闭面板"]');
        if(await page.$('[aria-label="继续模拟"]'))await page.click('[aria-label="继续模拟"]');
        await page.waitForFunction(phase=>{const a=window.__solarEngine.getMarsAtmosphereDiagnostics();return phase==='night'?a.sunHeight<-.4:a.sunHeight>-.07&&a.sunHeight<.07;},{timeout:45000,polling:50},phase);
        await page.click('[aria-label="暂停模拟"]');await wait(1000);
-       await page.click('[data-testid="landing-btn-reset-look"]');await wait(800);
+       await journeyAction(page,'landing-btn-reset-look');await wait(800);
        await shot(id+'-'+phase+'-horizon');if(phase==='night')await drag(0,-80);
        for(let i=0;i<4;i++){await shot(id+'-'+phase+'-sky-'+i);await drag(300);}
      }
@@ -60,7 +61,7 @@ try{
      await toggleAtmosphere();await page.click('[aria-label="关闭面板"]');await wait(3600);await shot(id+'-atmosphere-off');
      if(report.images.at(-1).atmosphere.density>.001)throw Error('Atmosphere did not clear after toggle');
      await page.click('[aria-controls="hud-observe-panel"]');await toggleAtmosphere();await page.click('[aria-label="关闭面板"]');await wait(1500);
-     await page.click('[aria-label="调整时间流速"]');await page.click('[data-speed="1"]');await page.click('[aria-label="关闭面板"]');
+     await timePanel(page);await page.click('[data-speed="1"]');await page.click('[aria-label="关闭面板"]');
    }
    await page.click('[data-testid="landing-btn-return-orbit"]');await page.waitForFunction(()=>window.__solarEngine.getLandingTelemetry().state==='ORBIT'&&!window.__solarEngine.getCameraSnapshot().isTransitioning,{timeout:50000});await wait(3500);await shot(id+'-returned');
   }

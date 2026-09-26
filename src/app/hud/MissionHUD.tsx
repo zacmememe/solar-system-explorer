@@ -9,9 +9,9 @@ import './hud.css';
 import type { SolarEngine } from '../../engine/SolarEngine';
 import { LandingDockRow } from '../LunarLandingHUD';
 import { PHASE_LABEL, hudPhase, isSurfacePhase } from './phase';
-import { SurfaceReadouts, SurfaceGraphic, SurfaceActions, SurfaceLocation, SurfaceDetails } from './SurfaceJourney';
+import { SurfaceReadouts, SurfaceSummary, SurfaceGraphic, SurfaceActions, SurfaceLocation, SurfaceDetails } from './SurfaceJourney';
 
-type Panel = 'time' | 'observe' | 'details' | 'mission' | null;
+type Panel = 'time' | 'observe' | 'details' | 'mission' | 'navigation' | null;
 export interface MissionHUDProps {
   store: HudStore;
   selectedBodyId: BodyId;
@@ -73,12 +73,9 @@ function TransferGraphic({ progress, name, source }: { progress: number; name: s
   const value = clamp01(progress);
   return <div className="hud-transfer" role="progressbar" aria-label={`切换观测目标至${name}`}
     aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(value * 100)} data-testid="hud-transfer">
-    <div className="hud-transfer-label"><span>{source}</span><span>{name}</span></div>
-    <svg width="100%" height="48" viewBox="0 0 400 48" preserveAspectRatio="none" aria-hidden="true">
-      <path d="M 8,36 Q 200,-8 392,36" pathLength="1" className="hud-transfer-track" />
-      <path d="M 8,36 Q 200,-8 392,36" pathLength="1" className="hud-transfer-progress" strokeDasharray="1" strokeDashoffset={1 - value} />
-    </svg>
-    <div className="hud-transfer-caption"><span>镜头转场 · 非航天器轨道</span><strong>{Math.round(value * 100)}%</strong></div>
+    <span className="hud-compact-note">{source} → {name}</span>
+    <span className="hud-mini-progress"><i style={{width:`${value*100}%`}}/></span>
+    <small>{Math.round(value*100)}%</small>
   </div>;
 }
 
@@ -103,12 +100,14 @@ export function MissionHUD(props: MissionHUDProps) {
   const timeScale = frame?.timeScale ?? 50;
   const transitioning = !!frame?.camera.isTransitioning;
   const orbit = orbitMetric(body.id);
+  const siteName=frame?.landing?.telemetry.state!=='ORBIT' ? frame?.landing?.telemetry.site.name.split(' · ')[0] : undefined;
+  const heading=surfaceMode ? siteName??'地表观察点' : phase==='overview'?'太阳系':phase==='free'?'自由机位':transitioning?destinationName:body.name;
   const closePanel = (restoreFocus = false) => {
     setPanel(null);
     if (restoreFocus) lastTrigger.current?.focus();
   };
   const openPanel = (value: Panel, event: React.MouseEvent<HTMLButtonElement>) => {
-    lastTrigger.current = event.currentTarget;
+    if(!panelRef.current?.contains(event.currentTarget))lastTrigger.current = event.currentTarget;
     setPanel(current => current === value ? null : value);
   };
   useEffect(() => {
@@ -124,7 +123,19 @@ export function MissionHUD(props: MissionHUDProps) {
     document.addEventListener('pointerdown', outside);
     return () => { document.removeEventListener('keydown', keydown); document.removeEventListener('pointerdown', outside); };
   }, [panel]);
-  useEffect(() => { if (!surfaceMode && panel==='mission') setPanel(null); }, [surfaceMode, panel]);
+  useEffect(() => {
+    if ((!surfaceMode && panel==='mission') || ((surfaceMode || transitioning) && panel==='navigation')) {
+      const restore=!!panelRef.current?.contains(document.activeElement);
+      setPanel(null);
+      if(restore)requestAnimationFrame(()=>root.current?.querySelector<HTMLButtonElement>('.hud-explain')?.focus());
+    }
+  }, [surfaceMode, transitioning, panel]);
+  const collapseChanged=useRef(collapsed);
+  useEffect(()=>{
+    if(collapseChanged.current===collapsed)return;
+    collapseChanged.current=collapsed;
+    root.current?.querySelector<HTMLButtonElement>(collapsed?'.hud-restore':'.hud-options')?.focus();
+  },[collapsed]);
 
   useEffect(() => {
     const el=root.current;
@@ -151,59 +162,31 @@ export function MissionHUD(props: MissionHUDProps) {
     {collapsed ? <button className="hud-restore" onClick={() => setCollapsed(false)}>显示仪表</button> : <>
       <div className="hud-scrim" aria-hidden="true" />
       <div className="hud-layout">
-        <section className="hud-flight" aria-label="时间与观测控制">
-          {surfaceMode && frame && <SurfaceReadouts frame={frame} />}
-          <div className="hud-eyebrow hud-time-eyebrow">天体时间</div>
-          <div className="hud-time-line">
-            <button className="hud-pause" aria-label={isPaused ? '继续模拟' : '暂停模拟'} onClick={props.onPause} disabled={!ready}>
-              {isPaused ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5L19 12L8 19Z" fill="currentColor" /></svg>
-                : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5V19M17 5V19" stroke="currentColor" strokeWidth="3" /></svg>}
-            </button>
-            <button className="hud-rate" aria-label="调整时间流速" aria-expanded={panel === 'time'} aria-controls="hud-time-panel"
-              onClick={e => openPanel('time', e)} disabled={!ready}>
-              <span className={timeScale > 1000 ? 'hud-rate-large' : ''}>{timeScale.toLocaleString('en-US')}</span><small>×</small>
-            </button>
-          </div>
-          <div className="hud-flight-actions">
-            <button onClick={e => openPanel('observe', e)} aria-expanded={panel === 'observe'} aria-controls="hud-observe-panel">观测选项</button>
-            <button onClick={() => { closePanel(); setCollapsed(true); }}>收起仪表</button>
-          </div>
+        <section className="hud-target" aria-label="当前对象">
+          <strong className="hud-object-name">{heading}</strong>
+          <span className="hud-stage" data-testid="landing-state-tag" data-state={frame?.landing?.telemetry.state}>{PHASE_LABEL[phase]}</span>
         </section>
-
-        <section className="hud-context" aria-label={surfaceMode ? '当前旅程' : '空间关系'} data-testid={surfaceMode ? 'lunar-landing-telemetry-hud' : undefined}>
-          <div className="hud-context-heading">
-            <span data-testid="landing-state-tag" data-state={frame?.landing?.telemetry.state}>{surfaceMode || phase==='free' || transitioning ? PHASE_LABEL[phase] : center === 'sun' ? '太阳系 · 示意' : BODIES[center].name+'系 · 示意'}</span>
-            {!surfaceMode && !transitioning && phase!=='overview' && hasMoons(system) && <button className="hud-scope" aria-label={solarScope ? '查看本行星系统' : '查看太阳系位置'}
-              onClick={() => setSolarScope(v => !v)}>{solarScope ? '本系统' : '太阳系'} ↗</button>}
-          </div>
-          {!frame ? <div className="hud-no-data">等待 3D 场景数据</div>
-            : surfaceMode ? <SurfaceGraphic frame={frame}/>
-            : transitioning ? <TransferGraphic progress={frame.camera.transitionProgress || 0} name={destinationName} source={sourceName} />
-            : <ContextGraphic frame={frame} centerId={center} selectedId={phase==='overview'?'sun':body.id} />}
+        <section className="hud-context" aria-label={surfaceMode?'当前旅程':'空间关系'} data-testid={surfaceMode?'lunar-landing-telemetry-hud':undefined}>
+          {!frame ? <span className="hud-compact-note">正在连接观察机位</span>
+            : surfaceMode ? <SurfaceSummary frame={frame}/>
+            : transitioning ? <TransferGraphic progress={frame.camera.transitionProgress||0} name={destinationName} source={sourceName}/>
+            : <LandingDockRow engine={props.engine} landing={frame.landing}/>}
+        </section>
+        <section className="hud-flight" aria-label="旅程操作与选项">
           {surfaceMode && frame && <SurfaceActions frame={frame} engine={props.engine}/>}
-          {!surfaceMode && transitioning && <div className="hud-mission-actions"><button onClick={props.onCancelTransition} data-testid="hud-cancel-transfer">停止在当前机位</button></div>}
-        </section>
-
-        <section className="hud-target" aria-label={surfaceMode ? '当前观察地点' : '当前天体'}>
-          {surfaceMode && frame ? <>
-            <SurfaceLocation frame={frame}/>
-            <button className="hud-explain" data-testid="hud-site-details" onClick={e=>openPanel('mission',e)} aria-expanded={panel==='mission'} aria-controls="hud-mission-panel">地点与数据 ↗</button>
-          </> : <>
-            <div className="hud-target-heading"><strong>{phase==='overview'?'太阳系':phase==='free'?'自由机位':transitioning?destinationName:body.name}</strong><span>{phase==='observe'?body.nameEn:''}</span></div>
-            {phase==='observe' ? <div className="hud-radius"><span>{Math.round(body.radiusKm).toLocaleString('en-US')}</span><small>km</small></div>
-              : <p className="hud-target-note">{phase==='overview'?'选择天体开始探索':phase==='free'?'拖动环顾，或选择新的目标':'镜头导览 · 可随时停止'}</p>}
-            <LandingDockRow engine={props.engine} landing={frame?.landing}/>
-            <div className="hud-target-footer">{phase==='observe' && <span>平均半径</span>}
-              <button onClick={e=>openPanel('details',e)} aria-expanded={panel==='details'} aria-controls="hud-details-panel">{body.name}资料 ↗</button>
-            </div>
-          </>}
+          {!surfaceMode && transitioning && <div className="hud-mission-actions"><button onClick={props.onCancelTransition} data-testid="hud-cancel-transfer">停止转场</button></div>}
+          <div className="hud-utility">
+            <button className="hud-pause" aria-label={isPaused?'继续模拟':'暂停模拟'} title={isPaused?'继续天体时间':'暂停天体时间'} onClick={props.onPause} disabled={!ready}>{isPaused?'▷':'Ⅱ'}</button>
+            <button className="hud-explain" data-testid={surfaceMode?'hud-site-details':'hud-body-details'} onClick={e=>openPanel(surfaceMode?'mission':'details',e)} aria-expanded={panel===(surfaceMode?'mission':'details')} aria-controls={surfaceMode?'hud-mission-panel':'hud-details-panel'}>{surfaceMode?'详情':'资料'}</button>
+            {!surfaceMode && !transitioning && <button data-testid="hud-navigation" aria-controls="hud-navigation-panel" aria-expanded={panel==='navigation'} onClick={e=>openPanel('navigation',e)}>位置</button>}
+            <button className="hud-options" aria-label="观测选项" title="观测选项与时间" aria-controls="hud-observe-panel" aria-expanded={panel==='observe'} onClick={e=>openPanel('observe',e)}>···</button>
+          </div>
         </section>
       </div>
-
       {panel && <section className={`hud-popover hud-popover-${panel}`} ref={panelRef} role="dialog" aria-modal="false"
-        aria-label={panel === 'time' ? '调整模拟时间' : panel === 'observe' ? '观测选项' : panel === 'mission' ? '地点与数据' : `${body.name}资料`}
+        aria-label={panel === 'time' ? '调整模拟时间' : panel === 'observe' ? '观测选项' : panel === 'mission' ? '旅程详情' : panel === 'navigation' ? '空间关系' : `${body.name}资料`}
         id={`hud-${panel}-panel`}>
-        <div className="hud-popover-heading"><h2>{panel === 'time' ? '天体时间' : panel === 'observe' ? '观测选项' : panel === 'mission' ? '地点与数据' : `${body.name} · ${body.nameEn}`}</h2>
+        <div className="hud-popover-heading"><h2>{panel === 'time' ? '天体时间' : panel === 'observe' ? '观测选项' : panel === 'mission' ? '旅程详情' : panel === 'navigation' ? '空间关系' : `${body.name} · ${body.nameEn}`}</h2>
           <button aria-label="关闭面板" onClick={() => closePanel(true)}>×</button></div>
         {panel === 'time' && <>
           <p>只改变天体运动与自转；镜头转场、下降和升空独立推进。想停住下降，请使用“悬停环顾”。</p>
@@ -212,11 +195,15 @@ export function MissionHUD(props: MissionHUDProps) {
           {frame && <p>模拟已推进 {(frame.simTimeHours / 24).toFixed(2)} 天{isPaused ? ' · 已暂停' : ''}。初始方位为演示设定，不对应今天的真实星空。</p>}
         </>}
         {panel === 'observe' && <>
+          <div className="hud-menu-time"><span>天体时间{isPaused?' · 已暂停':''}</span>
+            <button aria-label={isPaused?'继续天体时间':'暂停天体时间'} onClick={props.onPause}>{isPaused?'继续':'暂停'}</button>
+            <button className="hud-rate" aria-label="调整时间流速" aria-controls="hud-time-panel" onClick={e=>openPanel('time',e)}><span>{timeScale.toLocaleString('en-US')}</span><small>×</small></button>
+          </div>
           <div className="hud-view-modes">{([
             ['PLANET_OBSERVE', '观星'], ['VEHICLE_FORMATION', '伴飞'], ['VEHICLE_ONBOARD', '随船'],
           ] as const).map(([mode, label]) => <button key={mode} disabled={!ready || (mode !== 'PLANET_OBSERVE' && !props.vehicleName)} aria-pressed={props.viewCameraMode === mode}
             onClick={() => props.onViewMode(mode)}>{label}</button>)}</div>
-          <p>载具：{props.vehicleName || '未选择'}。伴飞模型是视觉呈现；下方三角指示观察机位，不冒充独立航天器轨道。</p>
+          <p>载具：{props.vehicleName || '未选择'}。伴飞模型是视觉呈现；空间关系图中的三角指示观察机位，不冒充独立航天器轨道。</p>
           <div className="hud-settings-grid">
             {toggle('天体标识', props.showLabels, props.onToggleLabels)}
             {toggle('地球云层', props.showClouds, props.onToggleClouds)}
@@ -228,12 +215,23 @@ export function MissionHUD(props: MissionHUDProps) {
           </div>
           <button className="hud-action" disabled={!ready} onClick={transitioning ? props.onCancelTransition : props.onReframe}>
             {transitioning ? '取消镜头转场' : '重新取景'}</button>
+          <button className="hud-action" data-testid="hud-collapse" onClick={()=>{closePanel();setCollapsed(true);}}>收起仪表</button>
         </>}
-        {panel === 'mission' && frame && <SurfaceDetails frame={frame}/>}
+        {panel === 'mission' && frame && <>
+          <SurfaceLocation frame={frame}/><SurfaceReadouts frame={frame}/>
+          <SurfaceGraphic frame={frame}/><SurfaceActions frame={frame} engine={props.engine} secondary/>
+          <SurfaceDetails frame={frame}/>
+        </>}
+        {panel === 'navigation' && frame && <>
+          <div className="hud-context-heading"><span>{BODIES[center].name}系 · 示意</span>
+            {phase!=='overview' && hasMoons(system) && <button className="hud-scope" aria-label={solarScope?'查看本行星系统':'查看太阳系位置'} onClick={()=>setSolarScope(v=>!v)}>{solarScope?'本系统':'太阳系'} ↗</button>}
+          </div>
+          <ContextGraphic frame={frame} centerId={center} selectedId={phase==='overview'?'sun':body.id}/>
+        </>}
         {panel === 'details' && <>
           <p className="hud-body-tip">{body.observationTip}</p>
           <p>{body.description}</p>
-          <dl><div><dt>{orbit.label}</dt><dd>{orbit.value}</dd></div>
+          <dl><div><dt>平均半径</dt><dd className="hud-radius">{Math.round(body.radiusKm).toLocaleString('en-US')} km</dd></div><div><dt>{orbit.label}</dt><dd>{orbit.value}</dd></div>
             <div><dt>公转周期{body.orbitPeriodDays < 0 ? '（逆行）' : ''}</dt><dd>{formatPeriod(body.orbitPeriodDays)}</dd></div>
             <div><dt>自转周期</dt><dd>{Math.abs(body.rotationPeriodHours).toFixed(1)} 小时</dd></div></dl>
           <p className="hud-source-note">{materialNote(body.id, props.titanInfraredMode)}<br />原项目标注来源：{body.sourceRef}</p>

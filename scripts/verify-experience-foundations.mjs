@@ -4,6 +4,7 @@ import {mkdir,writeFile} from 'node:fs/promises';
 import {execFileSync} from 'node:child_process';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import {journeyAction,timePanel} from './lib/hud-ui.mjs';
 const out=process.env.EVIDENCE_DIR || 'D:/solar-evidence/experience-foundations';
 await mkdir(out,{recursive:true});
 const browser=await puppeteer.launch({executablePath:process.env.EDGE_PATH || 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true,userDataDir:path.join(out,`profile-${process.pid}`),defaultViewport:{width:1440,height:900},args:['--use-gl=angle','--use-angle=d3d11'],protocolTimeout:240000});
@@ -44,7 +45,8 @@ try {
     await test('time-and-observation',async()=>{
       await page.click('[aria-label="暂停模拟"]');const t=await page.evaluate(()=>window.__solarEngine.getSimTimeHours());await delay(500);assert.equal(await page.evaluate(()=>window.__solarEngine.getSimTimeHours()),t);
       await click('earth-observation-mode-btn');await delay(500);assert.equal(await page.evaluate(()=>window.__solarEngine.getSimTimeHours()),t);await shot('terrain-study');await click('earth-observation-mode-btn');
-      await page.click('[aria-label="调整时间流速"]');await page.click('[data-speed="10"]');await page.keyboard.press('Escape');await page.waitForFunction(()=>document.querySelector('.hud-rate').textContent.replace(/\s/g,'')==='10×');assert.equal(await page.$eval('.hud-rate',e=>e.textContent.replace(/\s/g,'')),'10×');
+      await timePanel(page);await page.click('[data-speed="10"]');await page.keyboard.press('Escape');
+      await page.click('[aria-controls="hud-observe-panel"]');await page.waitForFunction(()=>document.querySelector('.hud-rate')?.textContent.replace(/\s/g,'')==='10×');assert.equal(await page.$eval('.hud-rate',e=>e.textContent.replace(/\s/g,'')),'10×');await page.keyboard.press('Escape');
     });
     await test('orbit-bookmark',async()=>{
       await travel('earth');await drag(125,30);const before=await snap(),id=await save('QA orbit');await travel('saturn');await restore(id);await page.waitForFunction(()=>window.__solarEngine.getCameraSnapshot().targetBodyId==='earth'&&!window.__solarEngine.getCameraSnapshot().isTransitioning);
@@ -75,11 +77,10 @@ try {
           : a.action==='travel-to-site' && !!document.querySelector('[data-testid="lunar-landing-travel-site-btn"]');
       },{timeout:30000});if(await page.$('[data-testid="lunar-landing-travel-site-btn"]'))await click('lunar-landing-travel-site-btn');
       await page.waitForSelector('[data-testid="lunar-landing-start-btn"]',{timeout:30000});await click('lunar-landing-start-btn');await page.waitForFunction(()=>window.__solarEngine.getLandingTelemetry().state==='DESCENDING',{timeout:30000});
-      await page.waitForFunction(()=>document.querySelector('.hud-rate').textContent.replace(/\s/g,'')===window.__solarEngine.getTimeScale()+'×');
-      const speed=await page.evaluate(()=>({value:window.__solarEngine.getTimeScale(),ui:document.querySelector('.hud-rate').textContent.replace(/\s/g,'')}));assert.equal(speed.ui,`${speed.value}×`);
+      await page.waitForFunction(()=>Number(document.querySelector('[data-testid="mission-hud"]').dataset.timeScale)===window.__solarEngine.getTimeScale());
       const direction=await page.evaluate(()=>{const c=window.__solarEngine.camera;return c.getWorldDirection(c.position.clone()).toArray();});await drag(10);assert.equal(await page.evaluate(()=>window.__solarEngine.getLandingTelemetry().state),'HOLD');
       const directionAfter=await page.evaluate(()=>{const c=window.__solarEngine.camera;return c.getWorldDirection(c.position.clone()).toArray();});const dot=direction.reduce((v,x,i)=>v+x*directionAfter[i],0);assert.ok(Math.acos(Math.min(1,dot))<0.12,'small drag snapped view');
-      const held=await page.evaluate(()=>window.__solarEngine.getLandingTelemetry().altitudeAGLM);await delay(400);assert.ok(Math.abs(await page.evaluate(()=>window.__solarEngine.getLandingTelemetry().altitudeAGLM)-held)<0.02);await click('landing-btn-reguide');await delay(500);await click('landing-btn-resume');
+      const held=await page.evaluate(()=>window.__solarEngine.getLandingTelemetry().altitudeAGLM);await delay(400);assert.ok(Math.abs(await page.evaluate(()=>window.__solarEngine.getLandingTelemetry().altitudeAGLM)-held)<0.02);await journeyAction(page,'landing-btn-reguide');await delay(500);await click('landing-btn-resume');
       const samples=[], captured=new Set();const start=Date.now();
       while(Date.now()-start<110000){await delay(1000);const t=await page.evaluate(()=>window.__solarEngine.getLandingTelemetry());samples.push(t);for(const threshold of [50000,5000])if(t.altitudeAGLM<threshold&&!captured.has(threshold)){await shot(`${id}-below-${threshold}`);captured.add(threshold);}if(t.state==='SURFACE_LOOK')break;}
       assert.equal(samples.at(-1)?.state,'SURFACE_LOOK');assert.equal(samples.at(-1)?.site.id,id);await shot(`${id}-ground`);
@@ -95,7 +96,7 @@ try {
       const orientation=await page.evaluate(()=>({camera:window.__solarEngine.getCameraSnapshot().surfaceOrientation,telemetry:window.__solarEngine.getLandingTelemetry()}));
       assert.ok(Math.abs(orientation.camera.yawDeg-orientation.telemetry.surfaceYawDeg)<0.11,'surface HUD yaw is stale');
       assert.ok(Math.abs(orientation.camera.pitchDeg-orientation.telemetry.surfacePitchDeg)<0.11,'surface HUD pitch is stale');
-      assert.equal(await page.$eval('[data-testid="telemetry-agl-value"]',e=>e.textContent.trim()),'1.7 m');
+      await click('hud-site-details');assert.equal(await page.$eval('[data-testid="telemetry-agl-detail"]',e=>e.textContent.trim()),'1.7 m');await page.keyboard.press('Escape');
       const savedClock=await page.evaluate(()=>({paused:window.__solarEngine.isPaused,speed:window.__solarEngine.getTimeScale()}));
       const before=await page.evaluate(()=>window.__solarEngine.getSurfaceStationPose()?.station);const bookmark=await save(`QA ${id}`);
       await click('landing-btn-return-orbit');await page.waitForFunction(()=>window.__solarEngine.getLandingTelemetry().state==='ORBIT'&&window.__solarEngine.getCameraSnapshot().mode==='ORBIT_TARGET',{timeout:45000});await shot(`${id}-returned`);

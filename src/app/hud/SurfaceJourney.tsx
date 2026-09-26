@@ -10,7 +10,7 @@ export function SurfaceReadouts({frame}: {frame: HudFrame}) {
   const rate=telemetry?.verticalSpeedMps;
   return <>
     <div className="hud-eyebrow">{phase==='preparing'?'任务准备':phase==='surface_look'?'观察眼高':'离地高度'}</div>
-    <div className="hud-hero-reading" data-testid="telemetry-agl-value">{formatAltitude(height)}</div>
+    <div className="hud-hero-reading" data-testid="telemetry-agl-detail">{formatAltitude(height)}</div>
     {phase==='preparing' ? <div className="hud-secondary-reading">就绪后从当前机位出发</div>
       : <div className="hud-secondary-reading">
         <span>{phase==='surface_look'?'原地环顾':'导引升降率'}</span>
@@ -26,7 +26,7 @@ function Compass({frame}: {frame: HudFrame}) {
   if(!pose)return <div className="hud-no-data">等待观察方向</div>;
   const yaw=(pose.yawDeg%360+360)%360, base=Math.floor(yaw/15)*15;
   const labels:Record<number,string>={0:'北',90:'东',180:'南',270:'西'};
-  return <div className="hud-compass" data-testid="hud-surface-compass" data-yaw={yaw} data-pitch={pose.pitchDeg}>
+  return <div className="hud-compass" data-testid="hud-surface-compass-detail" data-yaw={yaw} data-pitch={pose.pitchDeg}>
     <div className="hud-direction-reading"><span>面向 <strong>{bearingLabel(yaw)} {Math.round(yaw)%360}°</strong></span>
       <span>{pose.pitchDeg>=0?'仰角':'俯角'} <strong>{Math.abs(pose.pitchDeg).toFixed(1)}°</strong></span></div>
     <svg viewBox="0 0 500 54" role="img" aria-label={`实际视线朝向${bearingLabel(yaw)}${yaw.toFixed(1)}度，仰角${pose.pitchDeg.toFixed(1)}度`}>
@@ -58,7 +58,7 @@ export function SurfaceGraphic({frame}: {frame: HudFrame}) {
     </div>
   </div>;
   const progress=frame.landing?.telemetry.progress ?? 0;
-  return <div className="hud-altitude-profile" data-testid="hud-altitude-profile" data-altitude={height??''}>
+  return <div className="hud-altitude-profile" data-testid="hud-altitude-profile-detail" data-altitude={height??''}>
     <div className="hud-profile-summary"><span>{phase==='hold'?'位置保持 · 可自由环顾':phase==='ascending'?'返回观星机位':altitudeStage(height)}</span>
       <span>本段导览 {Math.round(progress*100)}%</span></div>
     <svg viewBox="0 0 500 62" role="img" aria-label={`离地高度${formatAltitude(height)}，对数高度刻度，非地理轨迹`}>
@@ -76,9 +76,29 @@ export function SurfaceGraphic({frame}: {frame: HudFrame}) {
   </div>;
 }
 
-export function SurfaceActions({frame,engine}: {frame: HudFrame;engine: SolarEngine | null}) {
+/** One useful reading in the default strip. Full instruments live in journey details. */
+export function SurfaceSummary({frame}: {frame: HudFrame}) {
+  const phase=hudPhase(frame), pose=frame.surface, height=observedAltitude(frame);
+  if(phase==='surface_look')return <div className="hud-compact-bearing" data-testid="hud-surface-compass" data-yaw={pose?.yawDeg} data-pitch={pose?.pitchDeg}>
+    {pose ? <><span className="hud-bearing-needle" aria-hidden="true" style={{transform:`rotate(${-pose.yawDeg}deg)`}}>↑</span>
+      <strong>{bearingLabel(pose.yawDeg)} {Math.round((pose.yawDeg%360+360)%360)%360}°</strong>
+      <span>{pose.pitchDeg>=0?'仰':'俯'} {Math.abs(pose.pitchDeg).toFixed(0)}°</span></> : '等待视线'}
+  </div>;
+  if(phase==='preparing')return <span className="hud-compact-note" role="status">{frame.landing?.preparation.phase==='lighting'?'选择落区白昼':'准备当地观察'}</span>;
+  const progress=Math.max(0,Math.min(1,frame.landing?.telemetry.progress??0));
+  return <div className="hud-compact-altitude" data-testid="hud-altitude-profile">
+    <span className="hud-reading-label">离地</span><strong data-testid="telemetry-agl-value">{formatAltitude(height)}</strong>
+    <span className="hud-mini-progress" role="progressbar" aria-label="本段导览进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress*100)} title={`本段导览 ${Math.round(progress*100)}%`}><i style={{width:`${progress*100}%`}}/></span>
+  </div>;
+}
+
+export function SurfaceActions({frame,engine,secondary=false}: {frame: HudFrame;engine: SolarEngine | null;secondary?: boolean}) {
   if(!engine)return null;
   const state=frame.landing?.telemetry.state;
+  if(secondary)return <div className="hud-mission-actions">
+    {state==='HOLD' && <button data-testid="landing-btn-reguide" onClick={()=>engine.requestLandingReguide()}>恢复导引视线</button>}
+    {hudPhase(frame)==='surface_look' && <button data-testid="landing-btn-reset-look" onClick={()=>engine.resetMoonSurfaceLook()}>重设地平线</button>}
+  </div>;
   return <div className="hud-mission-actions" aria-label="当前阶段操作">
     {state==='PREPARING' && <button data-testid="landing-btn-cancel-prep" onClick={()=>engine.getLandingController().cancelPreparation()}>取消准备</button>}
     {state==='DESCENDING' && <>
@@ -87,15 +107,12 @@ export function SurfaceActions({frame,engine}: {frame: HudFrame;engine: SolarEng
     </>}
     {state==='HOLD' && <>
       <button className="is-primary" data-testid="landing-btn-resume" onClick={()=>engine.resumeLanding()}>▷ 继续下降</button>
-      <button data-testid="landing-btn-reguide" onClick={()=>engine.requestLandingReguide()}>恢复导引视线</button>
       <button data-testid="landing-btn-return-hold" onClick={()=>engine.returnToLunarOrbit()}>返回高空 ↗</button>
     </>}
     {hudPhase(frame)==='surface_look' && <>
       {frame.surface?.bodyId==='moon' && <button className="is-primary" data-testid="landing-btn-look-earth" onClick={()=>engine.lookAtEarthFromMoon()}>仰望地球 ↗</button>}
-      <button data-testid="landing-btn-reset-look" onClick={()=>engine.resetMoonSurfaceLook()}>重设地平线</button>
       <button data-testid="landing-btn-return-orbit" onClick={()=>state==='SURFACE_LOOK'?engine.returnToLunarOrbit():frame.surface && engine.executeCameraCommand({type:'flyTo',bodyId:frame.surface.bodyId})}>返回高空 ↗</button>
     </>}
-    {state==='ASCENDING' && <span className="hud-return-hint">可拖动调整视线，也可从顶部切换目标</span>}
   </div>;
 }
 

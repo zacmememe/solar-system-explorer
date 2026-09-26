@@ -4,6 +4,7 @@ import {mkdir, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import {sampleBrowserPerformance} from './lib/browser-performance.ts';
+import {journeyAction} from './lib/hud-ui.mjs';
 
 const out=process.env.EVIDENCE_DIR || 'D:/solar-evidence/codex-system-polish/final';
 const url=process.env.TEST_URL || 'http://127.0.0.1:5203';
@@ -66,7 +67,7 @@ try {
   await click('landing-btn-resume');
   await page.waitForFunction(()=>window.__solarEngine.getLandingTelemetry().state==='SURFACE_LOOK',{timeout:100000,polling:300});
   await shot('03-surface');await perf('surface');
-  await click('landing-btn-reset-look');await delay(600);await shot('04-surface-horizon');
+  await journeyAction(page,'landing-btn-reset-look');await delay(600);await shot('04-surface-horizon');
   await drag(260);await shot('05-surface-left');await drag(-520);await shot('06-surface-right');
   // Read-only delayed-material invariant: the currently used stack must share the current body's uniforms.
   report.materials=await page.evaluate(()=>{const e=window.__solarEngine, s=e.moonSiteStacks.get('tranquility-base');return {

@@ -3,9 +3,10 @@ import puppeteer from 'puppeteer-core';
 import {mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import {journeyAction} from './lib/hud-ui.mjs';
 const out=process.env.EVIDENCE_DIR||'D:/solar-evidence/phase-aware-hud/candidate';
 await mkdir(out,{recursive:true});
-const browser=await puppeteer.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true,userDataDir:path.join(out,'profile-'+process.pid),defaultViewport:{width:1440,height:900},args:['--use-gl=angle','--use-angle=d3d11'],protocolTimeout:240000});
+const browser=await puppeteer.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true,userDataDir:path.join(out,'profile-'+process.pid),defaultViewport:{width:1920,height:1080},args:['--use-gl=angle','--use-angle=d3d11'],protocolTimeout:240000});
 const page=await browser.newPage(), delay=ms=>new Promise(r=>setTimeout(r,ms));
 const report={bundle:[],checks:[],images:[],errors:[],consoleErrors:[],httpErrors:[],visualAcceptance:'NOT_OBSERVED'};
 page.on('pageerror',e=>report.errors.push(String(e)));
@@ -30,11 +31,13 @@ async function layout(name){
    const el=document.querySelector('[data-testid="mission-hud"]'),r=el.getBoundingClientRect();
    const boxes=[...el.querySelectorAll('.hud-flight,.hud-context,.hud-target')].map(e=>{const q=e.getBoundingClientRect();return {x:q.x,y:q.y,right:q.right,bottom:q.bottom};});
    const buttons=[...el.querySelectorAll('.hud-mission-actions button')].map(b=>{const q=b.getBoundingClientRect();const hit=document.elementFromPoint(q.x+q.width/2,q.y+q.height/2);return {text:b.textContent,height:q.height,clickable:!!hit&&(hit===b||b.contains(hit))};});
-   return {hudHeight:r.height,viewport:[innerWidth,innerHeight],boxes,buttons,overflow:document.documentElement.scrollWidth>innerWidth};
+   return {hudHeight:r.height,scrimHeight:el.querySelector('.hud-scrim').getBoundingClientRect().height,phase:el.dataset.phase,viewport:[innerWidth,innerHeight],boxes,buttons,overflow:document.documentElement.scrollWidth>innerWidth};
  });
  check(name+' HUD within viewport',!info.overflow&&info.boxes.every(b=>b.x>=0&&b.y>=0&&b.right<=info.viewport[0]+1&&b.bottom<=info.viewport[1]+1));
  check(name+' sections do not overlap',info.boxes.every((a,i)=>info.boxes.slice(i+1).every(b=>Math.min(a.right,b.right)<=Math.max(a.x,b.x)+.5||Math.min(a.bottom,b.bottom)<=Math.max(a.y,b.y)+.5)));
  check(name+' mission buttons reachable >=44px',info.buttons.every(b=>b.height>=44&&b.clickable));
+ if(['hold','surface_look','descending'].includes(info.phase))check(name+' essential journey controls present',info.buttons.length>=(info.phase==='surface_look'?1:2));
+ check(name+' compact strip including fade',info.scrimHeight<=(info.viewport[0]>1250?110:220));
  report.checks.push({label:name+' layout metrics',pass:true,info});
 }
 async function popupLayout(name){
@@ -55,12 +58,18 @@ try{
  report.bundle=await page.$$eval('script[src]',els=>els.map(e=>e.src));
  if(await page.$('[aria-label="暂停模拟"]'))await click('[aria-label="暂停模拟"]');
  await delay(2000);await shot('01-observe');
+ await click('[aria-controls="hud-observe-panel"]');
+ await click('[data-testid="hud-collapse"]');
+ check('collapse gives focus to restore',await page.$eval('.hud-restore',e=>e===document.activeElement));
+ await click('.hud-restore');check('restore gives focus to options',await page.$eval('.hud-options',e=>e===document.activeElement));
+ await click('[data-testid="hud-navigation"]');
  await click('[aria-label="俯瞰整个太阳系全景"]');await phase('transfer');
+ check('navigation closes during transfer',!(await page.$('#hud-navigation-panel')));
  check('overview transition labelled as overview',(await page.$eval('[data-testid="hud-transfer"]',e=>e.textContent)).includes('太阳系全景'));
  await shot('02-overview-transfer');await phase('overview');await shot('03-overview');
  check('overview has no stale planet radius',!(await page.$('.hud-radius')));
  const overviewPose=(await snapshot()).camera.spherical,bookmarkId=await saveOverview();
- await travel('sun');await phase('observe');check('Sun observation has body radius',!!(await page.$('.hud-radius')));
+ await travel('sun');await phase('observe');await click('[data-testid="hud-body-details"]');check('Sun radius available in details',!!(await page.$('.hud-radius')));await page.keyboard.press('Escape');
  await click('[data-testid="toolbar-bookmark-btn"]');await click('[data-testid="bookmark-tab-custom"]');await click('[data-testid="'+bookmarkId+'"]');await phase('overview');
  const restored=(await snapshot()).camera.spherical;check('overview bookmark restores framing and phase',Object.keys(overviewPose).every(k=>Math.abs(overviewPose[k]-restored[k])<1e-5)&&!(await page.$('.hud-radius')));await shot('03b-overview-restored');
  await click('[data-testid="planet-btn-saturn"]');await phase('transfer');await shot('04-transfer');await click('[data-testid="hud-cancel-transfer"]');await phase('free');await shot('05-cancelled');
@@ -69,20 +78,23 @@ try{
  await page.waitForSelector('[data-testid="landing-site-select"]');await page.select('[data-testid="landing-site-select"]',id);
  await page.waitForFunction(()=>!!document.querySelector('[data-testid="lunar-landing-start-btn"], [data-testid="lunar-landing-travel-site-btn"]'),{timeout:90000});
  if(await page.$('[data-testid="lunar-landing-travel-site-btn"]'))await click('[data-testid="lunar-landing-travel-site-btn"]');
- await click('[data-testid="lunar-landing-start-btn"]');
+ await click('[data-testid="hud-navigation"]');await click('[data-testid="lunar-landing-start-btn"]');
  await delay(110);if((await snapshot()).phase==='preparing')await shot('06-preparing');else report.checks.push({label:'preparing screenshot',status:'NOT_OBSERVED - brief stage; unit assertions cover placeholder suppression'});
  await phase('descending');await shot('07-descending');
+ check('navigation closes during descent',!(await page.$('#hud-navigation-panel')));
  const a=await snapshot();await delay(900);const b=await snapshot();check('astronomical pause does not stop guided descent',a.simTime===b.simTime&&b.telemetry.progress>a.telemetry.progress);
  await click('[data-testid="landing-btn-hold"]');await phase('hold');const held=await snapshot();await delay(800);const held2=await snapshot();
  check('HOLD freezes both rates and trajectory',held.telemetry.progress===held2.telemetry.progress&&held2.telemetry.verticalSpeedMps===0&&held2.telemetry.horizontalSpeedMps===0);
  await shot('08-hold-desktop');await layout('desktop HOLD');
+ await page.setViewport({width:2560,height:1440});await delay(300);await shot('08b-hold-2560');await layout('2560 HOLD');
+ await page.setViewport({width:1440,height:900});await delay(300);await shot('08c-hold-1440');await layout('1440 HOLD');
  await page.setViewport({width:390,height:844});await delay(400);await shot('09-hold-portrait');await layout('portrait HOLD');
  await click('[data-testid="hud-site-details"]');await shot('10-details-portrait');await popupLayout('portrait HOLD');await page.keyboard.press('Escape');
  check('Escape restores info trigger focus',await page.$eval('[data-testid="hud-site-details"]',b=>b===document.activeElement));
  await page.setViewport({width:844,height:390});await delay(400);await shot('11-hold-landscape');await layout('landscape HOLD');
  await click('[data-testid="hud-site-details"]');await shot('11b-details-landscape');await popupLayout('landscape HOLD');await page.keyboard.press('Escape');
- await page.setViewport({width:1440,height:900});await delay(300);await drag(90);await click('[data-testid="landing-btn-resume"]');await phase('descending');
- await phase('surface_look');await click('[data-testid="landing-btn-reset-look"]');await delay(1000);await shot('12-surface-desktop');await layout('desktop surface');
+ await page.setViewport({width:1920,height:1080});await delay(300);await drag(90);await journeyAction(page,'landing-btn-reguide');await click('[data-testid="landing-btn-resume"]');await phase('descending');
+ await phase('surface_look');await journeyAction(page,'landing-btn-reset-look');await delay(1000);await shot('12-surface-desktop');await layout('desktop surface');
  check('surface compass replaces orbit map',!!(await page.$('[data-testid="hud-surface-compass"]'))&&!(await page.$('[data-testid="hud-context-map"]')));
  const yawBefore=await page.$eval('[data-testid="hud-surface-compass"]',e=>Number(e.dataset.yaw));await drag(180,-140);
  const yawAfter=await page.$eval('[data-testid="hud-surface-compass"]',e=>Number(e.dataset.yaw));check('compass responds to actual looking direction',Math.abs(yawBefore-yawAfter)>1);await shot('13-look-sky');
@@ -93,7 +105,8 @@ try{
  check('return starts below completion and advances',asc0.telemetry.progress<.3&&asc1.telemetry.progress>asc0.telemetry.progress&&asc1.telemetry.progress<1);
  await shot('17-ascending');await layout('portrait ascending');
  await page.waitForFunction(()=>{const e=window.__solarEngine;return e.getLandingTelemetry().state==='ORBIT'&&e.getCameraSnapshot().mode==='ORBIT_TARGET'&&!e.getCameraSnapshot().isTransitioning&&document.querySelector('[data-testid="mission-hud"]')?.dataset.phase==='observe';},{timeout:60000});await delay(500);await shot('18-returned');await layout('portrait returned');
- check('return restores context map',!!(await page.$('[data-testid="hud-context-map"]'))&&!(await page.$('[data-testid="hud-altitude-profile"]')));
+ check('return leaves default view uncluttered',!(await page.$('[data-testid="hud-context-map"]'))&&!(await page.$('[data-testid="hud-altitude-profile"]')));
+ await click('[data-testid="hud-navigation"]');check('context map is available on demand',!!(await page.$('[data-testid="hud-context-map"]')));await shot('19-navigation-menu');await page.keyboard.press('Escape');
  check('no runtime or resource errors',!report.errors.length&&!report.consoleErrors.length&&!report.httpErrors.length);
 }catch(e){report.failure=String(e);process.exitCode=1;await shot('failure').catch(()=>{});}
 finally{await writeFile(path.join(out,'report.json'),JSON.stringify(report,null,2));await browser.close();}
