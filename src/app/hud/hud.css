@@ -10,7 +10,7 @@
 .mission-hud button:disabled { opacity:.45; cursor:not-allowed; }
 .mission-hud button[aria-pressed='true'] { background:rgb(255 255 255 / .13); }
 .hud-scrim { position:absolute; inset:-12px 0 0; z-index:-1; background:linear-gradient(to top,rgb(3 9 13 / .79),rgb(3 9 13 / .44) 58%,transparent); }
-.hud-layout { display:grid; grid-template-columns:minmax(0,1fr) clamp(220px,calc(100vw - 1020px),780px) minmax(0,1fr); align-items:end;
+.hud-layout { display:grid; grid-template-columns:minmax(0,1fr) clamp(220px,calc(100vw - 1340px),560px) minmax(0,1fr); align-items:end;
  gap:clamp(18px,2vw,48px); padding:8px clamp(24px,2.7vw,60px) max(10px,env(safe-area-inset-bottom)); min-height:96px; }
 .hud-target, .hud-context { min-width:0; }
 .hud-target { align-self:center; }
@@ -20,10 +20,16 @@
 .hud-stage::before { content:'';display:inline-block;width:4px;height:4px;border-radius:50%;background:#cee5eb;margin:0 7px 2px 0; }
 .hud-flight, .hud-utility, .hud-mission-actions { display:flex; align-items:center; gap:6px; }
 .hud-flight { justify-content:flex-end; gap:12px; padding-bottom:7px; }
-.hud-utility { border-left:1px solid var(--hud-rule); padding-left:10px; }
-.hud-utility button { color:var(--hud-muted); padding:0 10px; }
+.hud-utility { border-left:1px solid var(--hud-rule); padding-left:10px; flex-shrink:0; }
+.hud-utility button { color:var(--hud-muted); padding:0 10px; white-space:nowrap; flex-shrink:0; }
 .hud-options { font-size:21px !important; letter-spacing:2px; }
 .hud-pause { width:38px; }
+.hud-speed-control { display:flex; align-items:center; flex:none; gap:0; }
+.mission-hud .hud-speed-step { width:30px; min-height:44px; padding:0; font-size:23px; font-weight:300; color:#a6bbc3; }
+.hud-speed-reading { width:94px; text-align:center; }
+.hud-speed-caption { display:block; font-size:8px; letter-spacing:.14em; color:#94adb8; }
+.hud-speed-number { display:block; font-size:27px; line-height:1.2; font-weight:300; letter-spacing:-.04em; white-space:nowrap; }
+.hud-speed-number small { font-size:12px; margin-left:5px; color:var(--hud-muted); }
 .hud-mission-actions:empty { display:none; }
 .mission-hud .hud-mission-actions button { white-space:nowrap; border:1px solid var(--hud-rule); padding:0 13px; }
 .mission-hud .hud-mission-actions .is-primary { background:rgb(255 255 255 / .11); border-color:rgb(255 255 255 / .38); }
@@ -117,8 +123,8 @@
 .hud-direction-lens > div { display:flex;flex-direction:column;gap:5px; }
 .hud-direction-lens strong { font-size:19px;font-weight:400; } .hud-direction-lens small { font-size:10px;color:var(--hud-muted); }
 .hud-sr-only { position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap; }
-@media (min-width:901px) and (max-width:1600px) { .hud-landing-row select { max-width:145px; } }
-@media (max-width:1250px) {
+@media (min-width:901px) { .hud-landing-row select { max-width:145px; } }
+@media (max-width:1700px) {
  .hud-layout { grid-template-columns:minmax(125px,.7fr) minmax(220px,1fr) auto; gap:16px; padding-left:20px; padding-right:20px; }
  .hud-flight { gap:8px; } .hud-utility { gap:0; padding-left:5px; }
  .hud-object-name { font-size:15px; } .hud-landing-label { display:none; }
@@ -145,6 +151,6 @@
  .hud-landing-row select { max-width:150px; }
 }
 @media (max-width:500px) { .hud-utility button { padding:0 8px; } .hud-flight { gap:4px; } .hud-mission-actions { gap:4px; }
- .has-mission .hud-utility .hud-pause { display:none; } }
+ .hud-speed-reading { width:90px; } }
 @media (prefers-reduced-motion:reduce) { .mission-hud * { transition:none !important; } }
 .mission-hud.reduce-motion * { transition:none !important; }

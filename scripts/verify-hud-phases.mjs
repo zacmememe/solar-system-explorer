@@ -63,9 +63,9 @@ try{
  await click('[data-testid="hud-collapse"]');
  check('collapse gives focus to restore',await page.$eval('.hud-restore',e=>e===document.activeElement));
  await click('.hud-restore');check('restore gives focus to options',await page.$eval('.hud-options',e=>e===document.activeElement));
- await click('[data-testid="hud-navigation"]');
+ check('duplicate position menu removed',!(await page.$('[data-testid="hud-navigation"]')));
  await click('[aria-label="俯瞰整个太阳系全景"]');await phase('transfer');
- check('navigation closes during transfer',!(await page.$('#hud-navigation-panel')));
+ check('time control remains during transfer',!!(await page.$('[data-testid="hud-speed-control"]')));
  check('overview transition labelled as overview',(await page.$eval('[data-testid="hud-transfer"]',e=>e.textContent)).includes('太阳系全景'));
  await shot('02-overview-transfer');await phase('overview');await shot('03-overview');
  check('overview has no stale planet radius',!(await page.$('.hud-radius')));
@@ -80,10 +80,10 @@ try{
  await timePanel(page);await click('[data-testid="landing-daylight"]');await page.keyboard.press('Escape');
  await page.waitForFunction(()=>!!document.querySelector('[data-testid="lunar-landing-start-btn"], [data-testid="lunar-landing-travel-site-btn"]'),{timeout:90000});
  if(await page.$('[data-testid="lunar-landing-travel-site-btn"]'))await click('[data-testid="lunar-landing-travel-site-btn"]');
- await click('[data-testid="hud-navigation"]');await click('[data-testid="lunar-landing-start-btn"]');
+ await click('[data-testid="lunar-landing-start-btn"]');
  await delay(110);if((await snapshot()).phase==='preparing')await shot('06-preparing');else report.checks.push({label:'preparing screenshot',status:'NOT_OBSERVED - brief stage; unit assertions cover placeholder suppression'});
  await phase('descending');await shot('07-descending');
- check('navigation closes during descent',!(await page.$('#hud-navigation-panel')));
+ check('time control remains during descent',!!(await page.$('[data-testid="hud-speed-control"]')));
  const a=await snapshot();await delay(900);const b=await snapshot();check('astronomical pause does not stop guided descent',a.simTime===b.simTime&&b.telemetry.progress>a.telemetry.progress);
  await page.waitForFunction(()=>window.__solarEngine.getLandingTelemetry().altitudeAGLM<30000,{timeout:150000});
  await click('[data-testid="landing-btn-hold"]');await phase('hold');const held=await snapshot();await delay(800);const held2=await snapshot();
@@ -111,7 +111,7 @@ try{
  await shot('17-ascending');await layout('portrait ascending');
  await page.waitForFunction(()=>{const e=window.__solarEngine;return e.getLandingTelemetry().state==='ORBIT'&&e.getCameraSnapshot().mode==='ORBIT_TARGET'&&!e.getCameraSnapshot().isTransitioning&&document.querySelector('[data-testid="mission-hud"]')?.dataset.phase==='observe';},{timeout:60000});await delay(500);await shot('18-returned');await layout('portrait returned');
  check('return leaves default view uncluttered',!(await page.$('[data-testid="hud-context-map"]'))&&!(await page.$('[data-testid="hud-altitude-profile"]')));
- await click('[data-testid="hud-navigation"]');check('context map is available on demand',!!(await page.$('[data-testid="hud-context-map"]')));await shot('19-navigation-menu');await page.keyboard.press('Escape');
+ check('single context preview remains after return',!!(await page.$('[data-testid="hud-context-preview"]'))&&!(await page.$('[data-testid="hud-navigation"]')));await shot('19-single-position-preview');
  check('no runtime or resource errors',!report.errors.length&&!report.consoleErrors.length&&!report.httpErrors.length);
 }catch(e){report.failure=String(e);process.exitCode=1;await shot('failure').catch(()=>{});}
 finally{await writeFile(path.join(out,'report.json'),JSON.stringify(report,null,2));await browser.close();}

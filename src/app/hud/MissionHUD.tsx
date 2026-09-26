@@ -12,7 +12,7 @@ import { PHASE_LABEL, hudPhase, isSurfacePhase } from './phase';
 import { SurfaceReadouts, SurfaceGraphic, SurfaceActions, SurfaceLocation, SurfaceDetails } from './SurfaceJourney';
 import {DirectionLens,TaskArc} from './TaskArc';
 
-type Panel = 'time' | 'observe' | 'details' | 'mission' | 'navigation' | null;
+type Panel = 'time' | 'observe' | 'details' | 'mission' | null;
 export interface MissionHUDProps {
   store: HudStore;
   selectedBodyId: BodyId;
@@ -76,7 +76,6 @@ export function MissionHUD(props: MissionHUDProps) {
   const frame = useSyncExternalStore(props.store.subscribe, props.store.getSnapshot, props.store.getServerSnapshot);
   const [panel, setPanel] = useState<Panel>(null);
   const [collapsed, setCollapsed] = useState(false);
-  const [solarScope, setSolarScope] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLElement>(null);
   const lastTrigger = useRef<HTMLButtonElement | null>(null);
@@ -84,7 +83,6 @@ export function MissionHUD(props: MissionHUDProps) {
   const system = parentSystem(body.id);
   const phase = hudPhase(frame);
   const surfaceMode = isSurfacePhase(phase);
-  const center = phase==='overview' || solarScope || !hasMoons(system) ? 'sun' : system;
   const previewCenter=phase==='overview'||!hasMoons(system)?'sun':system;
   const destinationId = frame?.camera.targetBodyId;
   const destinationName = phase==='site_travel' ? frame?.landing?.siteTravel?.name.split(' · ')[0]??'落区上空' : frame?.camera.destinationMode==='OVERVIEW' || !destinationId ? '太阳系全景' : BODIES[destinationId].name;
@@ -92,6 +90,8 @@ export function MissionHUD(props: MissionHUDProps) {
   const ready = frame !== null;
   const isPaused = frame?.isPaused ?? false;
   const timeScale = frame?.timeScale ?? 50;
+  const slowerSpeed = [...SPEEDS].reverse().find(speed => speed < timeScale);
+  const fasterSpeed = SPEEDS.find(speed => speed > timeScale);
   const transitioning = !!frame?.camera.isTransitioning;
   const orbit = orbitMetric(body.id);
   const siteName=frame?.landing?.telemetry.state!=='ORBIT' ? frame?.landing?.telemetry.site.name.split(' · ')[0] : undefined;
@@ -118,7 +118,7 @@ export function MissionHUD(props: MissionHUDProps) {
     return () => { document.removeEventListener('keydown', keydown); document.removeEventListener('pointerdown', outside); };
   }, [panel]);
   useEffect(() => {
-    if ((!surfaceMode && panel==='mission') || ((surfaceMode || transitioning) && panel==='navigation')) {
+    if (!surfaceMode && panel==='mission') {
       const restore=!!panelRef.current?.contains(document.activeElement);
       setPanel(null);
       if(restore)requestAnimationFrame(()=>root.current?.querySelector<HTMLButtonElement>('.hud-explain')?.focus());
@@ -173,19 +173,27 @@ export function MissionHUD(props: MissionHUDProps) {
           {!surfaceMode && transitioning && <div className="hud-mission-actions"><button onClick={props.onCancelTransition} data-testid="hud-cancel-transfer">停止转场</button></div>}
           <div className="hud-utility">
             <button className="hud-pause" aria-label={isPaused?'继续模拟':'暂停模拟'} title={isPaused?'继续天体时间':'暂停天体时间'} onClick={props.onPause} disabled={!ready}>{isPaused?'▷':'Ⅱ'}</button>
+            <div className="hud-speed-control" role="group" aria-label="天体时间倍率" data-testid="hud-speed-control" title="天体时间倍率；切换星球保持所选倍率">
+              <button className="hud-speed-step" data-testid="hud-speed-down" aria-label="降低时间倍率" disabled={!ready || slowerSpeed === undefined} onClick={() => slowerSpeed !== undefined && props.onSpeed(slowerSpeed)}>‹</button>
+              <div className="hud-speed-reading" data-testid="hud-speed-value" data-speed={timeScale}>
+                <span className="hud-speed-caption">{isPaused ? '时间暂停' : '时间倍率'}</span>
+                <span className="hud-speed-number">{timeScale.toLocaleString('en-US', { maximumFractionDigits: 1 })}<small>×</small></span>
+              </div>
+              <button className="hud-speed-step" data-testid="hud-speed-up" aria-label="提高时间倍率" disabled={!ready || fasterSpeed === undefined} onClick={() => fasterSpeed !== undefined && props.onSpeed(fasterSpeed)}>›</button>
+            </div>
             <button className="hud-explain" data-testid={surfaceMode?'hud-site-details':'hud-body-details'} onClick={e=>openPanel(surfaceMode?'mission':'details',e)} aria-expanded={panel===(surfaceMode?'mission':'details')} aria-controls={surfaceMode?'hud-mission-panel':'hud-details-panel'}>{surfaceMode?'详情':'资料'}</button>
-            {!surfaceMode && !transitioning && <button data-testid="hud-navigation" aria-controls="hud-navigation-panel" aria-expanded={panel==='navigation'} onClick={e=>openPanel('navigation',e)}>位置</button>}
             <button className="hud-options" aria-label="观测选项" title="观测选项与时间" aria-controls="hud-observe-panel" aria-expanded={panel==='observe'} onClick={e=>openPanel('observe',e)}>···</button>
           </div>
         </section>
       </div>
       {panel && <section className={`hud-popover hud-popover-${panel}`} ref={panelRef} role="dialog" aria-modal="false"
-        aria-label={panel === 'time' ? '调整模拟时间' : panel === 'observe' ? '观测选项' : panel === 'mission' ? '旅程详情' : panel === 'navigation' ? '空间关系' : `${body.name}资料`}
+        aria-label={panel === 'time' ? '调整模拟时间' : panel === 'observe' ? '观测选项' : panel === 'mission' ? '旅程详情' : `${body.name}资料`}
         id={`hud-${panel}-panel`}>
-        <div className="hud-popover-heading"><h2>{panel === 'time' ? '天体时间' : panel === 'observe' ? '观测选项' : panel === 'mission' ? '旅程详情' : panel === 'navigation' ? '空间关系' : `${body.name} · ${body.nameEn}`}</h2>
+        <div className="hud-popover-heading"><h2>{panel === 'time' ? '天体时间' : panel === 'observe' ? '观测选项' : panel === 'mission' ? '旅程详情' : `${body.name} · ${body.nameEn}`}</h2>
           <button aria-label="关闭面板" onClick={() => closePanel(true)}>×</button></div>
         {panel === 'time' && <>
           <p>只改变天体运动与自转；镜头转场、下降和升空独立推进。想停住下降，请使用“悬停环顾”。</p>
+          <p>倍率表示同一条模拟时钟的速度，切换星球不会叠加。不同天体的自转、公转周期不同，因此画面中的运动快慢会不同。</p>
           <div className="hud-speed-grid">{SPEEDS.map(speed => <button key={speed} data-speed={speed} aria-pressed={speed === timeScale}
             onClick={() => props.onSpeed(speed)} disabled={!ready}>{speedLabel(speed)}</button>)}</div>
           {frame && <p>模拟已推进 {(frame.simTimeHours / 24).toFixed(2)} 天{isPaused ? ' · 已暂停' : ''}。初始方位为演示设定，不对应今天的真实星空。</p>}
@@ -222,12 +230,6 @@ export function MissionHUD(props: MissionHUDProps) {
           {phase==='surface_look'?<DirectionLens frame={frame}/>:<SurfaceGraphic frame={frame}/>}
           <SurfaceActions frame={frame} engine={props.engine} secondary/>
           <SurfaceDetails frame={frame}/>
-        </>}
-        {panel === 'navigation' && frame && <>
-          <div className="hud-context-heading"><span>{BODIES[center].name}系 · 示意</span>
-            {phase!=='overview' && hasMoons(system) && <button className="hud-scope" aria-label={solarScope?'查看本行星系统':'查看太阳系位置'} onClick={()=>setSolarScope(v=>!v)}>{solarScope?'本系统':'太阳系'} ↗</button>}
-          </div>
-          <ContextGraphic frame={frame} centerId={center} selectedId={phase==='overview'?'sun':body.id}/>
         </>}
         {panel === 'details' && <>
           <p className="hud-body-tip">{body.observationTip}</p>

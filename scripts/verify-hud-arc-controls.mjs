@@ -36,10 +36,13 @@ try {
  await click('hud-cancel-transfer');await page.waitForFunction(()=>!window.__solarEngine.getCameraSnapshot().isTransitioning);
  await delay(400);assert.notEqual(await page.$eval('[data-testid="mission-hud"]',e=>e.dataset.phase),'site_travel');
  await delay(1800);assert.equal(await page.$('[data-testid="hud-transfer"]'),null);report.checks.push('cancel removes journey arc and does not restart');await shot('03-cancelled');
- await click('hud-navigation');assert.ok(await page.$('[data-testid="hud-context-map"]'));
- await shot('04-position-lens');await page.keyboard.press('Escape');
- assert.equal(await page.$eval('[data-testid="hud-navigation"]',el=>el===document.activeElement),true);
- report.checks.push('position lens opens after cancellation and Escape restores focus');
+ assert.equal(await page.$('[data-testid="hud-navigation"]'),null);
+ assert.ok(await page.$('[data-testid="hud-context-preview"]'));
+ const previousSpeed=await page.$eval('[data-testid="hud-speed-value"]',e=>Number(e.dataset.speed));
+ await page.click(`[data-testid="hud-speed-${previousSpeed<86400?'up':'down'}"]`);
+ await page.waitForFunction(old=>window.__solarEngine.getTimeScale()!==old,{},previousSpeed);
+ await shot('04-inline-time');
+ report.checks.push('one position preview and directly adjustable time after cancellation');
  assert.equal(report.errors.length,0);
 }catch(e){report.failure=String(e);process.exitCode=1;await shot('failure').catch(()=>{});}
 finally{await writeFile(out+'/report.json',JSON.stringify(report,null,2));await browser.close();}
