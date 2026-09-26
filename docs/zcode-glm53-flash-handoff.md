@@ -2,9 +2,9 @@
 
 ## 1. 现在从哪里继续
 
-**待用户选型：HUD16。** 用户不接受HUD15右侧拥挤、缺少早期气质的布局，并给出早期地球截图作为准确参考：左时间，右天体/阶段大读数，中央空间图。`docs/hud-directions-16.md`提供A经典弧面/B内收双翼/C全宽浅弧，尚未替换产品。不要把HUD15的测试通过当成视觉接受，也不要自行选择方案接入；不涉及HUD的已就绪任务仍可继续。最新交付HEAD与作者只认queue。
+**当前布局：用户已选 A，HUD17 接入。** 先读 `docs/hud-classic-a-17.md` 和唯一 queue，从包含 HUD17 的交付 HEAD 继续。左时间，右对象/阶段主读数，中央图与下沿操作；保留轻透视、留白和阶段真实读数。不要回退到 HUD15 的右侧拥挤排布，也不要再要求用户选 A/B/C。下面 HUD15 与旧主线 SHA 是历史记录，不能作为新任务盲切的起点。实现自测与用户体验接受分别记录。
 
-**追加交接：HUD时间15。** 用户要求倍率常驻、移除重复“位置”菜单，并明确选择SpaceX启发的白色数字仪表＋左右调速箭头，不接受下拉框。当前交付分支为`codex/hud-time-controls-15`，包含太阳14；下一任务从该分支的交付HEAD建分支，勿盲切旧main或太阳14。先读`docs/hud-time-15.md`和唯一queue。普通跨星倍率累加未复现；正常UI实测1000×、200×、暂停恢复与月面HOLD手动改速，并非修复了时钟引擎。F-STARTUP-RESPONSIVENESS-11仍为下一就绪任务。
+**追加交接：HUD时间15。** 用户要求倍率常驻、移除重复“位置”菜单，并明确选择SpaceX启发的白色数字仪表＋左右调速箭头，不接受下拉框。该轮交付分支为`codex/hud-time-controls-15`，包含太阳14；现已由HUD17接续，下一任务从本文顶部的最新交付HEAD建分支。先读`docs/hud-time-15.md`和唯一queue。普通跨星倍率累加未复现；正常UI实测1000×、200×、暂停恢复与月面HOLD手动改速，并非修复了时钟引擎。F-STARTUP-RESPONSIVENESS-11仍为下一就绪任务。
 
 **追加交接：太阳修复14。** 用户要求Codex修复白球感，并明确选择红黄、缓慢翻涌、有辉光的增强活动视图。最终产品`127b0f408ee9767e66b8a2035f1b0396da6613a0`，在`codex/sun-appearance-14`（base为main的516a3aa）；f821b74是白光中间版。先读`docs/sun-appearance-14.md`和唯一queue；下文b98e909仍是历史主线基准。本地已多出本修复，下一任务从包含127b0f4的当前交付HEAD创建分支，不盲切旧main。F-STARTUP-RESPONSIVENESS-11仍是首任务。保留增强色彩、模拟时间驱动的局部流动和示意说明，不因“太阳本来是白色”擅自回退方向，不调全局曝光或关辉光深度测试。定向runner与证据见报告。
 
@@ -19,7 +19,7 @@
 
 开工读取顺序：`AGENTS.md`、唯一queue、`README.md`、本文、`docs/experience-foundations.md`；之后按任务读`docs/system-polish-10.md`或`docs/selected-vehicles-10.md`及相关源码。不必重读全部旧聊天和几十份历史方案。`docs/codex-resume.md`主要保留历史索引，本次分工以本文和queue为准。
 
-先`git status --short`、`git branch --show-current`、`git rev-parse HEAD`、`git log -5 --oneline`，再从包含太阳14和HUD15的当前交付HEAD建立短任务分支，例如`codex/startup-responsiveness-11`。若当前main已多了别人提交，先核对范围，不reset回旧SHA。未跟踪的`.zcodeignore`、旧review/plan/prompt和diag脚本是保留文件，不删除、不覆盖、不顺手提交。queue被gitignore排除是有意设计，应直接读绝对路径；不要因文件搜索忽略它而另建看板。
+先`git status --short`、`git branch --show-current`、`git rev-parse HEAD`、`git log -5 --oneline`，再从包含太阳14和HUD17的当前交付HEAD建立短任务分支，例如`codex/startup-responsiveness-11`。若当前main已多了别人提交，先核对范围，不reset回旧SHA。未跟踪的`.zcodeignore`、旧review/plan/prompt和diag脚本是保留文件，不删除、不覆盖、不顺手提交。queue被gitignore排除是有意设计，应直接读绝对路径；不要因文件搜索忽略它而另建看板。
 
 ## 2. 先学会这四个修复案例
 
@@ -41,7 +41,7 @@
 |下降/返轨|途中放弃从实际位置升空，不先落完再跳走；同天体换落区沿球外绕行；用户转头保留；准备取消不能随后复活。白昼由用户显式选择，暂停天体时间不等于暂停导览。|`LandingController.ts`、`docs/landing-continuity-report.md`|
 |地形/精度|源DEM datum、物理高度、显示网格、AGL分清；接缝落到实际顶点/法线；无效采样不能回零当有效地形。大世界坐标米级差在CPU双精度/局部空间完成。不能用`depthTest=false`、透明平板、polygonOffset或近裁面放宽掩盖未知错接。|`TerrainBoundary.ts`、`RenderedTerrain.ts`、`ProceduralRockField.ts`、系统10报告|
 |光照/资产|正射不是无阴影真色反照率，程序纹理/石块是示意；不把增强色叫自然色。不改变全局曝光、太阳方向或模拟时刻来“证明”局部修好。已登记来源/许可/哈希保持；新增素材另做来源核验。|`sources/production-assets.json`、对应材质报告|
-|HUD|A任务弧为主、B位置小图展开；大屏内容约98px/含渐变110px是当前参考。左地点、中央阶段主读数、右操作；详细信息进二级菜单。消费同一帧真实引擎状态，不另推时钟/相机，不把导引速度称航天器速度。|`docs/hud-task-arc-report.md`、`src/app/hud/`|
+|HUD|用户选定HUD17的A经典弧面：左时间，中央图与下沿操作，右对象/阶段大读数。高度与窄屏边界见本轮报告。详细信息进二级菜单，倍率始终直接操作。消费同一帧真实引擎状态，不另推时钟/相机，不把导引速度称航天器速度。|`docs/hud-classic-a-17.md`、`src/app/hud/`|
 |载具外观|只选ISS/Cassini/Voyager1/Juno/Shuttle。保留ISS舱段细化、太阳翼非金属响应、Cassini箔材及Juno太阳翼修整、Shuttle尾部斜后方。源包轴向已烘焙，不再烘一次；展示wrapper可缩放，metricRoot与源材质单/双面/透明语义保持。|`VehicleAssetRegistry.ts`、`VehicleLoader.ts`、`public/assets/models/selected/provenance.json`|
 |载具状态|只在稳定太空观察可选择、显示。下降/HOLD/地面/升空撤下模型、入口、伴飞灯和提示；返轨不自动重选。pending不等于成功，模型/贴图失败不得假装成功，迟到只释放。多个ISS消费者共享CPU图像而各自持有GPU纹理wrapper。|`docs/vehicle-reliability-09.md`、`docs/selected-vehicles-10.md`|
 |存档|保留地点、视线、时刻、模式；旧非入选载具引用归零，不能偷换成另一艘。资源迟到不抢用户新导航。地表旧存档不能恢复伴飞。|`contracts/bookmark.ts`、restore相关测试|

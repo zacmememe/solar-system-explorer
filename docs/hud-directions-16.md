@@ -1,5 +1,7 @@
 # HUD16：恢复左右仪表的设计方向
 
+后续决定：用户已选择 A 经典弧面。生产接入见 [HUD17 报告](hud-classic-a-17.md)；下文“等待选型”描述的是本设计轮交付时状态，不再要求重新选型。
+
 F-HUD-DIRECTIONS-16；设计基线`6db857b079ad5f4fd645ff21904c0c37214accbd`，分支`codex/hud-direction-study-16`。本轮只交付独立HTML方案和实现边界，等待用户选方向；没有修改生产HUD、相机、时钟、数据或资产。
 
 ## 用户补充的参考优先
@@ -40,4 +42,4 @@ HUD15把时间、暂停、落区与资料聚在右边，中央最大宽度从780
 
 源码：`docs/design/hud-directions-16/index.template.html`；构建与渲染：`scripts/build-hud-directions-16.mjs`、`scripts/render-hud-directions-16.mjs`。设置`EVIDENCE_DIR`为D盘新目录后按此顺序运行，沿用已有Edge和puppeteer-core。仅模板与脚本入库，HTML内嵌图片、profile、截图留在证据目录。删除独立样稿不影响正式游戏。
 
-当前状态：等待用户选A/B/C。下一作者不得把此前HUD15“作者测试通过”当成用户已接受其美学；新方向需要用户选择后再实施。
+设计轮原状态为等待选型；用户现已明确选A，实施见HUD17。方向选择与用户对实机实现的体验接受分别记录。
