@@ -1,6 +1,6 @@
 # 载具隔离样机
 
-用途：同机位比较素材、材质、反面、真实光照和伴飞占屏。未接入游戏，不是六款正式上线。当前结论见 `docs/vehicle-prototypes-05.md`。
+用途：同机位比较素材、材质、反面、真实光照和伴飞占屏。未接入游戏，不是六款正式上线。当前结论见 `docs/vehicle-preflight-06.md`。Shuttle已由用户确认保留，不沿用05轮的作者淘汰建议。
 
 从项目根目录运行：
 
@@ -29,3 +29,12 @@ node scripts/report-vehicle-lab.mjs
 样机的“原文件”不装 Shuttle 附件，“装配版”包含舱门和五个喷管但保留原材质，“仅改材质”方便隔离错误法线的影响。两组对照不能互换解释。单太阳光关闭环境反射与辅助灯；伴飞辅助光是展示照明，并非航天器实测照度。单模型静帧的 draw calls 不等于游戏帧率。
 
 生产接入前仍须核对米制尺度、载具 ID 与旧书签、机库入口、只在稳定太空允许显示、实际游戏光照/性能与独立审查。这里的相机只属于独立实验页，不控制游戏 `CameraController`。
+
+06轮：朱诺修正与五款贴图内嵌包（仍是接入准备）：
+
+```powershell
+node scripts/verify-vehicle-preflight.mjs
+node scripts/report-vehicle-preflight.mjs
+```
+
+默认输出 `D:/solar-evidence/vehicle-preflight-06`，包含 `载具进度与朱诺对比.html`、定向截图、`models/*.glb` 和来源/派生哈希记录。导出与重新导入必须保持几何和外观；不是仅凭成功写出GLB就通过。所有模型仍保留源单位，轴向与居中已烘入，不可重复应用原始profile旋转。ISS包作外观复现，生产优先沿用原程序模型。

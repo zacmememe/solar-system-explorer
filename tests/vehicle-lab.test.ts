@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 // @ts-expect-error Isolated browser tooling intentionally lives outside production TS.
-import { prepareModel, setPresentationSpan, fitPresentationToViewport } from '../tools/vehicle-lab/model.mjs';
+import { prepareModel, setPresentationSpan, fitPresentationToViewport, refineMaterials } from '../tools/vehicle-lab/model.mjs';
 
 describe('isolated vehicle presentation transforms', () => {
   it.each([.001, 1, 1000])('keeps apparent bounds independent of metric calibration %s', metricScale => {
@@ -29,6 +29,16 @@ describe('isolated vehicle presentation transforms', () => {
   it('rejects empty or nonfinite calibration instead of showing a fallback', () => {
     expect(() => prepareModel(new THREE.Group())).toThrow('Empty');
     expect(() => prepareModel(new THREE.Group(), { metricScale: NaN })).toThrow('metric');
+  });
+  it('preserves derivative-tangent normal handedness when reducing foil intensity', () => {
+    const material = new THREE.MeshStandardMaterial(); material.name = 'foil_gold';
+    material.normalScale.set(2, -2);
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(), material);
+    refineMaterials(mesh, 'cassini');
+    expect(material.normalScale.x).toBeGreaterThan(0);
+    expect(material.normalScale.y).toBeLessThan(0);
+    expect(Math.abs(material.normalScale.x)).toBe(Math.abs(material.normalScale.y));
+    expect(material.normalScale.length()).toBeLessThan(Math.hypot(2, 2));
   });
   it('keeps long appendages on screen at a low right-hand presentation anchor', () => {
     const raw = new THREE.Mesh(new THREE.BoxGeometry(1, 12, 1));

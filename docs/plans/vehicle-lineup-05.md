@@ -1,6 +1,6 @@
 # F-VEHICLE-LINEUP-PLAN-05 · 载具扩充选型
 
-状态：用户已确认六款及阿波罗对接构型；第一批隔离样机已交付，未接入游戏。2026-09-26。最新结论见 [F-VEHICLE-PROTOTYPES-05](../vehicle-prototypes-05.md)：保留卡西尼，淘汰 Shuttle D 这份素材，Apollo 完整源包待取得。
+状态：用户已确认六款及阿波罗对接构型，并明确接受当前航天飞机样机。2026-09-26。最新结论见 [F-VEHICLE-PREFLIGHT-06](../vehicle-preflight-06.md)：保留五款，朱诺太阳翼已修正；此前作者对Shuttle D的淘汰建议撤回。Apollo完整源包待取得，游戏机库尚未接入。
 
 作者：Codex 根会话；子任务仅做只读源码审计、官方资产研究和看图预筛。
 工作目录：`D:\Game Zac\Personal Projects\太阳系漫游`。

@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 
 const repo = fileURLToPath(new URL('../', import.meta.url));
-export async function startVehicleLab({ port = 5212, fetchMissing = false } = {}) {
+export async function startVehicleLab({ port = 5212, fetchMissing = false, derivedDir } = {}) {
   const modelDir = process.env.VEHICLE_MODEL_DIR || 'D:/solar-evidence/vehicle-lineup-plan/models';
   const manifest = JSON.parse(await fs.readFile(path.join(repo, 'tools/vehicle-lab/assets.json'), 'utf8'));
   const allowed = new Map();
@@ -39,6 +39,8 @@ export async function startVehicleLab({ port = 5212, fetchMissing = false } = {}
     if (crypto.createHash('sha256').update(bytes).digest('hex') !== asset.sha256) throw new Error('模型指纹不符：' + asset.id);
     allowed.set('/models/' + filename, file);
   }
+  // Explicit, bounded round-trip validation route. Never exposes a directory.
+  if (derivedDir) for (const id of ['iss', 'cassini', 'voyager-1', 'juno', 'space-shuttle']) allowed.set('/derived/' + id + '.glb', path.join(derivedDir, id + '.glb'));
   const builder = await build({ entryPoints: [path.join(repo, 'src/vehicles/VehicleMeshBuilder.ts')], bundle: true, write: false, format: 'esm', external: ['three'] });
   const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.wasm': 'application/wasm', '.glb': 'model/gltf-binary', '.jpg': 'image/jpeg' };
   const server = http.createServer(async (req, res) => {

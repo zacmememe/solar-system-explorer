@@ -3,9 +3,9 @@ import * as THREE from 'three';
 export const profiles = {
   iss: { name: '国际空间站', note: '当前外观基准', rotation: [0, 0, 0], span: .6375 },
   cassini: { name: '卡西尼', note: 'NASA 模型 · 材质与取景样机', rotation: [0, 0, 0], span: .82 },
-  'shuttle-d': { name: '航天飞机', note: 'NASA D · 装配与修整样机 / 贴图仍未达标', rotation: [-Math.PI / 2, -Math.PI / 2, 0], span: .6375 },
+  'shuttle-d': { name: '航天飞机', note: 'NASA D · 用户接受此版，保留已装配外观', rotation: [-Math.PI / 2, -Math.PI / 2, 0], span: .6375 },
   voyager: { name: '旅行者', note: '原材质 · 细长结构取景检查', rotation: [0, 0, 0], span: .95 },
-  juno: { name: '朱诺', note: '原材质 · 太阳翼取景检查', rotation: [Math.PI / 3, 0, .25], span: .8 },
+  juno: { name: '朱诺', note: 'NASA 模型 · 太阳翼反射材质修正', rotation: [Math.PI / 3, 0, .25], span: .8 },
 };
 
 /** metricRoot retains calibration; presentationRoot alone controls apparent size. */
@@ -88,23 +88,44 @@ export function fitPresentationToViewport(root, camera, span, margin = .92) {
   setPresentationSpan(root, low); return low;
 }
 
-export function refineMaterials(raw, id, maxAnisotropy = 8) {
+export function configureTextureFiltering(raw, maxAnisotropy = 8) {
+  const seen = new Set();
+  raw.traverse(o => {
+    if (!o.isMesh) return;
+    for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (m) {
+      for (const value of Object.values(m)) if (value?.isTexture && !seen.has(value)) {
+        seen.add(value); value.anisotropy = Math.min(8, maxAnisotropy);
+      }
+    }
+  });
+}
+
+export function refineMaterials(raw, id) {
   const changes = [], visited = new Set();
   raw.traverse(o => {
     if (!o.isMesh) return;
     for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
       if (!m || visited.has(m)) continue;
       visited.add(m);
-      for (const value of Object.values(m)) if (value?.isTexture) value.anisotropy = Math.min(8, maxAnisotropy);
       if (id === 'shuttle-d' && m.name === 'shut-bay' && m.normalMap) {
         // The source assigns the same colour image to baseColor and tangent normals.
         m.normalMap = null;
         changes.push('shut-bay: removed colour-image normal map');
       }
       if (id === 'cassini' && (m.name === 'foil_gold' || m.name === 'foil_gold_2')) {
-        m.normalScale.set(1.2, 1.2);
+        // GLTFLoader flips Y for meshes using derivative tangents. Preserve that
+        // sign when changing strength, or folds invert again after GLB round-trip.
+        m.normalScale.set(1.2 * Math.sign(m.normalScale.x || 1), 1.2 * Math.sign(m.normalScale.y || 1));
         m.roughness = .36;
         changes.push(m.name + ': foil normals 2→1.2, roughness 0.30→0.36');
+      }
+      if (id === 'juno' && (m.name === 'shiny_panels' || m.name === 'solar_panels')) {
+        // Covered photovoltaic cells are not solid metal plates. Keep the source
+        // colour, texture and roughness; restore their diffuse response without
+        // emission or brighter scene lighting. This is a visual approximation,
+        // not a measured optical model of Juno's multilayer solar cells.
+        m.metalness = 0;
+        changes.push(m.name + ': covered-cell surface, metalness 1→0');
       }
       m.needsUpdate = true;
     }

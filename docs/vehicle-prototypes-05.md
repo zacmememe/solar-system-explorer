@@ -1,5 +1,7 @@
 # F-VEHICLE-PROTOTYPES-05 · 第一批载具样机
 
+> 后续用户决策：用户明确认为当前航天飞机可以接受，**撤回下面的素材淘汰建议并继续采用**。技术细节上限记录保留，最新状态和朱诺修正见 [F-VEHICLE-PREFLIGHT-06](vehicle-preflight-06.md)。下面是05轮历史结论，不能当作当前禁用指令。
+
 日期：2026-09-26。作者：Codex 根会话；只读协助：vehicle_phase_audit、crewed_asset_research、appearance_audit。
 
 目录：`D:\Game Zac\Personal Projects\太阳系漫游`；分支：`codex/restore-observation-experience`；base：`b59aa60849dcf6779857b535051db24727dd927f`。
