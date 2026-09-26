@@ -16,7 +16,7 @@ async function toggleAtmosphere(){
  if(!h.asElement())throw Error('Atmosphere button missing');await h.asElement().click();await h.dispose();
 }
 async function shot(name){
- const state=await page.evaluate(()=>{const e=window.__solarEngine;return {camera:e.getCameraSnapshot(),time:e.getSimTimeHours(),landing:e.getLandingTelemetry(),exposure:e.renderer.toneMappingExposure,atmosphere:e.getMarsAtmosphereDiagnostics?.()};});
+ const state=await page.evaluate(()=>{const e=window.__solarEngine;return {camera:e.getCameraSnapshot(),time:e.getSimTimeHours(),landing:e.getLandingTelemetry(),availability:e.getLandingAvailability(),exposure:e.renderer.toneMappingExposure,atmosphere:e.getMarsAtmosphereDiagnostics?.()};});
  await page.screenshot({path:path.join(out,name+'.png')}); console.log('captured',name);report.images.push({name,...state});await writeFile(path.join(out,'report.json'),JSON.stringify(report,null,2));
 }
 async function travel(id,moon=false){console.log('travel',id);await page.click(`[data-testid="${moon?'moon':'planet'}-btn-${id}"]`);await page.waitForFunction(id=>{const s=window.__solarEngine.getCameraSnapshot();return s.targetBodyId===id&&!s.isTransitioning;},{timeout:45000},id);await wait(700);}
@@ -34,7 +34,12 @@ try{
    if(moon){await travel('earth');await travel('moon',true);}else await travel('mars');
    await page.waitForSelector('[data-testid="landing-site-select"]');await page.select('[data-testid="landing-site-select"]',id);
    await page.waitForFunction(id=>{const a=window.__solarEngine.getLandingAvailability();return a.siteId===id&&['land','travel-to-site'].includes(a.action);},{timeout:90000},id);
-   await wait(500);const go=await page.$('[data-testid="lunar-landing-travel-site-btn"]');if(go)await go.click();
+   await page.waitForFunction(()=>{
+     const a=window.__solarEngine.getLandingAvailability();
+     const id=a.action==='land'?'lunar-landing-start-btn':a.action==='travel-to-site'?'lunar-landing-travel-site-btn':null;
+     const button=id&&document.querySelector('[data-testid="'+id+'"]');return button&&!button.disabled;
+   },{timeout:45000});
+   const go=await page.$('[data-testid="lunar-landing-travel-site-btn"]');if(go)await go.click();
    await page.waitForSelector('[data-testid="lunar-landing-start-btn"]',{timeout:45000});await page.click('[data-testid="lunar-landing-start-btn"]');
    const captured=new Set(),start=Date.now();let landed=false;
    while(Date.now()-start<160000){await wait(750);const t=await page.evaluate(()=>window.__solarEngine.getLandingTelemetry());for(const h of [150000,50000,5000,500])if(t.altitudeAGLM<h&&!captured.has(h)){captured.add(h);await shot(id+'-descent-'+h);if(h===5000&&t.state==='DESCENDING'){await page.click('[data-testid="landing-btn-hold"]');await wait(400);await drag(60);await shot(id+'-hold');await page.click('[data-testid="landing-btn-resume"]');}}if(t.state==='SURFACE_LOOK'){landed=true;break;}}

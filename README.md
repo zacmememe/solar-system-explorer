@@ -26,6 +26,7 @@ npm run dev
 - `npm run build`：TypeScript 检查和生产构建。
 - `npm test`：Vitest 单元与回归测试。
 - `npm run verify:foundations`：已有交互、书签/载具、六站地表 UI 回归（需先启动本地预览并设置 TEST_URL）。
+- `npm run verify:realism`：火星下降/地面/天空与全部现有天体外观证据；用 `REALISM_CASE=bodies` 查32天体，`SKY_CYCLE=1` 查耶泽罗昼夜；生产验证期间禁止重建 dist。
 - `npm run verify:observation`：普通观星空间比例与代表下降 UI 回归。
 - `npm run preview`：预览生产构建，默认端口 4173。
 - `npm run launch`：与唯一启动 BAT 相同，构建最新本地源码后打开预览。
