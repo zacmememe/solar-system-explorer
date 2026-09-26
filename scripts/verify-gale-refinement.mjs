@@ -18,7 +18,7 @@ async function state(){return page.evaluate(()=>{
  const scale=pose.surfaceRadius/(t.site.datumRadiusKm*1000),up=e.camera.position.clone().sub(pose.pos).normalize();
  e.raycaster.set(e.camera.position.clone().addScaledVector(up,100*scale),up.clone().negate());
  const hit=e.raycaster.intersectObject(mesh,false)[0];
- return {position:e.camera.position.toArray(),quaternion:e.camera.quaternion.toArray(),time:e.getSimTimeHours(),telemetry:t,clearanceM:hit?hit.distance/scale-100:null,refined:!!mesh.geometry.userData.localRefinement,triangles:mesh.geometry.index.count/3};
+ return {position:e.camera.position.toArray(),quaternion:e.camera.quaternion.toArray(),camera:e.getCameraSnapshot(),time:e.getSimTimeHours(),telemetry:t,clearanceM:hit?hit.distance/scale-100:null,refined:!!mesh.geometry.userData.localRefinement,triangles:mesh.geometry.index.count/3};
 });}
 async function shot(name){const meta=await state();await page.screenshot({path:path.join(out,name+'.png')});report.images.push({name,...meta});console.log('captured',name);await writeFile(path.join(out,'report.json'),JSON.stringify(report,null,2));return meta;}
 async function pair(name,perf=false){
@@ -44,12 +44,19 @@ try{
  await page.waitForSelector('[data-testid="lunar-landing-start-btn"], [data-testid="lunar-landing-travel-site-btn"]');
  if(await page.$('[data-testid="lunar-landing-travel-site-btn"]'))await click('lunar-landing-travel-site-btn');
  await page.waitForSelector('[data-testid="lunar-landing-start-btn"]',{timeout:45000});await click('lunar-landing-start-btn');
- await page.waitForFunction(()=>{const t=window.__solarEngine.getLandingTelemetry();return t.state==='DESCENDING'&&t.altitudeAGLM<550;},{timeout:160000,polling:50});await click('landing-btn-hold');await delay(500);
+ await page.waitForFunction(()=>{const e=window.__solarEngine,t=e.getLandingTelemetry(),a=e.getCameraSnapshot().anchor;return t.state==='DESCENDING'&&a?.kind==='surface'&&a.eyeHeightM<550;},{timeout:160000,polling:50});await click('landing-btn-hold');await delay(500);
  report.geometry=await page.evaluate(()=>{const e=window.__solarEngine,s=e.marsSiteStacks.get('gale-murray-buttes');window.__galeFine=e.getMarsTerrainMesh().geometry;window.__galeCoarse=s.dtm.buildDemWindowGeometry(e.marsBaseRadius);return {baseRadius:e.marsBaseRadius,refined:!!window.__galeFine.userData.localRefinement,fine:window.__galeFine.index.count/3,coarse:window.__galeCoarse.index.count/3};});
  assert.equal(report.geometry.refined,true);assert.equal(report.geometry.fine,583678);assert.equal(report.geometry.coarse,457084);
  await pair('01-low-hold');await click('landing-btn-resume');await page.waitForFunction(()=>window.__solarEngine.getLandingTelemetry().state==='SURFACE_LOOK',{timeout:60000});await delay(1800);
  await pair('02-ground',true);const grounded=report.pairs.at(-1);assert.ok(Math.abs(grounded.fine.clearanceM-1.7)<.12,`fine clearance ${grounded.fine.clearanceM}`);assert.ok(Math.abs(grounded.fine.clearanceM-1.7)<Math.abs(grounded.coarse.clearanceM-1.7));
  await drag(300);await pair('03-left');await drag(-600);await pair('04-right');
+ // Reach the earlier reported southeast color edge by ordinary drag, not private pose writes.
+ for(let i=0;i<5;i++){
+  const yaw=await page.evaluate(()=>window.__solarEngine.getCameraSnapshot().surfaceOrientation.yawDeg);
+  const delta=((127-yaw+540)%360)-180;if(Math.abs(delta)<.5)break;
+  await drag(Math.max(-500,Math.min(500,-delta/.2865)));
+ }
+ await shot('diag-southeast-normal');
  // Identify which existing regional layer owns the distant color edge without modifying shipped code.
  report.isolation=[];
  for(const name of ['mola-l1-regional-terrain','mola-l1-boundary-skirt','mola-l1-window-rim']){

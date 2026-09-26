@@ -1,5 +1,7 @@
 # 随旅程切换的底部仪表
 
+后续：用户反馈默认HUD仍过高，常驻大图与完整仪表现已移入二级菜单，见 [极简HUD与盖尔细化报告](minimal-hud-gale-report.md)。本页保留原候选的历史验证，不代表最新默认布局。
+
 F-PHASE-AWARE-HUD-01；作者Codex；目录与分支沿用 `codex/restore-observation-experience`。base `e0521091793d7b518b15836453f4c5e9da4fcc0f` → 产品候选 `7c6bb5f93d673bd3252f25adc36806eadbf31ce2`。产品分三次提交：`46ecdbe` 主实现、`7559b68` 手机间距验证、`7c6bb5f` 实测自适应间距/全景书签/目标位置语义收口。后续文档提交不改变产品候选。
 
 ## 玩家能感知的变化
