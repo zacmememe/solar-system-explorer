@@ -37,6 +37,7 @@ export function sampleSurfaceGrid(geometry: THREE.BufferGeometry, lat: number, l
 export function buildTerrainBoundaryBridge(
   inner: THREE.BufferGeometry, outer: THREE.BufferGeometry,
   outerBounds: GeographicBounds, baseRadius: number, rings = 12,
+  imageUvAt?: (lat: number, lon: number) => [number, number],
 ): THREE.BufferGeometry {
   const g = inner.userData.surfaceGrid as SurfaceGrid;
   const latEnd = g.lat0 + (g.rows-1)*g.dLat, lonEnd = g.lon0 + (g.cols-1)*g.dLon;
@@ -102,7 +103,7 @@ export function buildTerrainBoundaryBridge(
     }
     return data;
   };
-  const positions:number[]=[],uvs:number[]=[],indices:number[]=[];
+  const positions:number[]=[],uvs:number[]=[],indices:number[]=[],imageUvs:number[]=[],blend:number[]=[];
   const count=edges.length;
   for(let r=0;r<=rings;r++) {
     const t=r/rings,w=smooth(t),filtered=blurredHeights(meanWidth*t*.5);
@@ -115,6 +116,7 @@ export function buildTerrainBoundaryBridge(
       p.addScaledVector(e.p.clone().sub(radial(e.a.lat,e.a.lon,innerR)),1-w);
       p.addScaledVector(e.q.clone().sub(radial(e.b.lat,e.b.lon,baseRadius)),w);
       positions.push(p.x,p.y,p.z);uvs.push((lon+180)/360,(lat+90)/180);
+      if(imageUvAt) { imageUvs.push(...imageUvAt(lat,lon)); blend.push(t); }
     }
   }
   for(let r=0;r<rings;r++) for(let k=0;k<count;k++) {
@@ -124,6 +126,10 @@ export function buildTerrainBoundaryBridge(
   const geo=new THREE.BufferGeometry();
   geo.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
   geo.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));geo.setIndex(indices);
+  if(imageUvAt) {
+    geo.setAttribute('aBoundaryUv',new THREE.Float32BufferAttribute(imageUvs,2));
+    geo.setAttribute('aGrayMix',new THREE.Float32BufferAttribute(blend,1));
+  }
   computeTerrainNormals(geo,positions);
   const normals=geo.getAttribute('normal'), v=new THREE.Vector3();
   for(let r=0;r<=rings;r++) for(let k=0;k<count;k++) {

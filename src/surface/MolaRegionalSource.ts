@@ -172,6 +172,7 @@ export class MolaRegionalSource {
       }
     }
     const indices: number[] = [];
+    let holeMinI = cols, holeMaxI = -1, holeMinJ = rows, holeMaxJ = -1;
     for (let j = 0; j < rows - 1; j++) {
       for (let i = 0; i < cols - 1; i++) {
         const a = j * cols + i;
@@ -184,7 +185,11 @@ export class MolaRegionalSource {
           // 四角全在孔内才剔除：孔缘三角形保留，边缘锯齿被窗缘裙圈覆盖
           const allIn = lats.every((la) => la > holeBounds.latMin && la < holeBounds.latMax) &&
             longs.every((lo) => lo > holeBounds.lonMin && lo < holeBounds.lonMax);
-          if (allIn) continue;
+          if (allIn) {
+            holeMinI = Math.min(holeMinI, i); holeMaxI = Math.max(holeMaxI, i + 1);
+            holeMinJ = Math.min(holeMinJ, j); holeMaxJ = Math.max(holeMaxJ, j + 1);
+            continue;
+          }
         }
         indices.push(a, c, b);
         indices.push(b, c, d);
@@ -195,6 +200,10 @@ export class MolaRegionalSource {
     geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
     geo.setIndex(indices);
     geo.computeVertexNormals();
+    geo.userData.surfaceGrid = { cols, rows, lat0: latAt(0), lon0: lonAt(0), dLat: -step / ppd, dLon: step / ppd };
+    if (holeMaxI >= 0) geo.userData.holeBounds = {
+      latMin: latAt(holeMaxJ), latMax: latAt(holeMinJ), lonMin: lonAt(holeMinI), lonMax: lonAt(holeMaxI),
+    };
     return geo;
   }
 

@@ -95,7 +95,6 @@ import {
   buildRockGeometry,
   composeLocalRockMatrix,
   sampleRenderedTerrain,
-  renderedTerrainBounds,
   rockScenePosition,
 } from '../surface/ProceduralRockField';
 import { focalPixelsPx, projectedTexelPx, terrainRevealOpacity } from '../world-support/screenSpaceMetrics';
@@ -865,34 +864,18 @@ export class SolarEngine {
               stack.group.add(skirtMesh);
             }
             if (wb) {
-              const renderedBounds = renderedTerrainBounds(geo);
-              const dtmHeightAt = (lat: number, lon: number): number => {
-                const point = sampleRenderedTerrain(geo, lat, lon);
-                if (!point) throw new Error('Mars terrain seam lies outside its displayed grid');
-                return (point.length() / satRadius - 1) * dtm.datumRadius;
-              };
               const mPerDeg = dtm.datumRadius * Math.PI / 180;
               const cosCenter = Math.cos(THREE.MathUtils.degToRad(dtm.metaReady!.site.centerLat));
-              const rimGeo = mola.buildWindowRimSkirt(satRadius, renderedBounds, dtmHeightAt, 0.15, 10, 96,
+              // Join the actual cut edge, not a second overlapping heightfield.
+              // The old .15-degree skirt passed over/under L1's .12-degree hole
+              // lip by >100m and exposed a floating strip from the ground.
+              const rimGeo = buildTerrainBoundaryBridge(geo, l1Geo, l1Geo.userData.holeBounds, satRadius, 10,
                 (lat,lon)=>[(lon-wb.lonMin)*mPerDeg*cosCenter/dtm.uvSpanMeters.x,
                   (wb.latMax-lat)*mPerDeg/dtm.uvSpanMeters.y]);
               if (rimGeo) {
-                // 裙圈是窗缘细级：polygonOffset 压过 L1 挖孔锯齿边（LOD 排序）。
-                // Extend the HiRISE boundary image into a smooth transition band.
-                // This is an illustrative extension, not new measured coverage.
-                const RIM_RINGS = 10, RIM_SEGS = 96;
-                const perimeter = 4 * RIM_SEGS;
-                const grayMix = new Float32Array(rimGeo.getAttribute('position').count);
-                for (let v = 0; v < grayMix.length; v++) {
-                  grayMix[v] = Math.floor(v / perimeter) / RIM_RINGS;
-                }
-                rimGeo.setAttribute('aGrayMix', new THREE.BufferAttribute(grayMix, 1));
                 const rimMat = new MarsRegionalMaterial(this.marsAirColor, this.marsSunVisibility,
                   satRadius / dtm.datumRadius, terrainMat.map ? {texture:terrainMat.map,spanM:dtm.uvSpanMeters} : undefined);
                 rimMat.map = l1Mat.map;
-                rimMat.polygonOffset = true;
-                rimMat.polygonOffsetFactor = -1;
-                rimMat.polygonOffsetUnits = -1;
                 stack.l1Materials.push(rimMat);
                 const rimMesh = new THREE.Mesh(rimGeo, rimMat);
                 rimMesh.name = 'mola-l1-window-rim';
