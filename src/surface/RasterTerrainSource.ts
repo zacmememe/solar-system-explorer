@@ -13,6 +13,7 @@
  */
 
 import * as THREE from 'three';
+import { orthoP995 } from './orthoNormalizer';
 
 export type TerrainFidelity = 'measured-dem' | 'datum-sphere';
 
@@ -323,10 +324,9 @@ export class RasterTerrainSource {
     if (this.orthoTexture) return this.orthoTexture;
     const m = this.meta;
     const n = m.width * m.height;
-    // 归一化：按有效样本 99.5 分位亮度拉伸到 0..255（I/F 原值保存在 ortho.u16，
+    // 归一化：按全部打包样本 99.5 分位亮度拉伸到 0..255（I/F 原值保存在 ortho.u16，
     // 此纹理仅作地表反照率显示；分母写入 userData 供溯源）
-    const sorted = Array.from(this.orthoU16).sort((a, b) => a - b);
-    const p995 = sorted[Math.floor((n - 1) * 0.995)] || 4096;
+    const p995 = orthoP995(this.orthoU16);
     const denom = Math.max(1, p995 / 255);
     // P3-T3：RedFormat 单通道作 map 会渲染成 (r,0,0) 纯红灰度（P2 录像的"火星"偏色根因），
     // 改为 RGBAFormat 把灰度复制进 RGB 三通道。
