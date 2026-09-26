@@ -19,8 +19,12 @@ page.on('pageerror',e=>report.errors.push(String(e)));
 page.on('console',m=>{if(m.type()==='error')report.consoleErrors.push(m.text());});
 const click=id=>page.click(`[data-testid="${id}"]`);
 async function shot(name){
-  const meta=await page.evaluate(()=>{const e=window.__solarEngine;return {camera:e.getCameraSnapshot(),telemetry:e.getLandingTelemetry(),simTime:e.getSimTimeHours(),vehicle:e.getCurrentVehicle(),display:e.lastFrameRenderInfo};});
-  if(meta.vehicle) {
+  const meta=await page.evaluate(()=>{const e=window.__solarEngine;return {camera:e.getCameraSnapshot(),telemetry:e.getLandingTelemetry(),simTime:e.getSimTimeHours(),vehicle:e.getCurrentVehicle(),vehicleMode:e.getViewCameraMode(),display:e.lastFrameRenderInfo};});
+  if(meta.telemetry.state!=='ORBIT'||meta.camera.mode==='SURFACE_LOOK'||meta.camera.anchor?.kind==='surface') {
+    assert.equal(meta.vehicle,null,'surface journey has no selected vehicle');
+    assert.equal(meta.vehicleMode,'PLANET_OBSERVE');
+    assert.equal(meta.display.vehicleDisplayPass,false);
+  } else if(meta.vehicle) {
     assert.equal(meta.display.vehicleDisplayPass,true);
     const r=meta.display.vehicleDisplayRange;
     assert.ok(Number.isFinite(r.near)&&r.near>0&&Number.isFinite(r.far)&&r.far>r.near);

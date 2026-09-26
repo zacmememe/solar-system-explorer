@@ -1,4 +1,6 @@
-// R1 验收探针（生产构建）：伴飞载具从轨道→下降→悬停→停驻→返轨全程可见。
+// 历史探针：仅用于复核 098b9c0/8deebfc 的旧产品契约，不适用当前版本。
+// F-VEHICLE-SPACE-ONLY-04 已要求下降/地面/上升无载具；当前验收用 verify-vehicle-space-only.mjs。
+// 旧 R1 契约：伴飞载具从轨道→下降→悬停→停驻→返轨全程可见。
 // 每阶段断言 lastFrameRenderInfo.vehicleDisplayRange 覆盖载具（far ≥ 2.6、near>0、有限）。
 // 正常 UI：机库登舰、观察面板切伴飞、行内降落按钮、画布拖动暂停(HOLD 设计交互)、
 // HUD 按钮 resume/返轨。截图存 D:\solar-evidence\r1r2-bdac3bc\r1-vehicle-descent\。
@@ -11,6 +13,7 @@ const EDGE_PATH = process.env.EDGE_PATH || 'C:\\Program Files (x86)\\Microsoft\\
 const OUT = 'D:/solar-evidence/r1r2-bdac3bc/r1-vehicle-descent';
 
 async function main() {
+  if (process.env.LEGACY_VEHICLE_CONTRACT !== '1') throw new Error('这是历史载具契约探针；当前版本请运行 CHECK_FIXED=1 node scripts/verify-vehicle-space-only.mjs。仅复核旧候选时设置 LEGACY_VEHICLE_CONTRACT=1。');
   fs.mkdirSync(OUT, { recursive: true });
   const browser = await puppeteer.launch({
     executablePath: EDGE_PATH,

@@ -9,10 +9,11 @@
 最小阅读顺序：
 
 1. `AGENTS.md` 和 `review-exports/coordination/queue.md`：后者是本机唯一动态状态，不复制新看板。
+   最新修复先读[载具仅限太空观察](vehicle-space-only-report.md)：产品281e65d、372测试、月火正常UI11项/10图/0错误。落区准备/绕行/下降/地面/返航结束伴飞；仅返轨后可重选，旧地表载具书签会清除。此产品规则覆盖旧“月面载具应始终可见”的验收叙述；底层展示裁剪修复保留。
 2. [最新下降返回与换落区报告](landing-continuity-report.md)：产品aa8d9d4、361测试、25张最终图；实际机位升空、结束不跳位、球外绕行、显式白昼选择与取消/倍速优先。再读 [远景、石块与土卫三报告](mars-materials-body-assets-report.md)：产品03b6220、343测试、49图证据与剩余粗糙处；[极简HUD与盖尔报告](minimal-hud-gale-report.md)：大屏98px薄条、完整信息进菜单，盖尔512m核心恢复2m源网格及独立净空。此前 [阶段HUD报告](phase-aware-hud-report.md)保留相机/书签/遥测语义；[盖尔旧方案](plans/gale-display-ground-refinement.md)为实施前诊断。前轮 [火星与天体真实感报告](surface-atmosphere-realism-report.md)包含火星大气/地面/夜间遮光、3张新观测卫星图和30体后续清单。导航上下文见 [导航与视觉报告](navigation-experience-report.md)：跨星避障、相机连续性、卫星母星构图、土星环影。地形上下文保留于 [月面连续性报告](lunar-boundary-continuity-report.md)，更早系统修复见 [系统报告](codex-system-polish-report.md)。
 3. [体验基础契约](experience-foundations.md)：物理空间/相机/时间/存档约束与真实 UI 验证方法。
 
-最新产品候选为 `aa8d9d4a2a3c7cc66a5b7dc2d58f7c7de5b08881`（base e38620d），生产包 `index-VtXa3VT5.js` / CSS `index-CH4BTTPh.css`。54文件361测试通过；冻结包月/火高空中止、低空悬停/触地返航、转头接管、落区绕行/取消以及白昼时间菜单与手动改速，共25张最终截图、两份0错误报告。精确哈希、作者已看图范围和未验项目见最新报告。后续仅文档/验证脚本提交不构成产品漂移；src、资产或配置变化要绑定新候选。所有既有HUD、地形、导航修复仍在历史中。核对git status，其他作者原有未跟踪文件不能删除或一并提交。
+最新产品候选为 `281e65d7ee7646b405bbe8fe41c91ca0133b867b`（base4e9019a），生产包 `index-CKfEZ_r-.js` / CSS `index-CH4BTTPh.css`。55文件372测试通过；最终载具流程10图与0错误报告在`D:\solar-evidence\vehicle-space-only\final-confirmed`，`final/`是提示条修正前迭代。前轮aa8d9d4的下降连续性和25图证据仍保留。精确哈希、作者已看图范围和未验项目见对应报告；不得把本轮载具通过当作地形全面接受。后续仅文档/验证脚本提交不构成产品漂移；src、资产或配置变化要绑定新候选。所有既有HUD、地形、导航修复仍在历史中。核对git status，其他作者原有未跟踪文件不能删除或一并提交。
 
 返航不再固定到50km，也不在结束时另起默认整球flyTo：从实际机位单调升空，终端轨迹保留到相机接手。用户在途中转头后，自由观察near必须受真实球面净空约束，不能只看自由支点距离；旧版曾切掉半块月球，反例保留在candidate/14。降落准备不再隐式选未来白昼；需要亮面时使用底部“··· → 时间倍率 → 切换到所选落区的白昼”。同天体换落区复用球外短弧，准备/绕行取消清理临时倍速，用户手动改速优先。盖尔高空区域影像矩形界线和低空远坡仍待改善，不把镜头连续性通过写成地形真实感通过。
 
