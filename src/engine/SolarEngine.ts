@@ -64,6 +64,9 @@ import type { BodyId, CelestialBodyData } from '../contracts/body';
 import type { CameraCommand, CameraStateSnapshot } from '../contracts/camera';
 import type { HudFrame } from '../contracts/hud';
 import type { VehicleId, ViewCameraMode } from '../contracts/vehicle';
+import { selectableVehicleId } from '../contracts/vehicle';
+import { VEHICLE_ASSET_REGISTRY } from '../vehicles/VehicleAssetRegistry';
+import { formationFraming } from '../vehicles/formationFraming';
 import type { BookmarkItemV3 } from '../contracts/bookmark';
 import { normalizeObservationIntent } from '../contracts/bookmark';
 import type { PhysicalSystemSnapshot } from '../contracts/physics';
@@ -3226,6 +3229,7 @@ export class SolarEngine {
 
   public setVehicle(id: VehicleId | null, onReady?: () => void): boolean {
     if (this.vehicleDisposed) return false;
+    if (id && !selectableVehicleId(id)) return false;
     if (id && !this.canUseVehicles()) return false;
     this.replaceVehicle(id, onReady);
     return true;
@@ -3475,12 +3479,20 @@ export class SolarEngine {
 
         // 伴飞视角：航天器稳固置于相机右前下方前景（0.85 缩 25% → 0.6375，
         // F-VEHICLE-FOREGROUND-01 首个候选：伴飞占比过大被星球吞没的整改之一）
-        const normScale = 0.6375 / origDim;
-        this.currentVehicleMesh.scale.setScalar(normScale);
+        const presentation=VEHICLE_ASSET_REGISTRY[this.currentVehicleId].presentation;
+        const rotation = presentation?.rotation ?? [.12, -.38, 0] as const;
+        const fitKey = `${this.camera.fov}:${this.camera.aspect}`;
+        let fit = this.currentVehicleMesh.userData.formationFit;
+        if (!fit || fit.key !== fitKey) {
+          fit = { key: fitKey, ...formationFraming(this.currentVehicleMesh.userData.box,
+            origDim, presentation?.span ?? .6375, rotation, this.camera.fov, this.camera.aspect) };
+          this.currentVehicleMesh.userData.formationFit = fit;
+        }
+        this.currentVehicleMesh.scale.setScalar(fit.scale);
 
         const bob = this.reduceMotion ? 0.0 : Math.sin(now * 0.002) * 0.012;
-        this.vehicleGroup.position.set(0.48, -0.34 + bob, -2.1);
-        this.vehicleGroup.rotation.set(0.12, -0.38, 0);
+        this.vehicleGroup.position.set(fit.x, -0.34 + bob, -2.1);
+        this.vehicleGroup.rotation.set(...rotation);
       } else if (this.viewCameraMode === 'VEHICLE_ONBOARD') {
         if (this.vehicleGroup.parent !== this.camera) {
           this.camera.add(this.vehicleGroup);
@@ -4359,8 +4371,9 @@ export class SolarEngine {
       this.updateEphemerisPoses(0);
     }
     // Old surface bookmarks can contain onboard/formation fields: discard them.
-    this.replaceVehicle(station ? null : bm.vehicleId ?? null);
-    this.viewCameraMode = !station && bm.vehicleId ? bm.viewCameraMode : 'PLANET_OBSERVE';
+    const restoredVehicle=station ? null : selectableVehicleId(bm.vehicleId);
+    this.replaceVehicle(restoredVehicle);
+    this.viewCameraMode = restoredVehicle ? bm.viewCameraMode : 'PLANET_OBSERVE';
     this.updateLightingState();
     this.setShowClouds(bm.layers.showClouds);
     this.setShowAtmosphere(bm.layers.showAtmosphere);

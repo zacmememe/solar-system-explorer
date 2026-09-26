@@ -9,6 +9,7 @@
 
 import type { BodyId } from './body';
 import type { ViewCameraMode, VehicleId } from './vehicle';
+import { selectableVehicleId } from './vehicle';
 import type { CameraLookTarget } from './camera';
 import type { MetricStation, PoseQuality } from './physics';
 
@@ -170,7 +171,7 @@ export function upgradeBookmarkToV2(raw: any): BookmarkItemV2 {
  * 保留历史经纬高程与观察意图；V1/V2 本就不含米制地表站点，迁移不伪造 surfaceStation，
  * 旧杂项观察标签归一为 physical/terrain-study 两种语义。
  */
-export function upgradeBookmarkToV3(raw: any): BookmarkItemV3 {
+function upgradeBookmarkRawToV3(raw: any): BookmarkItemV3 {
   if (raw && raw.schemaVersion === 3) {
     return {
       ...raw,
@@ -192,6 +193,12 @@ export function upgradeBookmarkToV3(raw: any): BookmarkItemV3 {
     quality: 'analytic-approximation',
     sourceVersion: '2026.09-P1-V3',
   };
+}
+
+export function upgradeBookmarkToV3(raw: any): BookmarkItemV3 {
+  const bookmark=upgradeBookmarkRawToV3(raw);
+  const vehicleId=bookmark.surfaceStation ? null : selectableVehicleId(bookmark.vehicleId);
+  return {...bookmark,vehicleId,viewCameraMode:vehicleId ? bookmark.viewCameraMode : 'PLANET_OBSERVE'};
 }
 
 export interface BookmarkExportPackage {

@@ -1,0 +1,8 @@
+.hangar-layout { min-height: 0; }
+.hangar-layout > div { min-width: 0; }
+@media (max-width: 760px) {
+  .hangar-layout { flex-direction: column !important; }
+  .hangar-layout > div { flex: none !important; padding: 14px !important; overflow: visible !important; }
+  .hangar-model-column > div:first-child { min-height: 300px !important; height: 300px; flex: none !important; }
+  [data-testid="hangar-provenance-badge"] { align-items: flex-start !important; flex-direction: column; gap: 6px; }
+}

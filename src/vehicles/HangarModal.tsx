@@ -11,8 +11,9 @@
 import React, { useState } from 'react';
 import type { VehicleId } from '../contracts/vehicle';
 import { VEHICLE_CATALOG } from './VehicleCatalog';
-import { VEHICLE_ASSET_REGISTRY, getFeaturedVehicleIds, getAllVehicleIds } from './VehicleAssetRegistry';
+import { VEHICLE_ASSET_REGISTRY, getFeaturedVehicleIds } from './VehicleAssetRegistry';
 import { VehicleViewer3D } from './VehicleViewer3D';
+import './HangarModal.css';
 import { X, Rocket, Ruler, Eye, Sparkles, Sun, Lightbulb, CheckCircle2, ShieldCheck } from 'lucide-react';
 
 interface HangarModalProps {
@@ -32,7 +33,6 @@ export const HangarModal: React.FC<HangarModalProps> = ({
 }) => {
   // 默认选中当前伴飞载具，或精选默认 ISS
   const [selectedId, setSelectedId] = useState<VehicleId>(currentVehicleId || 'iss');
-  const [category, setCategory] = useState<'featured' | 'all'>('featured');
   const [scaleMode, setScaleMode] = useState<'framed' | 'metric'>('framed');
   const [lightingMode, setLightingMode] = useState<'studio' | 'orbit'>('studio');
   const [activeHotspotId, setActiveHotspotId] = useState<string | null>(null);
@@ -42,7 +42,7 @@ export const HangarModal: React.FC<HangarModalProps> = ({
   const def = VEHICLE_CATALOG[selectedId];
   const assetRecord = VEHICLE_ASSET_REGISTRY[selectedId];
 
-  const vehicleList = category === 'featured' ? getFeaturedVehicleIds() : getAllVehicleIds();
+  const vehicleList = getFeaturedVehicleIds();
 
   const handleSelect = (id: VehicleId) => {
     setSelectedId(id);
@@ -115,61 +115,9 @@ export const HangarModal: React.FC<HangarModalProps> = ({
                 航天器机库 · Spacecraft Hangar
               </h2>
               <span style={{ fontSize: 11, color: '#94a3b8' }}>
-                选择搭乘伴飞的人类太空探索载具与真实模型
+                选择一位太空探索同行者
               </span>
             </div>
-          </div>
-
-          {/* 分类切换器 (精选典藏 vs 全部历史载具) */}
-          <div
-            style={{
-              display: 'flex',
-              gap: 4,
-              background: 'rgba(255, 255, 255, 0.05)',
-              padding: 3,
-              borderRadius: 10,
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-            }}
-          >
-            <button
-              data-testid="hangar-tab-featured"
-              onClick={() => {
-                setCategory('featured');
-                if (!VEHICLE_ASSET_REGISTRY[selectedId]?.isFeatured) {
-                  setSelectedId('iss');
-                }
-              }}
-              style={{
-                padding: '5px 12px',
-                borderRadius: 8,
-                border: 'none',
-                background: category === 'featured' ? '#0284c7' : 'transparent',
-                color: category === 'featured' ? '#ffffff' : '#94a3b8',
-                fontSize: 12,
-                fontWeight: category === 'featured' ? 600 : 400,
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              🌟 精选典藏 ({getFeaturedVehicleIds().length})
-            </button>
-            <button
-              data-testid="hangar-tab-all"
-              onClick={() => setCategory('all')}
-              style={{
-                padding: '5px 12px',
-                borderRadius: 8,
-                border: 'none',
-                background: category === 'all' ? '#0284c7' : 'transparent',
-                color: category === 'all' ? '#ffffff' : '#94a3b8',
-                fontSize: 12,
-                fontWeight: category === 'all' ? 600 : 400,
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              📦 全部载具 ({getAllVehicleIds().length})
-            </button>
           </div>
 
           <button
@@ -279,6 +227,7 @@ export const HangarModal: React.FC<HangarModalProps> = ({
 
         {/* 核心双栏展示区 */}
         <div
+          className="hangar-layout"
           style={{
             flex: 1,
             display: 'flex',
@@ -288,6 +237,7 @@ export const HangarModal: React.FC<HangarModalProps> = ({
         >
           {/* 左栏：3D 交互预览、光照切换与真实米制尺寸标尺 */}
           <div
+            className="hangar-model-column"
             style={{
               flex: 1.15,
               padding: 20,
@@ -311,8 +261,8 @@ export const HangarModal: React.FC<HangarModalProps> = ({
               <VehicleViewer3D
                 onLoadState={(id, state) => setReadyId(state === 'ready' ? id : null)}
                 vehicleId={selectedId}
-                activeHotspotId={activeHotspotId}
-                scaleMode={scaleMode}
+                activeHotspotId={assetRecord.calibratedMetres ? activeHotspotId : null}
+                scaleMode={assetRecord.calibratedMetres ? scaleMode : 'framed'}
                 lightingMode={lightingMode}
               />
 
@@ -361,7 +311,7 @@ export const HangarModal: React.FC<HangarModalProps> = ({
                 </div>
 
                 {/* 构图比例切换 */}
-                <div
+                {assetRecord.calibratedMetres && <div
                   style={{
                     display: 'flex',
                     background: 'rgba(15, 23, 42, 0.85)',
@@ -391,7 +341,7 @@ export const HangarModal: React.FC<HangarModalProps> = ({
                     {scaleMode === 'framed' ? <Eye size={12} /> : <Ruler size={12} />}
                     <span>{scaleMode === 'framed' ? '最佳构图' : '1:1 标尺'}</span>
                   </button>
-                </div>
+                </div>}
               </div>
 
               <div
@@ -404,7 +354,7 @@ export const HangarModal: React.FC<HangarModalProps> = ({
                   pointerEvents: 'none',
                 }}
               >
-                🖱️ 鼠标拖拽 360° 旋转 · 滚轮缩放镜头
+                鼠标或手指拖拽 · 360° 查看
               </div>
             </div>
 
@@ -459,11 +409,11 @@ export const HangarModal: React.FC<HangarModalProps> = ({
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#38bdf8', fontWeight: 600 }}>
                   <Ruler size={13} />
-                  <span>真实物理尺寸 (Real Metric Dimensions)</span>
+                  <span>航天器参考尺寸</span>
                 </div>
-                <div style={{ color: '#94a3b8', fontSize: 11 }}>
-                  发射重量: <strong style={{ color: '#e2e8f0' }}>{(def.massKg / 1000).toFixed(1)} 吨</strong> ({def.massKg.toLocaleString()} kg)
-                </div>
+                {def.massKg!==undefined && <div style={{ color: '#94a3b8', fontSize: 11 }}>
+                  参考质量: <strong style={{ color: '#e2e8f0' }}>{(def.massKg / 1000).toFixed(1)} 吨</strong>
+                </div>}
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, textAlign: 'center' }}>
@@ -480,6 +430,9 @@ export const HangarModal: React.FC<HangarModalProps> = ({
                   <div style={{ fontSize: 14, fontWeight: 700, color: '#f8fafc' }}>{def.dimensions.heightM} 米</div>
                 </div>
               </div>
+            </div>
+            <div style={{fontSize:11,color:'#94a3b8',marginTop:8,lineHeight:1.5}}>
+              {def.dimensionsNote ?? '参考资料尺寸；模型按构图展示，不用作测量标尺。'}
             </div>
           </div>
 
@@ -532,8 +485,8 @@ export const HangarModal: React.FC<HangarModalProps> = ({
               <div style={{ marginTop: 4, color: '#fef9c3' }}>{def.kidFact}</div>
             </div>
 
-            {/* 结构热点交互专区 */}
-            <div>
+            {/* Uncalibrated source assemblies cannot use legacy metre hotspot coordinates. */}
+            {assetRecord.calibratedMetres && <div>
               <div
                 style={{
                   fontSize: 12,
@@ -601,6 +554,7 @@ export const HangarModal: React.FC<HangarModalProps> = ({
               })()}
             </div>
 
+            }
             {/* 详细历史档案与科学成就 */}
             <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.6 }}>
               <div style={{ fontWeight: 600, color: '#cbd5e1', marginBottom: 4 }}>📖 任务档案与科学成就：</div>
@@ -635,7 +589,7 @@ export const HangarModal: React.FC<HangarModalProps> = ({
                 }}
               >
                 <Rocket size={16} />
-                <span>{canBoard ? '搭乘这艘飞船出征伴飞 (Board & Fly)' : '模型就绪后可开始伴飞'}</span>
+                <span>{canBoard ? '开始伴飞' : '模型就绪后可开始伴飞'}</span>
               </button>
 
               {(currentVehicleId || pendingVehicleId) && onClearVehicle && (

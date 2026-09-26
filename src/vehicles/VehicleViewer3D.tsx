@@ -12,6 +12,7 @@ import * as THREE from 'three';
 import type { VehicleId } from '../contracts/vehicle';
 import { VEHICLE_CATALOG } from './VehicleCatalog';
 import { VehicleLoader } from './VehicleLoader';
+import { previewDistance } from './previewFraming';
 
 export interface VehicleViewer3DProps {
   vehicleId: VehicleId;
@@ -44,6 +45,7 @@ export const VehicleViewer3D: React.FC<VehicleViewer3DProps> = ({
     targetCamPos: new THREE.Vector3(0, 5, 20),
     targetLookAt: new THREE.Vector3(0, 0, 0),
     maxDim: 10,
+    radius: 5,
     center: new THREE.Vector3(0, 0, 0),
     rotX: 0.15,
     rotY: 0.3,
@@ -53,6 +55,7 @@ export const VehicleViewer3D: React.FC<VehicleViewer3DProps> = ({
 
   // 三维核心场景对象引用（在 Viewer 生命周期内保持单一稳定）
   const sceneRef = useRef<THREE.Scene | null>(null);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const vehicleGroupRef = useRef<THREE.Group | null>(null);
   const currentMeshRef = useRef<THREE.Group | null>(null);
   const hotspotMarkerRef = useRef<THREE.Mesh | null>(null);
@@ -70,9 +73,10 @@ export const VehicleViewer3D: React.FC<VehicleViewer3DProps> = ({
     stateRef.current.lightingMode = lightingMode;
     stateRef.current.activeHotspotId = activeHotspotId;
 
-    const { maxDim } = stateRef.current;
     if (scaleMode === 'framed') {
-      stateRef.current.targetCamPos.set(0, maxDim * 0.4, maxDim * 1.8);
+      const c = cameraRef.current;
+      const distance = previewDistance(stateRef.current.radius, c?.fov ?? 40, c?.aspect ?? 1);
+      stateRef.current.targetCamPos.set(0, .4, 1.8).normalize().multiplyScalar(distance);
       stateRef.current.targetLookAt.set(0, 0, 0);
     } else {
       stateRef.current.targetCamPos.set(0, 25, 75);
@@ -119,6 +123,7 @@ export const VehicleViewer3D: React.FC<VehicleViewer3DProps> = ({
     sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 500);
+    cameraRef.current = camera;
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
@@ -237,18 +242,25 @@ export const VehicleViewer3D: React.FC<VehicleViewer3DProps> = ({
       if (!container) return;
       const w = container.clientWidth;
       const h = container.clientHeight;
+      if (!w || !h) return;
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
+      if (stateRef.current.scaleMode === 'framed') {
+        const distance = previewDistance(stateRef.current.radius, camera.fov, camera.aspect);
+        stateRef.current.targetCamPos.set(0, .4, 1.8).normalize().multiplyScalar(distance);
+        camera.position.copy(stateRef.current.targetCamPos);
+      }
     };
-    window.addEventListener('resize', onResize);
+    const resizeObserver = new ResizeObserver(onResize);
+    resizeObserver.observe(container);
 
     return () => {
       cancelAnimationFrame(animRef.current);
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
-      window.removeEventListener('resize', onResize);
+      resizeObserver.disconnect();
 
       if (currentMeshRef.current) {
         VehicleLoader.disposeVehicleObject(currentMeshRef.current);
@@ -260,6 +272,7 @@ export const VehicleViewer3D: React.FC<VehicleViewer3DProps> = ({
       hotspotMarker.geometry.dispose();
       hotspotMarker.material.dispose();
       sceneRef.current = null;
+      cameraRef.current = null;
       vehicleGroupRef.current = null;
       gridHelperRef.current = null;
       hotspotMarkerRef.current = null;
@@ -308,13 +321,20 @@ export const VehicleViewer3D: React.FC<VehicleViewer3DProps> = ({
       // 提取准确模型物理 Bounds 并更新相机聚焦目标
       const maxDim = (newModel.userData.maxDim as number) || 10;
       stateRef.current.maxDim = maxDim;
+      const bounds = (newModel.userData.box as THREE.Box3).getBoundingSphere(new THREE.Sphere());
+      stateRef.current.radius = bounds.radius + bounds.center.length();
 
       if (stateRef.current.scaleMode === 'framed') {
-        stateRef.current.targetCamPos.set(0, maxDim * 0.4, maxDim * 1.8);
+        const c = cameraRef.current!;
+        const distance = previewDistance(stateRef.current.radius, c.fov, c.aspect);
+        stateRef.current.targetCamPos.set(0, .4, 1.8).normalize().multiplyScalar(distance);
       } else {
         stateRef.current.targetCamPos.set(0, 25, 75);
       }
       stateRef.current.targetLookAt.set(0, 0, 0);
+      // Different GLBs use different native units. Do not fly through a newly
+      // installed model while lerping from the previous asset's camera distance.
+      cameraRef.current?.position.copy(stateRef.current.targetCamPos);
 
       // 同步热点标记尺寸与位置
       if (hotspotMarkerRef.current) {

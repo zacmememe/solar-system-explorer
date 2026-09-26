@@ -13,14 +13,23 @@ export type VehicleId =
   | 'hubble'
   | 'iss'
   | 'tiangong'
-  | 'cassini';
+  | 'cassini'
+  | 'juno'
+  | 'space-shuttle';
+
+/** User-selected playable lineup. Historical IDs remain parseable metadata. */
+export const SELECTABLE_VEHICLE_IDS: readonly VehicleId[] = ['iss','cassini','voyager-1','juno','space-shuttle'];
+export function selectableVehicleId(value: unknown): VehicleId | null {
+  return typeof value==='string' && SELECTABLE_VEHICLE_IDS.includes(value as VehicleId) ? value as VehicleId : null;
+}
 
 export type VehicleType =
   | 'crewed-lander'    // 载人登月舱/着陆器
   | 'interstellar'     // 星际飞掠探测器
   | 'space-telescope'  // 太空望远镜
   | 'space-station'    // 轨道空间站
-  | 'orbiter';         // 行星轨道探测器
+  | 'orbiter'          // 行星轨道探测器
+  | 'crewed-orbiter';
 
 export type EraCategory = 'classic' | 'contemporary' | 'future-concept';
 
@@ -47,7 +56,8 @@ export interface VehicleDefinition {
   agency: string;
   launchYear: number;
   dimensions: VehicleDimensions;
-  massKg: number;
+  massKg?: number;
+  dimensionsNote?: string;
   /** 给孩子的一句话记忆点 */
   kidFact: string;
   /** 详细任务档案与科学成就（家长可展开阅读） */

@@ -23,10 +23,10 @@ import type { VehicleId } from '../src/contracts/vehicle';
 describe('批次 R4 载具资产准入与模型管线测试 (Vehicle Pipeline Tests)', () => {
   it('R4-01: 验证 VehicleAssetRegistry 精品收缩与元数据准入完整性', () => {
     const featured = getFeaturedVehicleIds();
-    expect(featured).toEqual(['hubble', 'iss']);
+    expect(featured).toEqual(['iss','cassini','voyager-1','juno','space-shuttle']);
 
     const all = getAllVehicleIds();
-    expect(all).toHaveLength(7);
+    expect(all).toHaveLength(9);
     expect(all).toContain('hubble');
     expect(all).toContain('iss');
     expect(all).toContain('apollo-lm');
@@ -40,7 +40,7 @@ describe('批次 R4 载具资产准入与模型管线测试 (Vehicle Pipeline Te
     expect(hubbleRec).toBeDefined();
     expect(hubbleRec.format).toBe('glb');
     expect(hubbleRec.approved).toBe(true);
-    expect(hubbleRec.isFeatured).toBe(true);
+    expect(hubbleRec.isFeatured).toBe(false); // retained metadata, retired from selection
     expect(hubbleRec.assetPath).toBe('/assets/models/hubble-nasa-b.glb');
     expect(hubbleRec.fileSize).toBe(5140096);
     expect(hubbleRec.license).toContain('Public Domain');

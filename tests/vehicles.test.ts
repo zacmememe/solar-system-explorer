@@ -87,7 +87,7 @@ describe('航天器载具系统 (Spacecraft Vehicles System)', () => {
     // 空间站长达 109 米，明显大于阿波罗登月舱和旅行者
     expect(iss.dimensions.lengthM).toBeGreaterThan(apollo.dimensions.lengthM * 5);
     expect(iss.dimensions.lengthM).toBeGreaterThan(voyager.dimensions.lengthM * 10);
-    expect(iss.massKg).toBeGreaterThan(apollo.massKg * 10);
+    expect(iss.massKg).toBeGreaterThan(apollo.massKg! * 10);
   });
 
   it('VEHICLE-04: 支持三种正交的摄像机视角模式切换契约', () => {

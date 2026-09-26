@@ -26,27 +26,27 @@ describe('vehicle request outcomes', () => {
   it('publishes only installed IDs and preserves the requested mode through a normal transfer', async () => {
     const { engine, snapshot, raw } = fixture(), request = deferred(), ready = vi.fn();
     vi.spyOn(VehicleLoader, 'loadVehicle').mockReturnValue(request.promise);
-    engine.setVehicle('hubble', ready); engine.setViewCameraMode('VEHICLE_FORMATION');
-    expect(engine.getCurrentVehicle()).toBeNull(); expect(engine.getPendingVehicle()).toBe('hubble'); expect(engine.getViewCameraMode()).toBe('PLANET_OBSERVE'); expect(ready).not.toHaveBeenCalled();
+    engine.setVehicle('cassini', ready); engine.setViewCameraMode('VEHICLE_FORMATION');
+    expect(engine.getCurrentVehicle()).toBeNull(); expect(engine.getPendingVehicle()).toBe('cassini'); expect(engine.getViewCameraMode()).toBe('PLANET_OBSERVE'); expect(ready).not.toHaveBeenCalled();
     snapshot.mode = 'TRANSITION'; snapshot.isTransitioning = true;
     request.resolve(new T.Group()); await flush();
-    expect(engine.getCurrentVehicle()).toBe('hubble'); expect(ready).toHaveBeenCalledOnce(); expect(engine.getViewCameraMode()).toBe('PLANET_OBSERVE');
+    expect(engine.getCurrentVehicle()).toBe('cassini'); expect(ready).toHaveBeenCalledOnce(); expect(engine.getViewCameraMode()).toBe('PLANET_OBSERVE');
     snapshot.mode = 'ORBIT_TARGET'; snapshot.isTransitioning = false;
     expect(engine.getViewCameraMode()).toBe('VEHICLE_FORMATION'); expect(raw.currentVehicleMesh).toBeTruthy();
   });
   it('clears a rejected load and permits retry without a false success notification', async () => {
     const { engine, raw } = fixture(), ready = vi.fn();
     const load = vi.spyOn(VehicleLoader, 'loadVehicle').mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(new T.Group());
-    engine.setVehicle('hubble', ready); engine.setViewCameraMode('VEHICLE_FORMATION'); await flush();
+    engine.setVehicle('cassini', ready); engine.setViewCameraMode('VEHICLE_FORMATION'); await flush();
     expect(ready).not.toHaveBeenCalled(); expect(engine.getCurrentVehicle()).toBeNull(); expect(engine.getPendingVehicle()).toBeNull(); expect(raw.vehicleGroup.visible).toBe(false);
     expect(raw.callbacks.onVehicleLoadError).toHaveBeenCalledOnce(); expect(engine.getViewCameraMode()).toBe('PLANET_OBSERVE');
-    engine.setVehicle('hubble', ready); await flush(); expect(ready).toHaveBeenCalledOnce(); expect(load).toHaveBeenCalledTimes(2);
+    engine.setVehicle('cassini', ready); await flush(); expect(ready).toHaveBeenCalledOnce(); expect(load).toHaveBeenCalledTimes(2);
   });
   it.each(['resolve', 'reject'] as const)('ignores an old %s after another selection', async outcome => {
     const { engine, raw } = fixture(), old = deferred(), next = new T.Group(), oldModel = new T.Group(), ready = vi.fn();
     vi.spyOn(VehicleLoader, 'loadVehicle').mockReturnValueOnce(old.promise).mockResolvedValueOnce(next);
     const dispose = vi.spyOn(VehicleLoader, 'disposeVehicleObject');
-    engine.setVehicle('hubble', ready); engine.setVehicle('iss'); await flush();
+    engine.setVehicle('cassini', ready); engine.setVehicle('iss'); await flush();
     if (outcome === 'resolve') old.resolve(oldModel); else old.reject(new Error('old failure')); await flush();
     expect(engine.getCurrentVehicle()).toBe('iss'); expect(raw.currentVehicleMesh).toBe(next); expect(ready).not.toHaveBeenCalled(); expect(raw.callbacks.onVehicleLoadError).not.toHaveBeenCalled();
     if (outcome === 'resolve') expect(dispose).toHaveBeenCalledWith(oldModel);
@@ -55,7 +55,7 @@ describe('vehicle request outcomes', () => {
     const { engine, raw, descend } = fixture(), request = deferred(), model = new T.Group(), ready = vi.fn();
     vi.spyOn(VehicleLoader, 'loadVehicle').mockReturnValue(request.promise);
     const dispose = vi.spyOn(VehicleLoader, 'disposeVehicleObject');
-    engine.setVehicle('hubble', ready);
+    engine.setVehicle('cassini', ready);
     if (action === 'clear') engine.setVehicle(null);
     if (action === 'descent') descend();
     if (action === 'dispose') {
@@ -85,7 +85,7 @@ describe('strict assets and resource ownership', () => {
   it('rejects GLB failures without substituting a procedural model', async () => {
     vi.spyOn(GLTFLoader.prototype, 'loadAsync').mockRejectedValue(new Error('404'));
     const build = vi.spyOn(VehicleMeshBuilder, 'buildVehicle');
-    await expect(VehicleLoader.loadVehicle('hubble')).rejects.toThrow('未能加载'); expect(build).not.toHaveBeenCalled();
+    await expect(VehicleLoader.loadVehicle('cassini')).rejects.toThrow('未能加载'); expect(build).not.toHaveBeenCalled();
   });
   it('rejects incomplete textures and keeps concurrent managers isolated', async () => {
     const bad = new T.Group(), good = new T.Group(); good.add(new T.Mesh(new T.BoxGeometry(), new T.MeshBasicMaterial()));
@@ -96,7 +96,7 @@ describe('strict assets and resource ownership', () => {
       return { scene: good } as any;
     });
     const dispose = vi.spyOn(VehicleLoader, 'disposeVehicleObject');
-    const [failed, succeeded] = await Promise.allSettled([VehicleLoader.loadVehicle('hubble'), VehicleLoader.loadVehicle('hubble')]);
+    const [failed, succeeded] = await Promise.allSettled([VehicleLoader.loadVehicle('cassini'), VehicleLoader.loadVehicle('cassini')]);
     expect(failed.status).toBe('rejected'); expect(succeeded.status).toBe('fulfilled'); expect(managers[0]).not.toBe(managers[1]); expect(dispose).toHaveBeenCalledWith(bad);
   });
   it('disposes shared instance resources once and preserves the procedural texture cache', () => {

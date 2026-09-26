@@ -5,7 +5,7 @@ import { VehicleViewer3D } from '../src/vehicles/VehicleViewer3D';
 import type { VehicleId } from '../src/contracts/vehicle';
 
 // Exercise the actual effects and Three scene graph without a GPU or new DOM dependency.
-const hooks = vi.hoisted(() => ({ refs: [] as any[], index: 0, effects: [] as (() => void | (() => void))[], container: null as any, camera: null as any }));
+const hooks = vi.hoisted(() => ({ refs: [] as any[], index: 0, effects: [] as (() => void | (() => void))[], container: null as any, camera: null as any, resize: null as any }));
 vi.mock('react', async importOriginal => ({ ...(await importOriginal<any>()),
   useRef: (initial: any) => { const i = hooks.index++; return hooks.refs[i] ??= { current: i === 0 ? hooks.container : initial }; },
   useState: (initial: any) => [initial, vi.fn()],
@@ -24,6 +24,10 @@ function mount() {
   hooks.refs = []; hooks.container = { clientWidth: 400, clientHeight: 340, appendChild: vi.fn() };
   vi.stubGlobal('window', { devicePixelRatio: 1, addEventListener: vi.fn(), removeEventListener: vi.fn() });
   vi.stubGlobal('requestAnimationFrame', vi.fn(() => 1)); vi.stubGlobal('cancelAnimationFrame', vi.fn());
+  vi.stubGlobal('ResizeObserver', class {
+    observe = vi.fn(); disconnect = vi.fn();
+    constructor(public callback: () => void) { hooks.resize = this; }
+  });
   const published = vi.fn(), effects = render('hubble', published);
   effects[0](); const cleanupScene = effects[1]()!; const cleanupLoad = effects[2]()!;
   return { published, cleanupScene, cleanupLoad };
@@ -35,13 +39,18 @@ afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 describe('hangar request ownership', () => {
   it('keeps a large native-unit asset inside the far plane during camera framing', async () => {
     const request = delayed(), model = new T.Group();
-    model.userData = { maxDim: 1000, size: new T.Vector3(1000, 500, 500) };
+    model.userData = { maxDim: 1000, size: new T.Vector3(1000, 500, 500), box: new T.Box3(new T.Vector3(-500,-250,-250),new T.Vector3(500,250,250)) };
     vi.spyOn(VehicleLoader, 'loadVehicle').mockReturnValue(request.promise);
     const { cleanupLoad, cleanupScene } = mount();
     request.resolve(model); await flush();
     vi.mocked(requestAnimationFrame).mock.calls.at(-1)![0](0);
     expect(hooks.camera.far).toBeGreaterThan(hooks.camera.position.length() + 1000);
+    const wideDistance=hooks.camera.position.length();
+    hooks.container.clientWidth=200; hooks.resize.callback();
+    expect(hooks.camera.position.length()).toBeGreaterThan(wideDistance);
+    expect(hooks.camera.aspect).toBe(200/340);
     cleanupLoad(); cleanupScene();
+    expect(hooks.resize.disconnect).toHaveBeenCalledOnce();
   });
   it('releases late results after unmount and disposes viewer helpers', async () => {
     const request = delayed(), model = new T.Group(); vi.spyOn(VehicleLoader, 'loadVehicle').mockReturnValue(request.promise);
@@ -56,7 +65,7 @@ describe('hangar request ownership', () => {
   });
   it('keeps the latest model and ignores another consumer changing legacy generations', async () => {
     const old = delayed(), next = delayed(), staleModel = new T.Group(), newModel = new T.Group();
-    newModel.userData = { maxDim: 4, size: new T.Vector3(4, 2, 1) };
+    newModel.userData = { maxDim: 4, size: new T.Vector3(4, 2, 1), box: new T.Box3(new T.Vector3(-2,-1,-.5),new T.Vector3(2,1,.5)) };
     vi.spyOn(VehicleLoader, 'loadVehicle').mockReturnValueOnce(old.promise).mockReturnValueOnce(next.promise);
     const dispose = vi.spyOn(VehicleLoader, 'disposeVehicleObject');
     const { cleanupLoad, cleanupScene } = mount(); cleanupLoad();

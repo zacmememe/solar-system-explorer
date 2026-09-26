@@ -89,11 +89,14 @@ export class VehicleLoader {
         gltf.scene.position.sub(center); // 使模型几何中心对齐本地原点
 
         // 将 GLTF 场景挂载到包装组
-        wrapper.add(gltf.scene);
+        const metricRoot=new THREE.Group();
+        metricRoot.name='vehicle-metric-root';
+        metricRoot.add(gltf.scene);
+        wrapper.add(metricRoot);
 
         // 应用米制缩放
         const scale = record.metricScale || 1.0;
-        wrapper.scale.setScalar(scale);
+        metricRoot.scale.setScalar(scale);
 
         // 遍历所有子网格，启用阴影与规范材质
         wrapper.traverse((child) => {
@@ -104,7 +107,7 @@ export class VehicleLoader {
             if (mesh.material) {
               const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
               for (const mat of mats) {
-                mat.side = THREE.DoubleSide; // 太空薄壁结构两面均受光
+                if(!record.preserveMaterialSide)mat.side = THREE.DoubleSide;
                 mat.needsUpdate = true;
               }
             }

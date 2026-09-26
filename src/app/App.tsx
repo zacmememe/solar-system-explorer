@@ -215,7 +215,7 @@ export const App: React.FC = () => {
     const engine = engineRef.current;
     if (!engine?.setVehicle(id, () => {
       if (engineRef.current !== engine) return;
-      showToast(`🚀 已登船：${VEHICLE_CATALOG[id].name}，正在伴飞！`, true);
+      showToast(`🚀 ${VEHICLE_CATALOG[id].name}已就绪，开始伴飞`, true);
     })) return;
     engine.setViewCameraMode('VEHICLE_FORMATION');
     showToast('正在准备伴飞…');
@@ -359,7 +359,7 @@ export const App: React.FC = () => {
                     border: activeVehicle ? '1px solid rgba(34, 197, 94, 0.4)' : '1px solid rgba(255, 255, 255, 0.15)',
                   }}
                 >
-                  {activeVehicle ? activeVehicle.name : '未登船'}
+                  {activeVehicle ? activeVehicle.name : '未选择'}
                 </span>
               </button>
               {activeVehicle && (

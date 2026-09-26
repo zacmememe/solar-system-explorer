@@ -5,6 +5,8 @@
  */
 
 import type { VehicleId } from '../contracts/vehicle';
+import { SELECTABLE_VEHICLE_IDS } from '../contracts/vehicle';
+import { VEHICLE_CATALOG } from './VehicleCatalog';
 
 export interface VehicleAssetRecord {
   id: VehicleId;
@@ -21,6 +23,9 @@ export interface VehicleAssetRecord {
   etag?: string;
   isFeatured: boolean;
   metricScale: number; // 统一米制缩放系数
+  calibratedMetres?: boolean;
+  preserveMaterialSide?: boolean;
+  presentation?: {span:number;rotation:[number,number,number]};
   calibratedDimensionsM: {
     lengthM: number;
     widthM: number;
@@ -39,6 +44,8 @@ export interface VehicleAssetRecord {
 }
 
 export const VEHICLE_ASSET_REGISTRY: Record<VehicleId, VehicleAssetRecord> = {
+  juno: packagedVehicle('juno','7e16e9494fe65c3c4ac058a65a02cf0f890f3c613a1d3c051597337b123b5af4',9727448,.8),
+  'space-shuttle': packagedVehicle('space-shuttle','948ccb7e7a15f830eff9029f8f8dd993b99f4d50d31e96dc53533085d8a0a221',6586336,.6375,[.24,Math.PI+.58,0]),
   hubble: {
     id: 'hubble',
     name: '哈勃太空望远镜',
@@ -253,10 +260,22 @@ export const VEHICLE_ASSET_REGISTRY: Record<VehicleId, VehicleAssetRecord> = {
   },
 };
 
+function packagedVehicle(id:VehicleId,sha256:string,fileSize:number,span:number,rotation:[number,number,number]=[.12,-.38,0]):VehicleAssetRecord {
+  const def=VEHICLE_CATALOG[id];
+  return {id,name:def.name,nameEn:def.nameEn,format:'glb',assetPath:`/assets/models/selected/${id}.glb`,
+    source:'NASA 3D Resources · 项目装配与材质修整',sourceUrl:def.sourceRef,
+    license:'NASA Media Usage Guidelines',fileSize,sha256,isFeatured:true,metricScale:1,calibratedMetres:false,
+    calibratedDimensionsM:def.dimensions,hotspots:[],preserveMaterialSide:true,presentation:{span,rotation},
+    approved:false,approvalDateIso:'',notes:'用户选择的集成候选；来源、装配与派生哈希见同目录 provenance.json。未独立批准或米制标定。'};
+}
+VEHICLE_ASSET_REGISTRY.cassini=packagedVehicle('cassini','52c0211f47ebe0bbd6304672d3642ab74ff348097b1caf37d30ead47561b7cc5',5951756,.82);
+VEHICLE_ASSET_REGISTRY['voyager-1']=packagedVehicle('voyager-1','5c83c0af8a7ef08f992caac3572b02c98156f25be94445982d7e2f21d627055b',3271116,.95);
+VEHICLE_ASSET_REGISTRY.iss.calibratedMetres=false;
+VEHICLE_ASSET_REGISTRY.iss.presentation={span:.6375,rotation:[.12,-.38,0]};
+VEHICLE_ASSET_REGISTRY.hubble.isFeatured=false;
+
 export function getFeaturedVehicleIds(): VehicleId[] {
-  return (Object.keys(VEHICLE_ASSET_REGISTRY) as VehicleId[]).filter(
-    (id) => VEHICLE_ASSET_REGISTRY[id]?.isFeatured
-  );
+  return [...SELECTABLE_VEHICLE_IDS];
 }
 
 export function getAllVehicleIds(): VehicleId[] {

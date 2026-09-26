@@ -6,6 +6,22 @@
 import type { VehicleDefinition, VehicleId } from '../contracts/vehicle';
 
 export const VEHICLE_CATALOG: Record<VehicleId, VehicleDefinition> = {
+  'juno': {
+    id:'juno',name:'朱诺号',nameEn:'Juno',type:'orbiter',era:'contemporary',agency:'NASA / JPL',launchYear:2011,
+    dimensions:{lengthM:20,widthM:20,heightM:4.5},dimensionsNote:'太阳翼展开直径约20米；参考资料尺寸，不是模型测量标尺。',massKg:3625,
+    kidFact:'三片巨大的太阳翼，帮助这位木星侦探研究云层下面藏着什么。',
+    description:'朱诺号于2011年发射，2016年进入木星轨道。它通过重力、磁场和微波观测研究木星内部与大气，并拍摄极区云带。',
+    keyMilestone:'首个在木星执行轨道任务的太阳能航天器。',hotspots:[],accentColorHex:0xc9a764,
+    sourceRef:'https://www.jpl.nasa.gov/news/press_kits/juno/facts/',
+  },
+  'space-shuttle': {
+    id:'space-shuttle',name:'航天飞机',nameEn:'Space Shuttle Orbiter',type:'crewed-orbiter',era:'classic',agency:'NASA',launchYear:1981,
+    dimensions:{lengthM:37.24,widthM:23.79,heightM:17.25},dimensionsNote:'轨道器参考尺寸（高度按跑道构型）；模型展示在轨构型。',
+    kidFact:'像火箭一样升空，在太空工作后，像滑翔机一样回到跑道。',
+    description:'美国航天飞机承担载人飞行、卫星部署和维修、空间科学实验与空间站建设。这里展示轨道器本体，含货舱门、尾部三台主发动机与轨道机动发动机。',
+    keyMilestone:'参与哈勃太空望远镜的部署与维修，以及国际空间站建设。',hotspots:[],accentColorHex:0xdce5ef,
+    sourceRef:'https://ntrs.nasa.gov/api/citations/19940023701/downloads/19940023701.pdf',
+  },
   'apollo-lm': {
     id: 'apollo-lm',
     name: '阿波罗登月舱',
