@@ -7,10 +7,12 @@
 最小阅读顺序：
 
 1. `AGENTS.md` 和 `review-exports/coordination/queue.md`：后者是本机唯一动态状态，不复制新看板。
-2. [最新远景、石块与土卫三报告](mars-materials-body-assets-report.md)：产品03b6220、343测试、49图证据与剩余粗糙处；再读 [极简HUD与盖尔报告](minimal-hud-gale-report.md)：大屏98px薄条、完整信息进菜单，盖尔512m核心恢复2m源网格及独立净空。此前 [阶段HUD报告](phase-aware-hud-report.md)保留相机/书签/遥测语义；[盖尔旧方案](plans/gale-display-ground-refinement.md)为实施前诊断。前轮 [火星与天体真实感报告](surface-atmosphere-realism-report.md)包含火星大气/地面/夜间遮光、3张新观测卫星图和30体后续清单。导航上下文见 [导航与视觉报告](navigation-experience-report.md)：跨星避障、相机连续性、卫星母星构图、土星环影。地形上下文保留于 [月面连续性报告](lunar-boundary-continuity-report.md)，更早系统修复见 [系统报告](codex-system-polish-report.md)。
+2. [最新下降返回与换落区报告](landing-continuity-report.md)：产品aa8d9d4、361测试、25张最终图；实际机位升空、结束不跳位、球外绕行、显式白昼选择与取消/倍速优先。再读 [远景、石块与土卫三报告](mars-materials-body-assets-report.md)：产品03b6220、343测试、49图证据与剩余粗糙处；[极简HUD与盖尔报告](minimal-hud-gale-report.md)：大屏98px薄条、完整信息进菜单，盖尔512m核心恢复2m源网格及独立净空。此前 [阶段HUD报告](phase-aware-hud-report.md)保留相机/书签/遥测语义；[盖尔旧方案](plans/gale-display-ground-refinement.md)为实施前诊断。前轮 [火星与天体真实感报告](surface-atmosphere-realism-report.md)包含火星大气/地面/夜间遮光、3张新观测卫星图和30体后续清单。导航上下文见 [导航与视觉报告](navigation-experience-report.md)：跨星避障、相机连续性、卫星母星构图、土星环影。地形上下文保留于 [月面连续性报告](lunar-boundary-continuity-report.md)，更早系统修复见 [系统报告](codex-system-polish-report.md)。
 3. [体验基础契约](experience-foundations.md)：物理空间/相机/时间/存档约束与真实 UI 验证方法。
 
-最新产品候选为 `03b6220f2161301c9207f9a110a5b1c38ba5fd54`（base b22c76b），生产包 `index-DFTktD8V.js` / CSS `index-CH4BTTPh.css`。53文件343测试通过；冻结包盖尔同机位诊断、耶泽罗昼夜与静海旅程、土卫三贴图及503回退共49张主要证据。精确哈希、作者已看图范围和未验项目见最新报告。后续仅文档/验证脚本提交不构成产品漂移；src、资产或配置变化要绑定新候选。所有既有HUD、地形、导航修复仍在历史中。核对git status，其他作者原有未跟踪文件不能删除或一并提交。
+最新产品候选为 `aa8d9d4a2a3c7cc66a5b7dc2d58f7c7de5b08881`（base e38620d），生产包 `index-VtXa3VT5.js` / CSS `index-CH4BTTPh.css`。54文件361测试通过；冻结包月/火高空中止、低空悬停/触地返航、转头接管、落区绕行/取消以及白昼时间菜单与手动改速，共25张最终截图、两份0错误报告。精确哈希、作者已看图范围和未验项目见最新报告。后续仅文档/验证脚本提交不构成产品漂移；src、资产或配置变化要绑定新候选。所有既有HUD、地形、导航修复仍在历史中。核对git status，其他作者原有未跟踪文件不能删除或一并提交。
+
+返航不再固定到50km，也不在结束时另起默认整球flyTo：从实际机位单调升空，终端轨迹保留到相机接手。用户在途中转头后，自由观察near必须受真实球面净空约束，不能只看自由支点距离；旧版曾切掉半块月球，反例保留在candidate/14。降落准备不再隐式选未来白昼；需要亮面时使用底部“··· → 时间倍率 → 切换到所选落区的白昼”。同天体换落区复用球外短弧，准备/绕行取消清理临时倍速，用户手动改速优先。盖尔高空区域影像矩形界线和低空远坡仍待改善，不把镜头连续性通过写成地形真实感通过。
 
 关键纠错：旧报告的“地表秒级卡顿”和“5.5ms/帧”已撤回。前者来自探针未定义变量导致采样 Promise 悬挂，后者把 render pass 数当作显示帧数。性能使用 `scripts/lib/browser-performance.ts` 的有界 RAF 采样，并同时看引擎帧数；所有性能测量只跑一个浏览器负载。
 
@@ -23,6 +25,8 @@
 复现验证：先 `npm run build`，用本机已有 Edge 和本地 preview。`TEST_URL` 指向实际端口；`EVIDENCE_DIR` 指向 `D:\solar-evidence\<任务>`。
 
 - `npm test`：完整单元/契约门禁。
+- `CHECK_FIXED=1 node scripts/verify-landing-continuity.mjs`：月/火实际UI高低空返航、静海触地转头、换落区/取消与末端逐帧接续。Windows用`$env:CHECK_FIXED='1'`。
+- `DAYLIGHT_ACTION=1 node scripts/verify-landing-continuity-controls.mjs`：先以正常时间菜单选白昼，再查盖尔低空返航、取消与手动改速。与上一浏览器串行运行，不在取证期间重建dist；本轮端口5207、证据landing-continuity/final与final-daylight-controls。
 - `node scripts/verify-mars-materials.mjs`：盖尔正常UI及明确标记诊断对照；COMPARE_LEGACY=1开启同机位旧材质/旧石块坐标对照，ISOLATE=0关闭逐层隔离。返轨必须等相机停稳。
 - `node scripts/verify-tethys-asset.mjs`：土卫三观测贴图、母星背景、拖动、快速切换与503故障回退。
 - `npm run verify:hud`：默认耶泽罗；`SITE_ID=tranquility-base`改查静海，包含全景书签、取消、大屏占高、横竖屏菜单、收起/恢复焦点、菜单跨阶段关闭、实际视向和返回。`06-preparing`可能在截图时已进入下降，不能按文件名虚构准备期视觉验收。
