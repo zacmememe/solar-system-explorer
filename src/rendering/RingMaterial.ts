@@ -64,8 +64,8 @@ export function createSaturnRingMaterial(options: RingMaterialOptions): THREE.Sh
         float u = clamp((r - innerRadius) / (outerRadius - innerRadius), 0.0, 1.0);
         vec4 texColor = texture2D(ringTexture, vec2(u, 0.5));
 
-        // 若 alpha 极小（如卡西尼环缝最高透光区），直接剔除
-        if (texColor.a < 0.03) {
+        // 只丢弃全透明像素；弱窄环的次像素覆盖不能被阈值抹掉
+        if (texColor.a <= 0.0) {
           discard;
         }
 
@@ -101,116 +101,39 @@ export function createSaturnRingMaterial(options: RingMaterialOptions): THREE.Sh
   });
 }
 
-/**
- * 天王星高拟真细密暗色冰晶光环径向纹理 (Uranus Rings)
- * 真实还原 13 道独立细窄光环，以最外侧最显著的 Epsilon (ε) 环为主导
+/** Main narrow-ring radii/widths: NASA NSSDCA/PDS Ring-Moon Node.
+ * Area coverage preserves sub-texel optical depth without inflating ring width.
+ * Reflectance and uniform azimuth are illustrative; Neptune arcs are not modeled.
  */
-export function getUranusRingTexture(): THREE.Texture {
-  if (typeof document === 'undefined') {
-    const data = new Uint8Array([100, 116, 139, 180]);
-    const tex = new THREE.DataTexture(data, 1, 1);
-    tex.needsUpdate = true;
-    return tex;
-  }
-
-  const W = 512, H = 1;
-  const canvas = document.createElement('canvas');
-  canvas.width = W; canvas.height = H;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return new THREE.CanvasTexture(canvas);
-
-  const imgData = ctx.createImageData(W, H);
-  const data = imgData.data;
-
-  for (let x = 0; x < W; x++) {
-    const u = x / W; // 0.0=内边缘，1.0=外边缘
-    let alpha = 0.0;
-    let r = 148, g = 163, b = 184; // 优雅低反照率深青灰冰屑色
-
-    // 内部细窄暗环群 (6, 5, 4, Alpha, Beta, Eta, Gamma, Delta 环)
-    if (u > 0.18 && u < 0.22) alpha = 0.25;
-    if (u > 0.32 && u < 0.36) alpha = 0.32;
-    if (u > 0.45 && u < 0.49) alpha = 0.45;
-    if (u > 0.58 && u < 0.63) alpha = 0.55;
-    if (u > 0.70 && u < 0.74) alpha = 0.48;
-
-    // 最外侧主导巨环：Epsilon (ε) 环 (最密最高光深度)
-    if (u > 0.86 && u < 0.96) {
-      const epNorm = (u - 0.91) / 0.05;
-      alpha = Math.max(0.0, 1.0 - epNorm * epNorm) * 0.85;
-      r = 186; g = 230; b = 253; // ε 环富冰晶亮青白
+function narrowRingTexture(radiusKm:number, inner:number, outer:number,
+  bands:readonly (readonly [number,number,number])[]):THREE.DataTexture {
+  const width=4096, data=new Uint8Array(width*4);
+  const min=radiusKm*inner, span=radiusKm*(outer-inner), step=span/width;
+  for(let x=0;x<width;x++) {
+    const lo=min+x*step, hi=lo+step;
+    let alpha=0;
+    for(const [center,bandWidth,tau] of bands) {
+      const coverage=Math.max(0,Math.min(hi,center+bandWidth/2)-Math.max(lo,center-bandWidth/2))/step;
+      alpha+=coverage*(1-Math.exp(-tau));
     }
-
-    const idx = x * 4;
-    data[idx] = r;
-    data[idx + 1] = g;
-    data[idx + 2] = b;
-    data[idx + 3] = Math.round(alpha * 255);
+    data.set([100,98,95,Math.round(Math.min(1,alpha)*255)],x*4);
   }
-
-  ctx.putImageData(imgData, 0, 0);
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.wrapS = THREE.ClampToEdgeWrapping;
-  tex.wrapT = THREE.ClampToEdgeWrapping;
+  const tex=new THREE.DataTexture(data,width,1);
+  tex.colorSpace=THREE.SRGBColorSpace;
+  tex.minFilter=THREE.LinearMipmapLinearFilter;tex.magFilter=THREE.LinearFilter;
+  tex.generateMipmaps=true;tex.needsUpdate=true;
   return tex;
 }
-
-/**
- * 海王星暗色尘埃与密集弧段光环径向纹理 (Neptune Rings)
- * 真实还原 Galle 弥散内环、Le Verrier 环与带有著名的自由/平等/博爱光环弧段的 Adams 环
- */
-export function getNeptuneRingTexture(): THREE.Texture {
-  if (typeof document === 'undefined') {
-    const data = new Uint8Array([70, 60, 50, 140]);
-    const tex = new THREE.DataTexture(data, 1, 1);
-    tex.needsUpdate = true;
-    return tex;
-  }
-
-  const W = 512, H = 1;
-  const canvas = document.createElement('canvas');
-  canvas.width = W; canvas.height = H;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return new THREE.CanvasTexture(canvas);
-
-  const imgData = ctx.createImageData(W, H);
-  const data = imgData.data;
-
-  for (let x = 0; x < W; x++) {
-    const u = x / W;
-    let alpha = 0.0;
-    let r = 120, g = 100, b = 85; // 碳化有机辐射尘埃微铜褐色
-
-    // 内侧 Galle 弥散尘埃宽环
-    if (u > 0.15 && u < 0.35) {
-      alpha = 0.15 * Math.sin(((u - 0.15) / 0.20) * Math.PI);
-    }
-    // Le Verrier 狭窄主环
-    if (u > 0.52 && u < 0.56) {
-      alpha = 0.45;
-    }
-    // Lassell 极暗光环薄层
-    if (u > 0.56 && u < 0.75) {
-      alpha = 0.08;
-    }
-    // 最外侧著名 Adams 弧环
-    if (u > 0.88 && u < 0.94) {
-      alpha = 0.65;
-      r = 160; g = 140; b = 120;
-    }
-
-    const idx = x * 4;
-    data[idx] = r;
-    data[idx + 1] = g;
-    data[idx + 2] = b;
-    data[idx + 3] = Math.round(alpha * 255);
-  }
-
-  ctx.putImageData(imgData, 0, 0);
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.wrapS = THREE.ClampToEdgeWrapping;
-  tex.wrapT = THREE.ClampToEdgeWrapping;
-  return tex;
+export function getUranusRingTexture():THREE.Texture {
+  // Variable-width rings use representative widths within the observed range.
+  return narrowRingTexture(25362,1.45,2.15,[
+    [41837,1.5,.3],[42234,2,.5],[42571,2,.3],[44718,7,.4],[45661,8,.3],
+    [47176,1.6,.4],[47627,2.5,.4],[48300,5,.4],[50024,2,.1],[51149,58,1],
+  ]);
+}
+export function getNeptuneRingTexture():THREE.Texture {
+  // Galle/Lassell extremely faint diffuse components omitted in this display.
+  return narrowRingTexture(24622,1.65,2.60,[[53200,50,.006],[62933,15,.03]]);
 }
 
 export interface RingShadowPlanetMaterialOptions {

@@ -71,6 +71,8 @@ export interface RockFieldOptions {
   count: number;
   /** 幂律尺寸上界（米） */
   sizeMaxM: number;
+  /** Minimum half-size in metres; Mars debris may be finer than lunar boulders. */
+  sizeMinM?: number;
   /** 触地净空区半径（米）：停驻点附近不布石 */
   clearZoneM: number;
   /** 坡度过滤：局部坡度超过该值（度）不放石（石块不会停在陡坡上） */
@@ -118,9 +120,12 @@ export function generateRockPlacements(opts: RockFieldOptions): RockPlacement[] 
     // S3b 坡度偏好：接受概率随局部坡度上升（崩积裙富集），平坦基线 30%
     const acceptP = 0.3 + Math.max(0, Math.min(1, opts.slopeWeight)) * (slopeDeg / opts.maxSlopeDeg) * 0.7;
     if (rng() > acceptP) continue;
-    // 幂律尺寸：u^-1.1 归一到 [0.15, sizeMax] m
+    // Inverse CDF of a bounded power law. Clamping an unbounded tail piles up
+    // identical maximum-sized boulders (~15% for the old Mars parameters).
     const u = rng();
-    const s = Math.min(opts.sizeMaxM, 0.15 * Math.pow(1 - u, -1.1));
+    const minimum = Math.min(opts.sizeMinM ?? 0.15, opts.sizeMaxM);
+    const tail = Math.pow(minimum / opts.sizeMaxM, 1 / 1.1);
+    const s = opts.sizeMinM === undefined ? Math.min(opts.sizeMaxM, 0.15 * Math.pow(1-u,-1.1)) : minimum * Math.pow(1 - u * (1 - tail), -1.1);
     out.push({
       latDeg: lat,
       lonDeg: lon,
@@ -137,9 +142,9 @@ export function generateRockPlacements(opts: RockFieldOptions): RockPlacement[] 
  * 单变体碎石几何：icosahedron 顶点径向确定性抖动 + 竖向压扁（石块贴地形态）。
  * 引擎按变体各建一个 InstancedMesh（共享材质）。
  */
-export function buildRockGeometry(seed: number, variant: number): THREE.BufferGeometry {
+export function buildRockGeometry(seed: number, variant: number, coherentFacets = false): THREE.BufferGeometry {
   const rng = mulberry32(seed + 101 * (variant + 1));
-  const g = new THREE.IcosahedronGeometry(1, 1);
+  const g = new THREE.IcosahedronGeometry(1, coherentFacets ? 2 : 1);
   const pos = g.attributes.position as THREE.BufferAttribute;
   // IcosahedronGeometry is non-indexed: adjacent faces repeat the same vertex.
   // Reuse its radial offset, otherwise independent jitter tears every edge open.
@@ -148,7 +153,9 @@ export function buildRockGeometry(seed: number, variant: number): THREE.BufferGe
     const key = [pos.getX(i),pos.getY(i),pos.getZ(i)].map(n=>Math.round(n*1e6)).join(',');
     let jitter = offsets.get(key);
     if (jitter === undefined) {
-      jitter = 0.72 + rng() * 0.56;
+      // Broad, coherent facets instead of unrelated sharp spikes at each corner.
+      const x=pos.getX(i), y=pos.getY(i), z=pos.getZ(i);
+      jitter = coherentFacets ? 0.94 + 0.07 * Math.sin(x*3.1 + variant) * Math.cos(z*2.7-y*1.9) + 0.04 * (rng()-0.5) : 0.72 + rng()*0.56;
       offsets.set(key,jitter);
     }
     pos.setXYZ(

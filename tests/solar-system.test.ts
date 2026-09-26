@@ -126,8 +126,8 @@ describe('太阳系全行星与卫星系统 (Solar System Architecture & Astrono
     expect(coronaMat.blending).toBe(THREE.AdditiveBlending);
   });
 
-  it('SOLAR-06: 生产资产清单完整包含全太阳系 15 件 2K 权威准入资产', () => {
-    expect(manifestData.assets.length).toBe(15);
+  it('SOLAR-06: 新增观测地图不能丢失原有 15 件生产资产或重复资产 ID', () => {
+    expect(new Set(manifestData.assets.map(a=>a.id)).size).toBe(manifestData.assets.length);
     const assetIds = manifestData.assets.map((a: any) => a.id);
 
     const expectedAssets = [

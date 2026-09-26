@@ -1,9 +1,6 @@
 /**
- * 太阳发光与日冕边缘散射材质
- * 遵循天体物理视觉特征：
- * 1. 边缘昏暗（Limb Darkening）与中心高温辉光；
- * 2. 动态光球对流纹理扰动；
- * 3. 伴随外部半透明日冕光晕外壳。
+ * 太阳可见光外观近似：保留来源纹理的细节与边缘变暗；采用中性亮色。
+ * 日冕为克制的展示光晕，不是校准辐射或光球对流模拟。
  */
 
 import * as THREE from 'three';
@@ -16,8 +13,8 @@ export function createSunMaterial(sunTexture: THREE.Texture): THREE.ShaderMateri
     uniforms: {
       sunTexture: { value: sunTexture },
       time: { value: 0.0 },
-      glowColor: { value: new THREE.Color(1.0, 0.65, 0.2) },
-      coreColor: { value: new THREE.Color(1.0, 0.95, 0.8) },
+      glowColor: { value: new THREE.Color(0.94, 0.96, 1.0) },
+      coreColor: { value: new THREE.Color(1.0, 0.99, 0.97) },
     },
     vertexShader: `
       varying vec2 vUv;
@@ -46,16 +43,18 @@ export function createSunMaterial(sunTexture: THREE.Texture): THREE.ShaderMateri
 
       void main() {
         // 轻微对流动画采样
-        vec2 uvOffset = vec2(time * 0.005, 0.0);
-        vec4 texColor = texture2D(sunTexture, vUv + uvOffset);
+        // No second rotation: the body already rotates in simulation time.
+        vec4 texColor = texture2D(sunTexture, vUv);
 
         // 视线夹角与边缘昏暗（Limb Darkening）
         vec3 viewDir = normalize(vViewPosition);
         float dotNV = max(dot(vNormal, viewDir), 0.0);
 
-        // 中心高亮，边缘稍深暖橙色
+        // 中心更亮，边缘略暗
         float limbFactor = pow(dotNV, 0.6);
-        vec3 finalColor = mix(glowColor * texColor.rgb * 1.5, coreColor * texColor.rgb * 1.8, limbFactor);
+        // Illustrative visible-light appearance, not calibrated white-light imagery.
+        float detail = 0.65 + dot(texColor.rgb, vec3(0.2126,0.7152,0.0722));
+        vec3 finalColor = mix(glowColor*0.8,coreColor*1.7,limbFactor)*detail;
 
         gl_FragColor = vec4(finalColor, 1.0);
         #include <tonemapping_fragment>
@@ -73,8 +72,8 @@ export function createSunMaterial(sunTexture: THREE.Texture): THREE.ShaderMateri
 export function createSunCoronaMaterial(coreRadiusRatio: number = 0.45): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
-      coronaColor: { value: new THREE.Color(1.0, 0.45, 0.08) },
-      coreGlowColor: { value: new THREE.Color(1.0, 0.85, 0.35) },
+      coronaColor: { value: new THREE.Color(0.8, 0.86, 1.0) },
+      coreGlowColor: { value: new THREE.Color(1.0, 0.98, 0.95) },
       coreRadiusRatio: { value: coreRadiusRatio },
       time: { value: 0.0 },
     },
@@ -124,7 +123,7 @@ export function createSunCoronaMaterial(coreRadiusRatio: number = 0.45): THREE.S
 
         // 内层明亮炽金白，外层漫射金橙色
         vec3 col = mix(coronaColor * 1.5, coreGlowColor * 2.4, exp(-d * 14.0));
-        gl_FragColor = vec4(col, alpha * 0.9);
+        gl_FragColor = vec4(col, alpha * 0.16);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }

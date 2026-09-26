@@ -204,8 +204,8 @@ export const BODIES: Record<string, CelestialBodyData> = {
     observationTip: '木卫一全身黄澄澄红彤彤，像一张超级大比萨，表面有 400 多座活跃的活火山！',
     description: '木卫一是全太阳系地质活动最剧烈的天体，由于木星与其他卫星的潮汐引力拉扯反复挤压摩擦其内部，产生剧烈的高温岩浆与硫磺喷发，羽流高达数百公里。',
     funFact: '木卫一的火山喷泉能喷出 500 公里高的硫磺气体，直接冲进太空！',
-    colorAssetId: 'moon-svs-2025-2k',
-    sourceRef: 'NASA Galileo & Voyager / USGS',
+    colorAssetId: "io-usgs-galileo-1k",
+    sourceRef: "NASA/JPL/USGS Astrogeology · Galileo/Voyager 增强色",
   },
   europa: {
     id: 'europa',
@@ -326,8 +326,8 @@ export const BODIES: Record<string, CelestialBodyData> = {
     observationTip: '土卫一上面有一个占据整颗星球三分之一的巨型赫歇尔陨石坑，酷似《星球大战》里的“死星”！',
     description: '土卫一几乎全由水冰组成。其表面的赫歇尔撞击坑直径达 130 公里，坑壁高达 5 公里，当年形成该坑的撞击几乎将整颗土卫一彻底粉碎。',
     funFact: '土卫一在红外热成像图中呈现出经典的“吃豆人 (Pac-Man)”热点形状！',
-    colorAssetId: 'moon-svs-2025-2k',
-    sourceRef: 'NASA Cassini / Voyager',
+    colorAssetId: "mimas-cassini-pia17214-4k",
+    sourceRef: "NASA/JPL-Caltech/Space Science Institute · Cassini",
   },
   enceladus: {
     id: 'enceladus',
@@ -345,8 +345,8 @@ export const BODIES: Record<string, CelestialBodyData> = {
     observationTip: '土卫二就像一颗雪白的洁净珍珠，南极有一道道“虎纹”裂缝，正在不断向太空喷出巨大的冰喷泉！',
     description: '土卫二拥有全太阳系最高的光反照率（反射几乎 99% 的阳光）。卡西尼号飞掠时发现了其南极水冰羽流，证实其冰壳下拥有温暖的碱性地下海洋与海底热液活动。',
     funFact: '土卫二南极喷发的水冰碎屑不仅落回自身表面，还一路喷进太空，织成了土星美丽的 E 环！',
-    colorAssetId: 'moon-svs-2025-2k',
-    sourceRef: 'NASA Cassini PIA18435',
+    colorAssetId: "enceladus-cassini-pia18435-4k",
+    sourceRef: "NASA/JPL-Caltech/Space Science Institute/Lunar and Planetary Institute",
   },
   tethys: {
     id: 'tethys',

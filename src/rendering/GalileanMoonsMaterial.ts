@@ -1,15 +1,6 @@
 /**
- * 木星四大伽利略卫星专属天体物理着色材质 (GalileanMoonsMaterial)
- * 遵循 01-REBUILD-PLAN 与 AGENTS.md 规范：
- * 1. 木卫一 (Io): Lommel-Seeliger 多孔硫粉散射、真空剃刀晨昏线、满月冲日激增、
- *    ★ 标志性黑夜侧超温火山口熔岩湖自发光 (Nightside Lava Lake Incandescence)；
- * 2. 木卫二 (Europa): 纯净高反照水冰漫散射 (Albedo 0.67)、水冰光滑菲涅尔镜面微光、
- *    红褐色双脊冰裂隙 (Lineae) 与柯纳马拉混沌地形 (Chaos)、冲日激增；
- * 3. 木卫三 (Ganymede): 双重地质单元反照率分异着色 (古老重撞击暗区 Galileo Regio vs 年轻高反照亮槽沟 Uruk Sulci)、
- *    磁层诱导极地高纬带电粒子霜冻帽增强；
- * 4. 木卫四 (Callisto): 40 亿年未更新的最饱和古老冰岩混合地壳、瓦尔哈拉 (Valhalla) 巨型多环断崖盆地阶梯对比、
- *    退化撞击坑升华白霜边缘反照率提升；
- * 5. 全面支持教学暗部补光联动 (teachingLight)。
+ * 伽利略卫星表面展示材质：现有拼图、近似冰/岩反射与教学补光。
+ * 不从暗像素猜测熔岩湖，不叠加假极冠；Io 使用增强色观测拼图，其余仍是程序纹理。
  */
 
 import * as THREE from 'three';
@@ -22,7 +13,7 @@ export interface GalileanMoonUniforms {
 }
 
 // ---------------------------------------------------------------------------
-// 1. 木卫一 (Io) — 活火山与黑夜侧熔岩自发光材质
+// 1. 木卫一 (Io) — 增强色表面与近似反射
 // ---------------------------------------------------------------------------
 export function createIoMaterial(ioTex: THREE.Texture): THREE.ShaderMaterial {
   const uniforms: GalileanMoonUniforms = {
@@ -84,22 +75,13 @@ export function createIoMaterial(ioTex: THREE.Texture): THREE.ShaderMaterial {
         // 5. 白昼向阳面受光色彩
         vec3 litColor = rawTex.rgb * totalDiffuse;
 
-        // 6. ★ 标志性科学特征：黑夜侧超温火山口/熔岩湖热辐射自发光 (Lava Lake Incandescence)
-        // 木卫一活火山破火山口（Loki Patera、Pele、Tvashtar 等）为极深暗色玄武岩湖底（RGB < 0.20）
-        // 贴图上其余地区为高反照率硫黄与白霜（luma > 0.45）
-        float darkCaldera = 1.0 - smoothstep(0.08, 0.22, max(max(rawTex.r, rawTex.g), rawTex.b));
-        // 火山口核心热辐射微光：中央金黄熔岩 + 外圈灼热赤红
-        vec3 lavaGlow = mix(vec3(0.95, 0.22, 0.04), vec3(1.0, 0.72, 0.18), darkCaldera * 0.6) * 1.8;
-        // 仅在背阳黑夜侧显露，并随相角掠射柔和减退
-        float nightsideFactor = (1.0 - terminator);
-        vec3 volcanicEmission = lavaGlow * darkCaldera * nightsideFactor * 0.95;
-
+        // Albedo alone cannot identify a hot lava lake. No thermal map is loaded.
         // 7. 教学暗部补光 (teachingLight) 联动
         vec3 deepSpaceAmbient = rawTex.rgb * 0.02;
         vec3 teachingAmbient = rawTex.rgb * 0.42;
         vec3 ambientTerm = mix(deepSpaceAmbient, teachingAmbient, teachingLight);
 
-        vec3 finalColor = litColor * terminator + volcanicEmission + ambientTerm * (1.0 - terminator * 0.85);
+        vec3 finalColor = litColor * terminator + ambientTerm * (1.0 - terminator * 0.85);
 
         gl_FragColor = vec4(finalColor, 1.0);
         #include <tonemapping_fragment>
@@ -268,7 +250,7 @@ export function createGanymedeMaterial(ganymedeTex: THREE.Texture): THREE.Shader
         float terminator = smoothstep(-0.005, 0.010, NdotL);
 
         // 6. 受光色彩合成
-        vec3 surfaceColor = rawTex.rgb + vec3(0.12, 0.15, 0.20) * polarCap;
+        vec3 surfaceColor = rawTex.rgb;
         vec3 litColor = surfaceColor * totalDiffuse;
 
         // 7. 教学暗部补光
@@ -352,7 +334,7 @@ export function createCallistoMaterial(callistoTex: THREE.Texture): THREE.Shader
         float terminator = smoothstep(-0.006, 0.010, NdotL);
 
         // 6. 受光色彩
-        vec3 surfaceColor = rawTex.rgb * 1.35 + vec3(0.18, 0.20, 0.25) * frostRim;
+        vec3 surfaceColor = rawTex.rgb;
         vec3 litColor = surfaceColor * totalDiffuse;
 
         // 7. 教学暗部补光

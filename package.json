@@ -16,7 +16,8 @@
     "verify-assets": "tsx scripts/verify-assets.ts",
     "launch": "node scripts/launch.mjs",
     "deploy": "tsx scripts/deploy-to-vercel.ts",
-    "review:export": "node scripts/export-review.mjs"
+    "review:export": "node scripts/export-review.mjs",
+    "verify:realism": "node --import tsx scripts/verify-realism.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.454.0",

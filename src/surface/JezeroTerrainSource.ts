@@ -9,6 +9,7 @@
  * metadata.projection.referenceRadiusM 读取，勿跨站混用。
  */
 import * as THREE from 'three';
+import { computeTerrainNormals } from './TerrainBoundary';
 
 interface JezeroMeta {
   schemaVersion: number;
@@ -156,6 +157,11 @@ export class JezeroTerrainSource {
     return { valid: true, heightM: v };
   }
 
+  /** Physical span of UV [0,1], including pixel-center convention. */
+  public get uvSpanMeters(): THREE.Vector2 {
+    return new THREE.Vector2((this.meta!.width-1)*this.meta!.stepMeters,(this.meta!.height-1)*this.meta!.stepMeters);
+  }
+
   /** 地表网格（与月球 buildDemWindowGeometry 同构；datum=Mars2000 局部球） */
   public buildDemWindowGeometry(baseRadius: number, maxSegments = 512): THREE.BufferGeometry | null {
     if (!this.meta || !this.heights) return null;
@@ -168,7 +174,7 @@ export class JezeroTerrainSource {
     const cols = Math.floor((W - 1) / stepI) + 1;
     const rows = Math.floor((H - 1) / stepJ) + 1;
     const scale = baseRadius / this.datumRadiusM;
-    const positions = new Float32Array(cols * rows * 3);
+    const positions = new Float64Array(cols * rows * 3);
     const uvs = new Float32Array(cols * rows * 2);
     let p = 0, u = 0;
     for (let j = 0; j < rows; j++) {
@@ -200,10 +206,10 @@ export class JezeroTerrainSource {
       }
     }
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('position', new THREE.BufferAttribute(Float32Array.from(positions), 3));
     geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
     geo.setIndex(indices);
-    geo.computeVertexNormals();
+    computeTerrainNormals(geo, positions);
     geo.userData.surfaceGrid = {cols,rows,
       lat0:centerLat+this.meta.windowSizeM[1]/2/mPerDeg,
       lon0:centerLon-this.meta.windowSizeM[0]/2/(mPerDeg*cosLat),

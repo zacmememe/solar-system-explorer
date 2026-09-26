@@ -872,7 +872,7 @@ export function getMarsMoonTexture(isPhobos: boolean): THREE.Texture {
     return isPhobos ? (phobosTexCache = fb) : (deimosTexCache = fb);
   }
 
-  // 科学级 1024x512 经纬度全景贴图，近距离观察依然保持锐利细节
+  // 1024x512 程序示意，非测量地形或探测器原图
   const W = 1024, H = 512;
   const canvas = document.createElement('canvas');
   canvas.width = W; canvas.height = H;
@@ -908,11 +908,11 @@ export function getMarsMoonTexture(isPhobos: boolean): THREE.Texture {
       const pz = cosP * Math.sin(theta);
 
       if (isPhobos) {
-        // --- 火卫一 (Phobos) 碳质小行星表土与巨型撞击地貌 (NASA 观测级测光拉伸) ---
+        // --- 火卫一：程序表土与特征坑示意，未进行测光定标 ---
         const nRegolith = fbm3D(px * 16.0, py * 16.0, pz * 16.0, 5);
         const nMicro = fbm3D(px * 32.0, py * 32.0, pz * 32.0, 3);
 
-        // 还原 NASA HiRISE 广角多光谱标准中灰碳质调，地质纹理一目了然
+        // 低饱和灰褐色示意，不是 HiRISE 色彩还原
         let r = 128 + (nRegolith - 0.5) * 44 + (nMicro - 0.5) * 16;
         let g = 120 + (nRegolith - 0.5) * 40 + (nMicro - 0.5) * 14;
         let b = 112 + (nRegolith - 0.5) * 38 + (nMicro - 0.5) * 14;
@@ -955,11 +955,11 @@ export function getMarsMoonTexture(isPhobos: boolean): THREE.Texture {
         }
 
         // 4. 环绕全星的放射状应力槽沟系 (Parallel Stress Grooves / Fractures)
-        // 斯蒂克尼撞击产生的全星贯穿性多频平行断裂槽沟
+        // 沟槽成因尚不确定；仅作低对比示意，不能把周期波纹当测量高程
         const groovePhase = phi * 36.0 + Math.sin(theta * 4.0 + 1.2) * 2.2;
         const grooveLine = Math.pow(Math.abs(Math.sin(groovePhase)), 10.0);
         if (grooveLine > 0.30) {
-          const grooveShadow = (grooveLine - 0.30) / 0.70 * 26.0;
+          const grooveShadow = (grooveLine - 0.30) / 0.70 * 5.0;
           r -= grooveShadow;
           g -= grooveShadow;
           b -= grooveShadow;

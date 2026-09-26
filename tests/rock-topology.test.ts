@@ -12,8 +12,8 @@ it('rocks rest on rendered triangles, not the bilinear saddle above them',()=>{
   g.dispose();
 });
 
-for(let variant=0;variant<3;variant++) it(`rock variant ${variant} is a closed outward surface, not disconnected shards`,()=>{
-  const g=buildRockGeometry(20260924,variant), p=g.getAttribute('position');
+for(const coherent of [false,true]) for(let variant=0;variant<3;variant++) it(`rock variant ${variant}, coherent=${coherent} is a closed outward surface, not disconnected shards`,()=>{
+  const g=buildRockGeometry(20260924,variant,coherent), p=g.getAttribute('position');
   const edges=new Map<string,number>();
   const key=(v:THREE.Vector3)=>v.toArray().map(n=>Math.round(n*1e6)).join(',');
   for(let i=0;i<p.count;i+=3) {

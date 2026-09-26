@@ -45,6 +45,7 @@ import {
 import { createSunMaterial, createSunCoronaMaterial } from '../rendering/SunMaterial';
 import { createJupiterMaterial } from '../rendering/JupiterMaterial';
 import { createMarsMaterial } from '../rendering/MarsMaterial';
+import { createObservationSkyMaterial, marsAtmosphereState, MARS_REGOLITH_TINT, installMarsFog } from '../rendering/MarsAtmosphere';
 import { createVenusAtmosphereMaterial, createVenusRadarMaterial } from '../rendering/VenusMaterial';
 import { createMercuryMaterial } from '../rendering/MercuryMaterial';
 import { createIceGiantMaterial } from '../rendering/IceGiantMaterial';
@@ -734,6 +735,7 @@ export class SolarEngine {
         polygonOffsetFactor: -1,
         polygonOffsetUnits: -1,
       });
+      installMarsFog(terrainMat, this.marsAirColor, {spanM:dtm.uvSpanMeters, metersToLocal:satRadius/dtm.datumRadius}, this.marsSunVisibility);
       stack.terrainMaterial = terrainMat;
       const terrainMesh = new THREE.Mesh(new THREE.BufferGeometry(), terrainMat);
       terrainMesh.name = `${stack.siteId}-terrain`;
@@ -749,7 +751,7 @@ export class SolarEngine {
         return;
       }
       terrainMat.map = ortho;
-      terrainMat.color.set(0xffffff);
+      terrainMat.color.copy(MARS_REGOLITH_TINT);
       terrainMat.needsUpdate = true;
       terrainMesh.geometry.dispose();
       terrainMesh.geometry = geo;
@@ -768,14 +770,16 @@ export class SolarEngine {
           radiusM: profile.radiusM,
           count: profile.count,
           sizeMaxM: profile.sizeMaxM,
-          clearZoneM: 20,
+          clearZoneM: 3,
+          sizeMinM: 0.04,
           maxSlopeDeg: 19,
           slopeWeight: profile.slopeWeight,
           sampleHeight: sample,
           seed: 20260924,
           datumRadiusM: dtm.datumRadius,
         });
-        const rockMat = new THREE.MeshStandardMaterial({ color: 0x6b5647, roughness: 1, metalness: 0 });
+        const rockMat = new THREE.MeshStandardMaterial({ color: 0x927c68, roughness: 1, metalness: 0 });
+        installMarsFog(rockMat, this.marsAirColor, undefined, this.marsSunVisibility);
         stack.rockFieldMaterial = rockMat;
         // S4b 勘误：米 → 网格局部单位（同月面修复；火星 datum = 本站 HiRISE 局部球）
         const rockMetricScale = satRadius / dtm.datumRadius;
@@ -783,7 +787,7 @@ export class SolarEngine {
         for (const p of placements) byVariant[p.variant].push(p);
         byVariant.forEach((list, v) => {
           if (!list.length) return;
-          const inst = new THREE.InstancedMesh(buildRockGeometry(20260924, v), rockMat, list.length);
+          const inst = new THREE.InstancedMesh(buildRockGeometry(20260924, v, true), rockMat, list.length);
           const m = new THREE.Matrix4();
           const q = new THREE.Quaternion();
           const up = new THREE.Vector3(0, 1, 0);
@@ -803,6 +807,8 @@ export class SolarEngine {
               )
             );
             inst.setMatrixAt(i, m);
+            // Deterministic, subdued regolith variation; these are illustrative rocks.
+            inst.setColorAt(i, new THREE.Color().setScalar(0.78 + 0.22 * ((i * 0.61803398875) % 1)));
           });
           inst.instanceMatrix.needsUpdate = true;
           inst.name = 'procedural-rockfield-mars';
@@ -844,7 +850,7 @@ export class SolarEngine {
           if (l1Geo) {
             // The same global image and lighting as the coarse globe: a higher
             // resolution terrain patch must not become a rectangular color panel.
-            const l1Mat = createMarsMaterial(null);
+            const l1Mat = createMarsMaterial(null, this.marsAirColor, this.marsSunVisibility);
             stack.l1Materials = [l1Mat];
             // L1 网格 UV=全球等距圆柱：2K 全球图直接可用
             new THREE.TextureLoader().load('/assets/textures/mars/2k_mars.jpg', (tex) => {
@@ -886,6 +892,8 @@ export class SolarEngine {
                 }
                 rimGeo.setAttribute('aGrayMix', new THREE.BufferAttribute(grayMix, 1));
                 const rimMat = l1Mat.clone();
+                rimMat.uniforms.marsAirColor.value = this.marsAirColor;
+                rimMat.uniforms.marsSunVisibility = this.marsSunVisibility;
                 rimMat.polygonOffset = true;
                 rimMat.polygonOffsetFactor = -1;
                 rimMat.polygonOffsetUnits = -1;
@@ -894,9 +902,10 @@ export class SolarEngine {
                     'vUv = uv;',
                     'vUv = uv;\n\tvGrayMix = aGrayMix;'
                   );
-                  shader.fragmentShader = `varying float vGrayMix;\n${shader.fragmentShader}`.replace(
+                  shader.uniforms.regolithTint = {value: MARS_REGOLITH_TINT};
+                  shader.fragmentShader = `uniform vec3 regolithTint;\nvarying float vGrayMix;\n${shader.fragmentShader}`.replace(
                     'vec4 texColor = texture2D(marsTexture, vUv);',
-                    'vec4 texColor = texture2D(marsTexture, vUv);\n\tfloat grayLum = dot(texColor.rgb, vec3(0.299, 0.587, 0.114));\n\ttexColor.rgb = mix(vec3(grayLum), texColor.rgb, vGrayMix);'
+                    'vec4 texColor = texture2D(marsTexture, vUv);\n\tfloat grayLum = dot(texColor.rgb, vec3(0.299, 0.587, 0.114));\n\ttexColor.rgb = mix(vec3(grayLum) * regolithTint, texColor.rgb, vGrayMix);'
                   );
                 };
                 stack.l1Materials.push(rimMat);
@@ -920,6 +929,7 @@ export class SolarEngine {
               roughness: 0.95,
               metalness: 0.02,
             });
+            installMarsFog(collarMat, this.marsAirColor, undefined, this.marsSunVisibility);
             stack.collarMaterial = collarMat;
             new THREE.TextureLoader().load('/assets/textures/mars/2k_mars.jpg', (tex) => {
               tex.colorSpace = THREE.SRGBColorSpace;
@@ -1079,13 +1089,12 @@ export class SolarEngine {
   private activeMarsSiteId = 'jezero';
   private marsMesh?: THREE.Mesh;
   private marsBaseRadius = 0.5;
-  // S4c：火星尘色大气（示意层）——天空单色浸染（星图×尘色）+ 地表线性雾。
-  // 非散射模拟：真实火星白昼天空亮黄褐且星不可见，此处为轻量近似，消除
-  // "无大气天体般的纯黑星空 + 生硬地平线"观感；月面无大气保持纯黑星空=真实。
+  // Mars dust display: altitude-dependent extinction, local horizon and solar illumination.
   private dustSkyMix = 0;
   private surfaceExposureMix = 0;
-  private readonly marsDustColor = new THREE.Color(0xc9a67e);
-  private readonly clearSkyColor = new THREE.Color(0xffffff);
+  private readonly marsDustColor = new THREE.Color(0xc9aa88);
+  private readonly marsAirColor = new THREE.Color();
+  private readonly marsSunVisibility = {value:1};
   private dustFog: THREE.Fog | null = null;
   // P3b-C：WAC EMP 区域反照率层（中远景影像；DTM 装载后创建，SSE 门控显隐）
   private regionalAlbedo: RegionalAlbedoLayer | null = null;
@@ -1241,11 +1250,7 @@ export class SolarEngine {
 
   private setupSkybox(): void {
     const skyGeo = new THREE.SphereGeometry(4_000_000, 36, 24);
-    const skyMat = new THREE.MeshBasicMaterial({
-      color: 0x050810,
-      side: THREE.BackSide,
-      depthWrite: false,
-    });
+    const skyMat = createObservationSkyMaterial();
     this.skyboxMesh = new THREE.Mesh(skyGeo, skyMat);
     this.scene.add(this.skyboxMesh);
   }
@@ -1686,10 +1691,9 @@ export class SolarEngine {
     // 1. 深空星图背景 (银河与万千繁星)
     this.assetManager.loadTexture('stars-bg-sss-2k', token, () => true).then((starsTex) => {
       if (starsTex && this.skyboxMesh) {
-        const mat = this.skyboxMesh.material as THREE.MeshBasicMaterial;
-        mat.color.set(0xffffff);
-        mat.map = starsTex;
-        mat.needsUpdate = true;
+        const mat = this.skyboxMesh.material as THREE.ShaderMaterial;
+        mat.uniforms.starMap.value = starsTex;
+        mat.uniforms.hasStarMap.value = 1;
       }
     }).catch((e) => console.error('[Texture] Skybox load failed:', e));
 
@@ -1764,7 +1768,7 @@ export class SolarEngine {
       }
     }).catch((e) => console.error('[Texture] Moon load failed:', e));
 
-    // 4.1 挂载全 23 颗天然卫星高拟真科学地貌纹理与专属材质
+    // 4.1 卫星外观：有登记观测图的优先加载，其余明确为程序示意。
     const allMoonIds: BodyId[] = [
       'phobos',
       'deimos',
@@ -1793,6 +1797,27 @@ export class SolarEngine {
     for (const satId of allMoonIds) {
       const satNode = this.bodyNodes.get(satId);
       if (!satNode) continue;
+      const observedAsset = ({io:'io-usgs-galileo-1k',mimas:'mimas-cassini-pia17214-4k',enceladus:'enceladus-cassini-pia18435-4k'} as Record<string,string>)[satId];
+      if (observedAsset) {
+        // Keep the neutral loading material on failure; never masquerade a procedural map as observation.
+        this.assetManager.loadTexture(observedAsset, token, () => true).then(tex => {
+          if (!tex) return;
+          tex.wrapS = THREE.RepeatWrapping;
+          tex.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
+          tex.offset.x = satId === 'enceladus' ? 0.5 : 0;
+          if (satId === 'io') {
+            this.ioMaterial = createIoMaterial(tex);
+            this.ioMaterial.uniforms.teachingLight.value = this.teachingLight ? 1 : 0;
+            safeDisposeMaterial(satNode.mesh.material);
+            satNode.mesh.material = this.ioMaterial;
+          } else {
+            const mat = satNode.mesh.material as THREE.MeshStandardMaterial;
+            mat.color.set(0xffffff); mat.map = tex; mat.roughness = 0.92; mat.metalness = 0;
+            mat.needsUpdate = true;
+          }
+        }).catch(e => console.error('[Texture] '+satId+' load failed:', e));
+        continue;
+      }
       const tex = getMoonTextureByBodyId(satId);
       if (!tex) continue;
 
@@ -1883,7 +1908,7 @@ export class SolarEngine {
     this.assetManager.loadTexture('mars-sss-2k', token, () => true).then((marsTex) => {
       const node = this.bodyNodes.get('mars');
       if (marsTex && node) {
-        this.marsMaterial = createMarsMaterial(marsTex);
+        this.marsMaterial = createMarsMaterial(marsTex, this.marsAirColor);
         this.marsMaterial.uniforms.teachingLight.value = this.teachingLight ? 1.0 : 0.0;
         safeDisposeMaterial(node.mesh.material);
         node.mesh.material = this.marsMaterial;
@@ -3200,60 +3225,55 @@ export class SolarEngine {
     this.renderFrame();
   }
 
-  /**
-   * S4c：火星地表尘色大气（示意层）。激活条件 = 火星 SURFACE_LOOK 或火星下降
-   * 任务进行中；指数平滑淡入淡出（跨态过渡无跳变）。天空 = 星图纹理乘尘色
-   * （MeshBasicMaterial.color 浸染，星星被洗入尘色背景）；地面 = 线性雾
-   * （Standard 材质，600m 起 / ~9km 全雾——地平线 3.4km 处明显尘化）。
-   * 退出火星地表即渐变回纯黑星空（月面语义不受影响）。
-   */
+  /** Local horizon and Sun-driven dust display. Density persists at night;
+   * linear air radiance is shared with terrain before exposure and tone mapping. */
   private updateMarsDustAtmosphere(deltaSec: number): void {
     const snap = this.cameraController.getSnapshot();
     const marsGround =
       (snap.mode === 'SURFACE_LOOK' && (snap.targetBodyId === 'mars' || snap.selectedBodyId === 'mars')) ||
       (this.landingController.getState() !== 'ORBIT' && this.activeLandingBodyId === 'mars');
-    const marsPose = this.getBodyWorldPose('mars');
-    const marsDatumM = this.marsSiteStacks.get(this.activeMarsSiteId)?.dtm.datumRadius
-      ?? JezeroTerrainSource.DATUM_RADIUS_M;
-    const metersPerScene = marsDatumM / Math.max(1e-9, marsPose.surfaceRadius);
-    const altitudeM = Math.max(0, (this.camera.position.distanceTo(marsPose.pos) - marsPose.surfaceRadius) * metersPerScene);
-    // Dust belongs to the low atmosphere, not the entire interplanetary descent.
-    const target = marsGround ? 1 - THREE.MathUtils.smoothstep(altitudeM, 10_000, 40_000) : 0;
-    this.dustSkyMix += (target - this.dustSkyMix) * Math.min(1, deltaSec * 1.6);
+    const pose = this.getBodyWorldPose('mars');
+    const datum = this.marsSiteStacks.get(this.activeMarsSiteId)?.dtm.datumRadius ?? JezeroTerrainSource.DATUM_RADIUS_M;
+    const metersPerScene = datum / Math.max(1e-9, pose.surfaceRadius);
+    const offset = this.camera.position.clone().sub(pose.pos);
+    const altitudeM = Math.max(0, (offset.length() - pose.surfaceRadius) * metersPerScene);
+    const up = offset.normalize();
+    const sun = this.bodyPoseProvider.getPhysicalSunDirection('mars', this.simTimeHours);
+    const solarHeight = up.dot(sun);
+    const state = marsAtmosphereState(altitudeM, solarHeight, marsGround && this.showAtmosphere);
+    // Local horizon blocks sunlight on both sides of small rocks. Teaching light remains optional.
+    this.marsSunVisibility.value = marsGround && !this.teachingLight ? state.sunVisibility : 1;
+    this.dustSkyMix += (state.density - this.dustSkyMix) * (1 - Math.exp(-deltaSec * 2.5));
     const mix = this.dustSkyMix;
-
-    // S5-6b：地表环境光补偿（展示层，物理依据=尘雾天空的间接漫射光）。火星有
-    // 大气散射，逆光/背光面由亮黄褐天空获得可观间接照明——Gale 触地逆光构图下
-    // 岩塔背光面曾呈死黑（ambient 0.22×暗反照率在 ACES 下≈0）。随尘雾混入把
-    // 环境光升至基线+0.20；月面无大气保持纯直射对比不受影响。每帧重算基线，
-    // 教学光/伴飞模式切换后自动重对齐
-    this.ambientLight.intensity = this.ambientBaselineIntensity() + 0.2 * mix;
-
-    if (this.skyboxMesh) {
-      const mat = this.skyboxMesh.material as THREE.MeshBasicMaterial;
-      mat.color.copy(this.clearSkyColor).lerp(this.marsDustColor, mix);
+    // Dust illumination fades at sunset; atmospheric extinction does not switch off at night.
+    this.ambientLight.color.set(0x222a38).lerp(new THREE.Color(0xc4ab91), mix * state.daylight);
+    this.ambientLight.intensity = this.ambientBaselineIntensity() + 0.12 * mix * state.daylight;
+    const sky = this.skyboxMesh?.material as THREE.ShaderMaterial | undefined;
+    if (sky) {
+      sky.uniforms.localUp.value.copy(up);
+      sky.uniforms.sunDirection.value.copy(sun);
+      sky.uniforms.dustDensity.value = mix;
+      sky.uniforms.daylight.value = state.daylight;
+      sky.uniforms.twilight.value = state.twilight;
+      sky.uniforms.skyBrightness.value = state.brightness;
     }
-    if (mix > 0.02) {
-      if (!this.dustFog) {
-        this.dustFog = new THREE.Fog(this.marsDustColor.getHex());
-      }
-      this.dustFog.color.copy(this.marsDustColor);
-      // S5-1 勘误：near/far 为视空间场景单位——米须除以 metersPerScene
-      // （原 600*metersPerScene=2.1e9 场景单位，雾从未实际生效，仅天穹浸染起效）
-      this.dustFog.near = 600 / metersPerScene;
-      this.dustFog.far = (9000 / metersPerScene) / Math.max(0.02, mix); // 淡入期雾拉远
+    this.marsAirColor.copy(this.marsDustColor).multiplyScalar(state.brightness * 0.82 * (1 - Math.exp(-mix / Math.sqrt(0.025) * 0.8)));
+    if (mix > 0.001) {
+      this.dustFog ??= new THREE.Fog(0x000000);
+      this.dustFog.color.copy(this.marsDustColor).multiplyScalar(state.brightness);
+      this.dustFog.near = 250 / metersPerScene;
+      // A relatively clear dusty day, not a claim that every Mars view ends at 9 km.
+      this.dustFog.far = 45000 / metersPerScene / mix;
       this.scene.fog = this.dustFog;
-    } else if (this.dustFog && this.scene.fog === this.dustFog) {
-      this.scene.fog = null;
-    }
+    } else if (this.scene.fog === this.dustFog) this.scene.fog = null;
+    if (this.marsHaloMesh) this.marsHaloMesh.visible = this.showAtmosphere && !(marsGround && altitudeM < 60000);
+  }
 
-    // S5-1：大气光晕是轨道视角资产（行星边缘菲涅尔辉光）。地表视角相机在
-    // 1.015R 壳内，BackSide 壳反而包裹整个视野——自定义 shader 内视输出垃圾
-    // （暗楔形+整体压暗）。地表/下降期隐藏，尘色天空由天穹浸染+雾接管；
-    // 恢复时尊重用户大气显示开关。
-    if (this.marsHaloMesh) {
-      this.marsHaloMesh.visible = marsGround && altitudeM < 60_000 ? false : this.showAtmosphere;
-    }
+  public getMarsAtmosphereDiagnostics() {
+    const u = (this.skyboxMesh?.material as THREE.ShaderMaterial | undefined)?.uniforms;
+    return u ? {density: u.dustDensity.value, daylight: u.daylight.value, twilight: u.twilight.value,
+      brightness: u.skyBrightness.value, sunVisibility:this.marsSunVisibility.value, sunHeight: u.localUp.value.dot(u.sunDirection.value),
+      localUp: u.localUp.value.toArray(), sunDirection: u.sunDirection.value.toArray()} : null;
   }
 
   /**
@@ -3274,7 +3294,9 @@ export class SolarEngine {
     }
     const target = active ? 1 : 0;
     this.surfaceExposureMix += (target - this.surfaceExposureMix) * Math.min(1, deltaSec * 0.8);
-    const exposure = 1.1 * (1 + 1.55 * this.surfaceExposureMix); // 1.1 → ≈2.8
+    const isMars = snap.targetBodyId === 'mars' || this.activeLandingBodyId === 'mars' && active;
+    const exposureGain = isMars ? 0.65 : 1.55;
+    const exposure = 1.1 * (1 + exposureGain * this.surfaceExposureMix);
     if (Math.abs(this.renderer.toneMappingExposure - exposure) > 1e-4) {
       this.renderer.toneMappingExposure = exposure;
     }
@@ -3331,10 +3353,10 @@ export class SolarEngine {
 
     // 更新太阳着色器动画
     if (this.sunMaterial) {
-      this.sunMaterial.uniforms.time.value += deltaSec;
+      this.sunMaterial.uniforms.time.value = this.simTimeHours;
     }
     if (this.sunCoronaMaterial) {
-      this.sunCoronaMaterial.uniforms.time.value += deltaSec;
+      this.sunCoronaMaterial.uniforms.time.value = this.simTimeHours * 0.03;
     }
 
     // 2. 更新所有天体的位置与自转
@@ -3384,8 +3406,7 @@ export class SolarEngine {
     }
 
     // S4c：火星地表尘色大气（示意层，见字段注释）；月面/轨道不受影响
-    this.updateMarsDustAtmosphere(deltaSec);
-    this.updateSurfaceExposure(deltaSec);
+
 
     // 着陆控制器生命周期驱动（R5 建立，P2 重写下降段，P3b-B 单腿连续轨迹 + 地平线投影姿态）
     // P1 修复：仅在本控制器刚刚完成"升空返轨"(ASCENDING -> ORBIT 边沿)时才收回 SURFACE_LOOK；
@@ -3631,6 +3652,8 @@ export class SolarEngine {
 
     // 5. 更新单一相机控制器
     this.cameraController.update(deltaSec, (id: BodyId) => this.getCameraBodyPose(id));
+    this.updateMarsDustAtmosphere(deltaSec);
+    this.updateSurfaceExposure(deltaSec);
     this.skyboxMesh?.position.copy(this.camera.position);
 
     // 飞行状态变化监听：飞行结束切入 ORBIT_TARGET 时立即同步状态给 UI，飞行过程中同步实时插值进度

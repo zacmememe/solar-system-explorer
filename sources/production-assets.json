@@ -466,6 +466,106 @@
       "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
       "licenseNotes": "CC BY 4.0 商业与非商业可用，需保留署名。",
       "releaseApproved": true
+    },
+    {
+      "id": "io-usgs-galileo-1k",
+      "bodyId": "io",
+      "role": "enhanced-color",
+      "sourcePage": "https://astrogeology.usgs.gov/search/map/io_galileo_ssi_global_color_merge_mosaic_1km",
+      "sourceAssetUrl": "https://astrogeology.usgs.gov/ckan/dataset/0fc15885-24ee-4d9d-9666-11de0667c10c/resource/73d4c1f7-8c07-4b28-90ea-f47f7531c5ca/download/full.jpg",
+      "localPath": "assets/textures/io/io-usgs-galileo-1k.jpg",
+      "sourceSha256": "d722a545c9290b33f3b57cb7ccb9e173b367a7a8fa4867e74a8e11538f274282",
+      "derivedSha256": "d722a545c9290b33f3b57cb7ccb9e173b367a7a8fa4867e74a8e11538f274282",
+      "originalWidth": 1024,
+      "originalHeight": 512,
+      "derivedWidth": 1024,
+      "derivedHeight": 512,
+      "projection": "equirectangular",
+      "longitudeConvention": "0-to-360-east",
+      "centralMeridianDeg": 0,
+      "northUp": true,
+      "colorInterpretation": "sRGB",
+      "observationBands": [
+        "756 nm infrared",
+        "green",
+        "violet"
+      ],
+      "provenanceClass": "enhanced-multispectral-observation",
+      "coverageNotes": "Galileo/Voyager 全球增强色拼接；两极各约 5 度含插值。本资源是官方 1024 px 预览（赤道约 11 km/px），不是原始 1 km 栅格。",
+      "processingHistory": [
+        "2026-09-25: downloaded exact official preview bytes; no local resampling, enhancement or repainting.",
+        "Sphere UV north-up, east increases to the right; sampling offset U=0."
+      ],
+      "credit": "NASA/JPL/USGS Astrogeology",
+      "licenseUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+      "licenseNotes": "USGS 产品元数据：public domain，use constraints None；保留 NASA/JPL/USGS 署名。",
+      "releaseApproved": false
+    },
+    {
+      "id": "mimas-cassini-pia17214-4k",
+      "bodyId": "mimas",
+      "role": "color",
+      "sourcePage": "https://science.nasa.gov/photojournal/mimas-global-map-june-2017/",
+      "sourceAssetUrl": "https://assets.science.nasa.gov/dynamicimage/assets/science/psd/photojournal/pia/pia17/pia17214/PIA17214.jpg?w=4096&h=2048&fit=clip",
+      "localPath": "assets/textures/mimas/mimas-cassini-pia17214-4k.jpg",
+      "sourceSha256": "e50b784b3ce0484d6a926520fd8e9622d90c43c0a188bdda0f52fbf46e42421e",
+      "derivedSha256": "e50b784b3ce0484d6a926520fd8e9622d90c43c0a188bdda0f52fbf46e42421e",
+      "originalWidth": 4096,
+      "originalHeight": 2048,
+      "derivedWidth": 4096,
+      "derivedHeight": 2048,
+      "projection": "equirectangular",
+      "longitudeConvention": "0-to-360-east",
+      "centralMeridianDeg": 0,
+      "northUp": true,
+      "colorInterpretation": "sRGB",
+      "observationBands": [
+        "visible grayscale"
+      ],
+      "provenanceClass": "processed-observation",
+      "coverageNotes": "Cassini 灰度全球拼接，保留拍摄时的阴影；仅作颜色图，不作高度。官方原产品 5760×2880，本资源为官方服务 4096×2048 缩略版，赤道约 304 m/px。",
+      "processingHistory": [
+        "2026-09-25: downloaded exact official preview bytes; no local resampling, enhancement or repainting.",
+        "Sphere UV north-up, east increases to the right; sampling offset U=0."
+      ],
+      "credit": "NASA/JPL-Caltech/Space Science Institute",
+      "licenseUrl": "https://www.jpl.nasa.gov/jpl-image-use-policy/",
+      "licenseNotes": "按 JPL 图片使用政策，保留原署名；不暗示 NASA/JPL 背书。",
+      "releaseApproved": false
+    },
+    {
+      "id": "enceladus-cassini-pia18435-4k",
+      "bodyId": "enceladus",
+      "role": "enhanced-color",
+      "sourcePage": "https://science.nasa.gov/photojournal/color-maps-of-enceladus-2014/",
+      "sourceAssetUrl": "https://assets.science.nasa.gov/dynamicimage/assets/science/psd/photojournal/pia/pia18/pia18435/PIA18435.jpg?w=4096&h=2048&fit=clip",
+      "localPath": "assets/textures/enceladus/enceladus-cassini-pia18435-4k.jpg",
+      "sourceSha256": "52beb0786b1551d5d53312cc4697a0ead766507fb3d085d5e733692c47078d43",
+      "derivedSha256": "52beb0786b1551d5d53312cc4697a0ead766507fb3d085d5e733692c47078d43",
+      "originalWidth": 4096,
+      "originalHeight": 2048,
+      "derivedWidth": 4096,
+      "derivedHeight": 2048,
+      "projection": "equirectangular",
+      "longitudeConvention": "0-to-360-east",
+      "centralMeridianDeg": 180,
+      "northUp": true,
+      "colorInterpretation": "sRGB",
+      "observationBands": [
+        "ultraviolet",
+        "green",
+        "infrared"
+      ],
+      "provenanceClass": "enhanced-multispectral-observation",
+      "coverageNotes": "Cassini 紫外/红外扩展增强色，非肉眼自然色；原产品 15960×7980，本资源为官方服务 4096×2048 缩略版（赤道约 386 m/px）。保留观测光照与拼接痕迹。",
+      "processingHistory": [
+        "2026-09-25: downloaded exact official preview bytes; no local resampling, enhancement or repainting.",
+        "Sphere UV north-up, east increases to the right; sampling offset U=0.5."
+      ],
+      "credit": "NASA/JPL-Caltech/Space Science Institute/Lunar and Planetary Institute",
+      "licenseUrl": "https://www.jpl.nasa.gov/jpl-image-use-policy/",
+      "licenseNotes": "按 JPL 图片使用政策，保留原署名；不暗示 NASA/JPL 背书。",
+      "releaseApproved": false
     }
   ]
 }

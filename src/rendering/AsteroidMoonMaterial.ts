@@ -80,16 +80,7 @@ export function createAsteroidMoonMaterial(
 
         // 4. 地表质感校准：真实碳质球粒陨石 (C/D-type Asteroid Regolith)
         // 适当提升向阳面可读性，保留深沉冷碳黑至暗灰褐
-        vec3 surfaceColor = rawTex.rgb * 1.35;
-
-        if (bodyType < 1.5) {
-          // 火卫一 (Phobos): 强化斯蒂克尼坑底深黑阴影与坑壁新鲜露头亮岩微对比
-          float luma = dot(surfaceColor, vec3(0.299, 0.587, 0.114));
-          surfaceColor = mix(surfaceColor * 0.88, surfaceColor, smoothstep(0.16, 0.48, luma));
-        } else {
-          // 火卫二 (Deimos): 厚风化层毛毯包络，微尘流柔和漫漫呈现
-          surfaceColor = surfaceColor * vec3(1.04, 1.02, 0.98);
-        }
+        vec3 surfaceColor = rawTex.rgb;
 
         // 5. 真空剃刀晨昏线 (Razor-Edge Terminator)
         float terminator = smoothstep(-0.006, 0.012, NdotL);

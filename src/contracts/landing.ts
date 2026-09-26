@@ -193,7 +193,7 @@ export const LANDING_SITES: Record<string, LandingSite> = {
     description:
       '火星耶泽罗撞击坑西部坑底，毗邻毅力号着陆点与古老河流三角洲。地表为火山碎屑撞击坑底地貌，散布丰富的小碎石。',
     provenance:
-      'NASA MRO HiRISE 受控立体 DTM DTEEC_045994_1985_046060_1985 (1.01 m/px, PDS MRO-M-HIRISE-5-DTM-V1.0) + RED 正射 (0.25 m/px)',
+      'NASA MRO HiRISE 受控立体 DTM DTEEC_045994_1985_046060_1985 (1.01 m/px, PDS MRO-M-HIRISE-5-DTM-V1.0) + RED 单波段正射（源0.25m/px，显示1m/px）；色调、大气、碎石及细砂材质为示意',
     centerLat: 18.45145,
     centerLon: 77.43657,
     datumRadiusKm: 3394.8398,
@@ -204,7 +204,7 @@ export const LANDING_SITES: Record<string, LandingSite> = {
     // 渐显门控保证 DTM 在屏幕张角足够时才出现（同月面两级栈语义）。
     descentEnabled: true,
     // 火山坑底：碎石丰富但偏小（毅力号实拍坑底遍布小石、间距米级）、坡度偏好低。
-    // S4b 实测校准：1.7m 眼高可见需米级间距——450m 盘 30000 块 ≈ 1.45m 间距
+    // 程序分布：450m 盘30000块，平均占地面积尺度约4.6m；非实测石块位置。
     rockField: { count: 30000, radiusM: 450, sizeMaxM: 1.2, slopeWeight: 0.25 },
   },
   /**
@@ -222,7 +222,7 @@ export const LANDING_SITES: Record<string, LandingSite> = {
     description:
       '子午线平原上的维多利亚撞击坑边缘鸭湾，坑壁风蚀层序裸露、坑缘散布砂岩碎块。机遇号火星车曾于 2007 年抵达此处近距离考察坑内岩层。',
     provenance:
-      'NASA MRO HiRISE 受控立体 DTM DTEEC_021747_1780_022380_1780 (1.01 m/px, PDS MRO-M-HIRISE-5-DTM-V1.0) + RED 正射 (0.25 m/px)',
+      'NASA MRO HiRISE 受控立体 DTM DTEEC_021747_1780_022380_1780 (1.01 m/px, PDS MRO-M-HIRISE-5-DTM-V1.0) + RED 单波段正射（源0.25m/px，显示1m/px）；色调、大气、碎石及细砂材质为示意',
     centerLat: -2.061687,
     centerLon: 354.5,
     datumRadiusKm: 3396.19,
@@ -248,7 +248,7 @@ export const LANDING_SITES: Record<string, LandingSite> = {
     description:
       '盖尔撞击坑内夏普山山麓的侵蚀砂岩孤峰群，暗色风成沙地间矗立着棱角分明的层状岩塔。好奇号火星车曾于 2016 年穿越此区域并发回标志性孤峰影像。',
     provenance:
-      'NASA MRO HiRISE 受控立体 DTM DTEEC_019698_1750_019988_1750 (1.01 m/px, PDS MRO-M-HIRISE-5-DTM-V1.0) + RED 正射 (0.25 m/px)',
+      'NASA MRO HiRISE 受控立体 DTM DTEEC_019698_1750_019988_1750 (1.01 m/px, PDS MRO-M-HIRISE-5-DTM-V1.0) + RED 单波段正射（源0.25m/px，显示1m/px）；色调、大气、碎石及细砂材质为示意',
     centerLat: -4.944939,
     centerLon: 137.388307,
     datumRadiusKm: 3396.19,

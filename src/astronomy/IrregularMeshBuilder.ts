@@ -1,9 +1,6 @@
 /**
- * 不规则小天体 3D 物理几何构造器 (Irregular Mesh Builder)
- * 遵循天体物理与行星科学观测口径：
- * 为引力不足以达到流体静力平衡的天然卫星构建真实三轴椭球体 (Triaxial Ellipsoid)
- * 并注入多频分形受损、特征陨石坑凹陷（如火卫一斯蒂克尼坑、土卫七海绵蜂窝孔、木卫五拉长红薯形态），
- * 彻底告别圆球体带来的虚假与出戏感。
+ * 不规则卫星的三轴外形与程序地貌示意。
+ * 轴长受目录约束，坑槽为近似造型，不是探测器形状模型或实测高程。
  */
 
 import * as THREE from 'three';
@@ -54,14 +51,14 @@ export function buildIrregularMoonGeometry(
 
     if (isPhobos) {
       // 斯蒂克尼巨型陨石坑 (Stickney Crater: 位于 +X 侧，占据火卫一半球巨大凹陷)
-      const stickneyDir = new THREE.Vector3(0.95, 0.15, 0.25).normalize();
+      const stickneyDir = new THREE.Vector3(0.95, 0.15, -0.25).normalize();
       const dotS = norm.dot(stickneyDir);
       if (dotS > 0.62) {
         const pitDepth = Math.pow((dotS - 0.62) / 0.38, 1.4) * 0.28;
         displacement -= pitDepth;
       }
       // 放射状应力条沟起伏
-      const groove = Math.sin(norm.y * 24.0 + norm.z * 18.0) * 0.015;
+      const groove = Math.sin(norm.y * 24.0 + norm.z * 18.0) * 0.001;
       displacement += groove;
     } else if (isDeimos) {
       // 火卫二厚风化层光滑包络（轻度圆润化起伏）
