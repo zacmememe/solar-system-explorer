@@ -203,11 +203,11 @@ export function MissionHUD(props: MissionHUDProps) {
             <button aria-label={isPaused?'继续天体时间':'暂停天体时间'} onClick={props.onPause}>{isPaused?'继续':'暂停'}</button>
             <button className="hud-rate" aria-label="调整时间流速" aria-controls="hud-time-panel" onClick={e=>openPanel('time',e)}><span>{timeScale.toLocaleString('en-US')}</span><small>×</small></button>
           </div>
-          <div className="hud-view-modes">{([
+          {frame?.vehicle?.allowed && <><div className="hud-view-modes">{([
             ['PLANET_OBSERVE', '观星'], ['VEHICLE_FORMATION', '伴飞'], ['VEHICLE_ONBOARD', '随船'],
           ] as const).map(([mode, label]) => <button key={mode} disabled={!ready || (mode !== 'PLANET_OBSERVE' && !props.vehicleName)} aria-pressed={props.viewCameraMode === mode}
             onClick={() => props.onViewMode(mode)}>{label}</button>)}</div>
-          <p>载具：{props.vehicleName || '未选择'}。伴飞模型是视觉呈现；空间关系图中的三角指示观察机位，不冒充独立航天器轨道。</p>
+          <p>载具：{props.vehicleName || '未选择'}。伴飞模型是视觉呈现；空间关系图中的三角指示观察机位，不冒充独立航天器轨道。</p></>}
           <div className="hud-settings-grid">
             {toggle('天体标识', props.showLabels, props.onToggleLabels)}
             {toggle('地球云层', props.showClouds, props.onToggleClouds)}

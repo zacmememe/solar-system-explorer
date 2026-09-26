@@ -1,6 +1,7 @@
 import type { BodyId } from './body';
 import type { CameraStateSnapshot } from './camera';
 import type { LandingAvailability, LandingSite, LandingTelemetry } from './landing';
+import type { VehicleId, ViewCameraMode } from './vehicle';
 
 export type HudVector = readonly [number, number, number];
 
@@ -38,4 +39,6 @@ export interface HudFrame {
   readonly bodies: readonly { readonly id: BodyId; readonly position: HudVector }[];
   readonly landing?: HudLandingFrame;
   readonly surface?: HudSurfaceObservation | null;
+  /** Authoritative availability and effective display mode, including surface restrictions. */
+  readonly vehicle?: { readonly allowed: boolean; readonly id: VehicleId | null; readonly mode: ViewCameraMode };
 }

@@ -8,7 +8,9 @@ it('hangar preview generations cannot discard the main scene vehicle',async()=>{
   const model=new THREE.Group();model.add(new THREE.Mesh(new THREE.BoxGeometry(),new THREE.MeshBasicMaterial()));
   const build=vi.spyOn(VehicleMeshBuilder,'buildVehicle').mockReturnValue(model);
   const engine=Object.create(SolarEngine.prototype) as SolarEngine;
-  Object.assign(engine,{vehicleLoadGeneration:0,currentVehicleMesh:null,currentVehicleId:null,vehicleGroup:new THREE.Group()});
+  Object.assign(engine,{vehicleLoadGeneration:0,currentVehicleMesh:null,currentVehicleId:null,vehicleGroup:new THREE.Group(),
+    viewCameraMode:'PLANET_OBSERVE',vehicleLightingMode:'PLANET_OBSERVE',
+    landingController:{getState:()=> 'ORBIT'},cameraController:{getSnapshot:()=>({mode:'ORBIT_TARGET',isTransitioning:false})}});
   VehicleLoader.nextGeneration();VehicleLoader.nextGeneration();VehicleLoader.nextGeneration();
   engine.setVehicle('iss');await new Promise(resolve=>setTimeout(resolve,0));
   expect((engine as any).currentVehicleMesh).toBe(model);

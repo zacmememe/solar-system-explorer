@@ -274,6 +274,8 @@ export class SolarEngine {
   private currentVehicleMesh: THREE.Group | null = null;
   private vehicleLoadGeneration: number = 0;
   private viewCameraMode: ViewCameraMode = 'PLANET_OBSERVE';
+  private vehicleLightingMode: ViewCameraMode = 'PLANET_OBSERVE';
+  private vehicleSurfaceBody: BodyId | null = null;
   private prevIsTransitioning: boolean = false;
   /** 着陆状态机上一帧状态 (识别 ASCENDING->ORBIT 返轨边沿，避免抢占外部地表观察) */
   private prevLandingState: string = 'ORBIT';
@@ -2405,6 +2407,7 @@ export class SolarEngine {
     };
     this.landingController.acquireTimeScaleOverride(()=>this.timeScale, scale=>this.setTimeScale(scale), true);
     this.landingSiteTravel = true;
+    this.syncVehicleContext();
     this.flyAroundToLandingSite(resolved.site);
   }
 
@@ -2483,6 +2486,7 @@ export class SolarEngine {
     soundEffects.playWarp();
     this.setPresentationPolicy('PHYSICAL_OBSERVATION');
     this.landingController.startDescent();
+    this.syncVehicleContext();
     this.landingController.acquireTimeScaleOverride(()=>this.timeScale, scale=>this.setTimeScale(scale));
     return true;
   }
@@ -2922,6 +2926,8 @@ export class SolarEngine {
   private vehicleDisplayRangeOut = { near: 0, far: 0 };
 
   public renderFrame(): void {
+    // Also applies to renderImmediate/postcards, before any display pass is drawn.
+    this.syncVehicleContext();
     const snap = this.cameraController.getSnapshot();
     const anchorBodyId = snap.anchor?.kind === 'surface' ? snap.anchor.bodyId : snap.targetBodyId ?? null;
     const node = anchorBodyId ? this.bodyNodes.get(anchorBodyId) : undefined;
@@ -2933,7 +2939,7 @@ export class SolarEngine {
     }
     // F-VEHICLE-FOREGROUND-01：可见载具挂展示 layer——世界（含分段深度）完成后
     // 独立展示 pass 绘制；纯星球观察（visible=false）跳过该 pass。
-    const vehicleDisplayPass = this.vehicleGroup.visible && this.vehicleGroup.parent === this.camera;
+    const vehicleDisplayPass = this.canUseVehicles() && this.vehicleGroup.visible && this.vehicleGroup.parent === this.camera;
     // R1：展示投影按载具包围球取有限 near/far——不继承世界最近切片
     //（月面量级下末段 far≈2e-4 会整体裁掉相机前 2.1/1.35 单位的载具）。
     let displaySphere: { center: THREE.Vector3; radius: number } | undefined;
@@ -3031,14 +3037,15 @@ export class SolarEngine {
 
   /** 环境光基线三态（观察/伴飞/教学光）——updateLightingState 与火星尘雾补偿共用 */
   private ambientBaselineIntensity(): number {
-    if (this.viewCameraMode === 'PLANET_OBSERVE') {
+    if (this.getViewCameraMode() === 'PLANET_OBSERVE') {
       return this.teachingLight ? 0.75 : 0.22;
     }
     return 0.35;
   }
 
   private updateLightingState(): void {
-    const isObserving = this.viewCameraMode === 'PLANET_OBSERVE';
+    this.vehicleLightingMode = this.getViewCameraMode();
+    const isObserving = this.vehicleLightingMode === 'PLANET_OBSERVE';
     if (isObserving) {
       if (this.teachingLight) {
         this.cameraHeadlight.intensity = 0.65;
@@ -3192,7 +3199,46 @@ export class SolarEngine {
     return this.bodyPoseProvider;
   }
 
-  public setVehicle(id: VehicleId | null): void {
+  private isVehicleSurfaceContext(): boolean {
+    const camera = this.cameraController.getSnapshot();
+    return this.landingController.getState() !== 'ORBIT' || !!this.landingPrep || this.landingSiteTravel
+      || camera.mode === 'SURFACE_LOOK' || camera.anchor?.kind === 'surface';
+  }
+
+  public canUseVehicles(): boolean {
+    if (!this.cameraController || this.isVehicleSurfaceContext()) return false;
+    const camera = this.cameraController.getSnapshot();
+    if (camera.isTransitioning || !['ORBIT_TARGET', 'OVERVIEW'].includes(camera.mode)) return false;
+    // Cancelling a departure can leave a free pivot metres above the old surface.
+    // Keep that body's lock until clearly outside the local observation zone.
+    // This is a display clearance (8% radius), not an atmospheric/space boundary.
+    if (this.vehicleSurfaceBody) {
+      const body = this.getBodyWorldPose(this.vehicleSurfaceBody);
+      if (!(this.camera.position.distanceTo(body.pos) > body.surfaceRadius * 1.08)) return false;
+    }
+    return true;
+  }
+
+  private syncVehicleContext(): void {
+    if (this.isVehicleSurfaceContext()) {
+      const camera = this.cameraController.getSnapshot();
+      this.vehicleSurfaceBody = camera.anchor?.kind === 'surface' ? camera.anchor.bodyId
+        : this.landingController.getState() !== 'ORBIT' ? this.activeLandingBodyId
+        : camera.targetBodyId ?? this.activeLandingBodyId;
+      if (this.currentVehicleId || this.currentVehicleMesh || this.viewCameraMode !== 'PLANET_OBSERVE') this.replaceVehicle(null);
+    }
+    if (!this.canUseVehicles()) this.vehicleGroup.visible = false;
+    if (this.vehicleLightingMode !== this.getViewCameraMode()) this.updateLightingState();
+  }
+
+  public setVehicle(id: VehicleId | null): boolean {
+    if (id && !this.canUseVehicles()) return false;
+    this.replaceVehicle(id);
+    return true;
+  }
+
+  /** Internal space-bookmark restore may prepare a hidden model during its arrival transition. */
+  private replaceVehicle(id: VehicleId | null): void {
     const gen = ++this.vehicleLoadGeneration;
 
     if (this.currentVehicleMesh) {
@@ -3202,11 +3248,16 @@ export class SolarEngine {
     }
 
     this.currentVehicleId = id;
-    if (!id) return;
+    if (!id) {
+      this.vehicleGroup.visible = false;
+      this.viewCameraMode = 'PLANET_OBSERVE';
+      return;
+    }
 
     // Hangar preview owns VehicleLoader's legacy global generation. The main
     // scene has its own generation and checks it below; do not compare the two.
     VehicleLoader.loadVehicle(id).then((group) => {
+      this.syncVehicleContext();
       if (gen !== this.vehicleLoadGeneration || this.currentVehicleId !== id) {
         if (group) {
           VehicleLoader.disposeVehicleObject(group);
@@ -3227,12 +3278,13 @@ export class SolarEngine {
   }
 
   public setViewCameraMode(mode: ViewCameraMode): void {
-    this.viewCameraMode = this.currentVehicleId ? mode : 'PLANET_OBSERVE';
+    this.viewCameraMode = this.currentVehicleId && this.canUseVehicles() ? mode : 'PLANET_OBSERVE';
+    if (this.viewCameraMode === 'PLANET_OBSERVE') this.vehicleGroup.visible = false;
     this.updateLightingState();
   }
 
   public getViewCameraMode(): ViewCameraMode {
-    return this.viewCameraMode;
+    return this.canUseVehicles() ? this.viewCameraMode : 'PLANET_OBSERVE';
   }
 
   public getRendererCanvas(): HTMLCanvasElement {
@@ -3358,6 +3410,7 @@ export class SolarEngine {
       observerPosition: [this.camera.position.x, this.camera.position.y, this.camera.position.z],
       bodies,
       surface,
+      vehicle: { allowed: this.canUseVehicles(), id: this.currentVehicleId, mode: this.getViewCameraMode() },
       landing: {
         telemetry: this.landingController.getTelemetry(),
         availability: this.getLandingAvailability(),
@@ -3400,7 +3453,8 @@ export class SolarEngine {
     this.updateEphemerisPoses(deltaSec);
 
     // 3. 更新载具空间位置与伴飞/随船/绕飞姿态
-    if (this.currentVehicleMesh && this.currentVehicleId) {
+    this.syncVehicleContext();
+    if (this.canUseVehicles() && this.currentVehicleMesh && this.currentVehicleId) {
       const origDim = (this.currentVehicleMesh.userData.maxDim as number) || (this.currentVehicleMesh.userData.originalMaxDim as number) || 5.0;
 
       if (this.viewCameraMode === 'VEHICLE_FORMATION') {
@@ -4225,8 +4279,8 @@ export class SolarEngine {
       sourceVersion: '2026.09-P2-DTM', // P2 起站点高程来自真实 NAC DTM
       simulation: {isPaused:this.isPaused,timeScale:this.timeScale},
       cameraMode: camSnap.mode==='OVERVIEW' ? 'OVERVIEW' : 'ORBIT_TARGET',
-      viewCameraMode: this.viewCameraMode,
-      vehicleId: this.currentVehicleId,
+      viewCameraMode: surfaceStation ? 'PLANET_OBSERVE' : this.getViewCameraMode(),
+      vehicleId: surfaceStation ? null : this.currentVehicleId,
       layers: {
         showClouds: this.showClouds,
         showAtmosphere: this.showAtmosphere,
@@ -4273,6 +4327,7 @@ export class SolarEngine {
       if (!sample.valid) throw new Error('书签位置超出该站有效地形范围，已保留当前视角');
     }
     if (revision!==this.navigationRevision || inputRevision!==this.cameraController.getUserInputRevision()) return false;
+    this.landingSiteTravel=false;
     this.landingPrep=null;
     this.landingGuideActive=false;
     this.landingGuidedQuat=null;
@@ -4293,8 +4348,10 @@ export class SolarEngine {
       this.cameraController.executeCommand({type:'restoreBookmark',targetBodyId:target,spherical:bm.spherical,lookTarget:bm.lookTarget,destinationMode:bm.cameraMode,durationSec:this.reduceMotion?0.15:1.2});
       this.updateEphemerisPoses(0);
     }
-    this.setVehicle(bm.vehicleId ?? null);
-    this.setViewCameraMode(bm.vehicleId ? bm.viewCameraMode : 'PLANET_OBSERVE');
+    // Old surface bookmarks can contain onboard/formation fields: discard them.
+    this.replaceVehicle(station ? null : bm.vehicleId ?? null);
+    this.viewCameraMode = !station && bm.vehicleId ? bm.viewCameraMode : 'PLANET_OBSERVE';
+    this.updateLightingState();
     this.setShowClouds(bm.layers.showClouds);
     this.setShowAtmosphere(bm.layers.showAtmosphere);
     this.setTeachingLight(bm.layers.teachingLight);
@@ -4311,6 +4368,7 @@ export class SolarEngine {
       this.prevLandingState='SURFACE_LOOK';
     }
     this.callbacks.onSelectBody?.(target);
+    this.syncVehicleContext();
     this.emitSnapshot();
     return true;
   }

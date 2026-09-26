@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { SolarEngine, WebGLDiagnosticInfo, CelestialLabelItem } from '../engine/SolarEngine';
 import { BODIES } from '../astronomy/bodies';
 import type { BodyId } from '../contracts/body';
@@ -71,9 +71,12 @@ export const App: React.FC = () => {
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
 
   // 载具与伴飞视角系统（默认纯净无载具观察，支持在机库自由选择或结束伴飞）
-  const [currentVehicleId, setCurrentVehicleId] = useState<VehicleId | null>(null);
-  const [viewCameraMode, setViewCameraMode] = useState<ViewCameraMode>('PLANET_OBSERVE');
+  const vehicle = useSyncExternalStore(hudStore.subscribe, hudStore.getSnapshot, hudStore.getServerSnapshot)?.vehicle;
+  const currentVehicleId = vehicle?.id ?? null;
+  const viewCameraMode = vehicle?.mode ?? 'PLANET_OBSERVE';
+  const vehicleAvailable = vehicle?.allowed ?? false;
   const [showHangar, setShowHangar] = useState<boolean>(false);
+  useEffect(() => { if (!vehicleAvailable) setShowHangar(false); }, [vehicleAvailable]);
 
   // 观察点与书签系统
   const [showBookmarkModal, setShowBookmarkModal] = useState<boolean>(false);
@@ -87,6 +90,8 @@ export const App: React.FC = () => {
   const [postcardDataUrl, setPostcardDataUrl] = useState<string>('');
   const [isGeneratingPostcard, setIsGeneratingPostcard] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastRequiresVehicle, setToastRequiresVehicle] = useState(false);
+  const visibleToastMessage = toastRequiresVehicle && (!vehicleAvailable || !currentVehicleId) ? null : toastMessage;
   const toastTimerRef = useRef<number | null>(null);
 
   // 地貌观察 / 物理观测模式 (P0 核心体验)
@@ -206,16 +211,13 @@ export const App: React.FC = () => {
   };
 
   const handleSelectVehicle = (id: VehicleId) => {
-    setCurrentVehicleId(id);
-    engineRef.current?.setVehicle(id);
+    if (!engineRef.current?.setVehicle(id)) return;
     engineRef.current?.setViewCameraMode('VEHICLE_FORMATION');
-    setViewCameraMode('VEHICLE_FORMATION');
     const vDef = VEHICLE_CATALOG[id];
-    showToast(`🚀 已登船：${vDef.name}，正在伴飞！`);
+    showToast(`🚀 已登船：${vDef.name}，正在伴飞！`, true);
   };
 
   const handleCameraModeChange = (mode: ViewCameraMode) => {
-    setViewCameraMode(mode);
     engineRef.current?.setViewCameraMode(mode);
   };
 
@@ -254,10 +256,8 @@ export const App: React.FC = () => {
   };
 
   const handleClearVehicle = () => {
-    setCurrentVehicleId(null);
     engineRef.current?.setVehicle(null);
     engineRef.current?.setViewCameraMode('PLANET_OBSERVE');
-    setViewCameraMode('PLANET_OBSERVE');
     showToast('🪐 已结束伴飞，切回行星自由观察');
   };
 
@@ -268,8 +268,6 @@ export const App: React.FC = () => {
     try {
       if (!await engine.restoreObservationSnapshot(bm)) return;
       setSelectedBodyId(bm.surfaceStation?.bodyId ?? bm.targetBodyId);
-      setCurrentVehicleId(engine.getCurrentVehicle());
-      setViewCameraMode(engine.getViewCameraMode());
       setShowClouds(bm.layers.showClouds);
       setShowAtmosphere(bm.layers.showAtmosphere);
       setTeachingLight(bm.layers.teachingLight);
@@ -278,7 +276,8 @@ export const App: React.FC = () => {
     } catch(error) { showToast(error instanceof Error ? error.message : '恢复失败，已保留当前视角'); }
   };
 
-  const showToast = (msg: string) => {
+  const showToast = (msg: string, requiresVehicle = false) => {
+    setToastRequiresVehicle(requiresVehicle);
     setToastMessage(msg);
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     toastTimerRef.current = window.setTimeout(() => {
@@ -336,9 +335,9 @@ export const App: React.FC = () => {
           {/* 右端：功能与工具栏（机库、书签、音效、全屏、诊断） */}
           <div className="app-toolbar">
             {/* 航天器机库 */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            {vehicleAvailable && <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
               <button
-                onClick={() => setShowHangar(true)}
+                onClick={() => { if (engineRef.current?.canUseVehicles()) setShowHangar(true); }}
                 className="app-toolbar-btn btn-hangar"
                 data-testid="toolbar-hangar-btn"
                 title="打开航天器机库选择搭乘载具"
@@ -371,7 +370,7 @@ export const App: React.FC = () => {
                   <X size={12} />
                 </button>
               )}
-            </div>
+            </div>}
 
             {/* 观察点书签 */}
             <button
@@ -636,7 +635,7 @@ export const App: React.FC = () => {
 
 
       {/* 航天器机库全屏模态窗口 */}
-      {showHangar && (
+      {showHangar && vehicleAvailable && (
         <HangarModal
           currentVehicleId={currentVehicleId}
           onSelectVehicle={handleSelectVehicle}
@@ -679,7 +678,7 @@ export const App: React.FC = () => {
       />
 
       {/* 交互提示气泡 Toast（纯提示，不拦截指针——避免盖住顶部导航；3.5s 自动消失） */}
-      {(toastMessage || cameraSnapshot?.navigationBlocked) && (
+      {(visibleToastMessage || cameraSnapshot?.navigationBlocked) && (
         <div
           style={{
             position: 'absolute',
@@ -702,7 +701,7 @@ export const App: React.FC = () => {
             pointerEvents: 'none',
           }}
         >
-          <span>{toastMessage || '当前路线暂无法安全到达，请暂停时间或换个观察方向后重试。'}</span>
+          <span>{visibleToastMessage || '当前路线暂无法安全到达，请暂停时间或换个观察方向后重试。'}</span>
         </div>
       )}
     </div>
