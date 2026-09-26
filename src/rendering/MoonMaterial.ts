@@ -92,14 +92,14 @@ export function createMoonMaterial(
     vertexShader: `
       varying vec2 vUv;
       varying vec3 vNormal;
-      varying vec3 vWorldPosition;
+      varying vec3 vViewPosition;
 
       void main() {
         vUv = uv;
         vNormal = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
-        vec4 worldPos = modelMatrix * vec4(position, 1.0);
-        vWorldPosition = worldPos.xyz;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        vec4 viewPos = modelViewMatrix * vec4(position, 1.0);
+        vViewPosition = -viewPos.xyz;
+        gl_Position = projectionMatrix * viewPos;
       }
     `,
     fragmentShader: `
@@ -117,12 +117,15 @@ export function createMoonMaterial(
 
       varying vec2 vUv;
       varying vec3 vNormal;
-      varying vec3 vWorldPosition;
+      varying vec3 vViewPosition;
 
       void main() {
         vec3 N = normalize(vNormal);
         vec3 L = normalize(sunDirection);
-        vec3 V = normalize(cameraPosition - vWorldPosition);
+        // Subtracting Float32 world positions loses metre-scale direction at
+        // planetary distances. modelViewMatrix includes CPU-double cancellation;
+        // rotate its small view vector back to the world frame used by N and L.
+        vec3 V = inverseTransformDirection(vViewPosition, viewMatrix);
 
         ${sampleBody}
 

@@ -32,6 +32,7 @@ import {
   createAtmosphereHaloMaterial,
 } from '../rendering/EarthMaterial';
 import { SurfaceTileManager } from '../surface/SurfaceTileManager';
+import { buildTerrainBoundaryBridge } from '../surface/TerrainBoundary';
 import { SurfaceDatasetManifest } from '../contracts/surface';
 import { loadEarthTileManifest } from '../surface/manifestLoader';
 import {
@@ -563,7 +564,9 @@ export class SolarEngine {
             const lolaMesh = new THREE.Mesh(lolaGeo, lolaMat);
             lolaMesh.name = 'lola-l1-regional-terrain';
             stack.group.add(lolaMesh);
-            const skirtGeo = lola.buildBoundarySkirt(satRadius, holed.holeBounds);
+            const skirtGeo = isBlendSite
+              ? buildTerrainBoundaryBridge(lolaGeo, holed.geometry, holed.holeBounds, satRadius)
+              : lola.buildBoundarySkirt(satRadius, holed.holeBounds);
             if (skirtGeo) {
               const skirtMesh = new THREE.Mesh(skirtGeo, lolaMat); // 同材质：换装一次覆盖两网格
               skirtMesh.name = 'lola-l1-boundary-skirt';

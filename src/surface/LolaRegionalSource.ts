@@ -186,6 +186,8 @@ export class LolaRegionalSource {
     geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
     geo.setIndex(indices);
     geo.computeVertexNormals();
+    geo.userData.surfaceGrid = {cols, rows, lat0:latAt(0), lon0:lonAt(0),
+      dLat:-step/ppd, dLon:step/ppd};
     return geo;
   }
 

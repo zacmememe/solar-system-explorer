@@ -8,6 +8,7 @@
  */
 
 import * as THREE from 'three';
+import { computeTerrainNormals } from './TerrainBoundary';
 import type { BodyId } from '../contracts/body';
 import { RasterTerrainSource, type TerrainHeightSample } from './RasterTerrainSource';
 import { JezeroTerrainSource } from './JezeroTerrainSource';
@@ -287,7 +288,7 @@ export class TerrainHeightProvider {
     geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     geo.setIndex(indices);
-    geo.computeVertexNormals();
+    computeTerrainNormals(geo, positions);
     geo.userData.surfaceGrid = { cols:segsLon+1, rows:segsLat+1,
       lat0:bounds.latMin, lon0:bounds.lonMin, dLat, dLon };
     return geo;
@@ -357,6 +358,8 @@ export class TerrainHeightProvider {
     geo.setAttribute('normal', sphere.getAttribute('normal').clone());
     geo.setAttribute('uv', sphere.getAttribute('uv').clone());
     geo.setIndex(kept);
+    geo.userData.surfaceGrid = {cols:widthSegs+1, rows:heightSegs+1,
+      lat0:90, lon0:-180, dLat:-dLat, dLon};
     sphere.dispose();
     return { geometry: geo, holeBounds };
   }
