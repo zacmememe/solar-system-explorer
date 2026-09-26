@@ -13,23 +13,21 @@ import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import type { VehicleId } from '../contracts/vehicle';
 import { VEHICLE_ASSET_REGISTRY } from './VehicleAssetRegistry';
 import { VehicleMeshBuilder } from './VehicleMeshBuilder';
+import { isSharedVehicleTexture } from './VehicleTextures';
 
 export class VehicleLoader {
-  private static gltfLoader: GLTFLoader | null = null;
   private static dracoLoader: DRACOLoader | null = null;
   private static currentGeneration = 0;
 
   /**
-   * 初始化单例加载器
+   * 每次请求独立统计依赖失败，只有 Draco 解码器跨请求复用。
    */
-  private static getLoader(): GLTFLoader {
-    if (!this.gltfLoader) {
-      this.gltfLoader = new GLTFLoader();
+  private static getLoader(manager: THREE.LoadingManager): GLTFLoader {
+    if (!this.dracoLoader) {
       this.dracoLoader = new DRACOLoader();
       this.dracoLoader.setDecoderPath('/draco/');
-      this.gltfLoader.setDRACOLoader(this.dracoLoader);
     }
-    return this.gltfLoader;
+    return new GLTFLoader(manager).setDRACOLoader(this.dracoLoader);
   }
 
   /**
@@ -57,12 +55,22 @@ export class VehicleLoader {
     generation?: number
   ): Promise<THREE.Group | null> {
     const record = VEHICLE_ASSET_REGISTRY[id];
+    if (!record) throw new Error('未找到此航天器的模型记录');
 
     // 1. 若为外部 GLB 模型资产
     if (record && record.format === 'glb' && record.assetPath) {
       try {
-        const loader = this.getLoader();
+        const manager = new THREE.LoadingManager();
+        const failedAssets: string[] = [];
+        manager.onError = url => failedAssets.push(url);
+        const loader = this.getLoader(manager);
         const gltf = await loader.loadAsync(record.assetPath);
+        // GLTFLoader tolerates failed images and resolves a scene with null maps.
+        // That incomplete asset must not become an apparently successful vehicle.
+        if (failedAssets.length) {
+          this.disposeVehicleObject(gltf.scene);
+          throw new Error('模型贴图未能完整加载');
+        }
 
         // 代际检查：如果在这期间发起了新请求或清空操作，丢弃结果防画面污染
         if (generation !== undefined && generation !== this.currentGeneration) {
@@ -120,17 +128,31 @@ export class VehicleLoader {
 
         return wrapper;
       } catch (err) {
-        console.error(`[VehicleLoader] GLB 模型加载失败 (${record.assetPath})，降级回退程序网格:`, err);
-        // 出错时降级回退程序网格
+        throw new Error('航天器模型未能加载，请重试', { cause: err });
       }
     }
 
-    // 2. 程序化网格或兼容回退
+    // 2. 明确登记为程序模型的载具；不用于冒充失败的外部资产。
     if (generation !== undefined && generation !== this.currentGeneration) {
       return null;
     }
 
     const group = VehicleMeshBuilder.buildVehicle(id);
+    // The cache owns CPU image data. Each model owns its GPU texture wrappers,
+    // so closing one renderer releases its listeners without evicting another.
+    const ownedTextures = new Map<THREE.Texture, THREE.Texture>();
+    group.traverse(child => {
+      if (!(child instanceof THREE.Mesh)) return;
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      for (const material of materials) {
+        for (const [key, value] of Object.entries(material)) {
+          if (!(value instanceof THREE.Texture) || !isSharedVehicleTexture(value)) continue;
+          let owned = ownedTextures.get(value);
+          if (!owned) { owned = value.clone(); ownedTextures.set(value, owned); }
+          (material as unknown as Record<string, unknown>)[key] = owned;
+        }
+      }
+    });
     const box = new THREE.Box3().setFromObject(group);
     const size = new THREE.Vector3();
     box.getSize(size);
@@ -154,28 +176,29 @@ export class VehicleLoader {
   public static disposeVehicleObject(object: THREE.Object3D | null): void {
     if (!object) return;
 
+    const geometries = new Set<THREE.BufferGeometry>();
+    const materials = new Set<THREE.Material>();
+    const textures = new Set<THREE.Texture>();
     object.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
         const mesh = child as THREE.Mesh;
         if (mesh.geometry) {
-          mesh.geometry.dispose();
+          geometries.add(mesh.geometry);
         }
         if (mesh.material) {
           const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
           for (const mat of mats) {
-            // 释放所有关联贴图
-            const m = mat as any;
-            if (m.map) m.map.dispose();
-            if (m.normalMap) m.normalMap.dispose();
-            if (m.roughnessMap) m.roughnessMap.dispose();
-            if (m.metalnessMap) m.metalnessMap.dispose();
-            if (m.aoMap) m.aoMap.dispose();
-            if (m.emissiveMap) m.emissiveMap.dispose();
-            mat.dispose();
+            materials.add(mat);
+            for (const value of Object.values(mat)) {
+              if (value instanceof THREE.Texture && !isSharedVehicleTexture(value)) textures.add(value);
+            }
           }
         }
       }
     });
+    textures.forEach(texture => texture.dispose());
+    materials.forEach(material => material.dispose());
+    geometries.forEach(geometry => geometry.dispose());
 
     if (object.parent) {
       object.parent.remove(object);

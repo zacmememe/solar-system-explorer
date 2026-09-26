@@ -17,6 +17,7 @@ import { X, Rocket, Ruler, Eye, Sparkles, Sun, Lightbulb, CheckCircle2, ShieldCh
 
 interface HangarModalProps {
   currentVehicleId: VehicleId | null;
+  pendingVehicleId?: VehicleId | null;
   onSelectVehicle: (id: VehicleId) => void;
   onClearVehicle?: () => void;
   onClose: () => void;
@@ -24,6 +25,7 @@ interface HangarModalProps {
 
 export const HangarModal: React.FC<HangarModalProps> = ({
   currentVehicleId,
+  pendingVehicleId,
   onSelectVehicle,
   onClearVehicle,
   onClose,
@@ -34,6 +36,8 @@ export const HangarModal: React.FC<HangarModalProps> = ({
   const [scaleMode, setScaleMode] = useState<'framed' | 'metric'>('framed');
   const [lightingMode, setLightingMode] = useState<'studio' | 'orbit'>('studio');
   const [activeHotspotId, setActiveHotspotId] = useState<string | null>(null);
+  const [readyId, setReadyId] = useState<VehicleId | null>(null);
+  const canBoard = readyId === selectedId;
 
   const def = VEHICLE_CATALOG[selectedId];
   const assetRecord = VEHICLE_ASSET_REGISTRY[selectedId];
@@ -46,6 +50,7 @@ export const HangarModal: React.FC<HangarModalProps> = ({
   };
 
   const handleBoard = () => {
+    if (!canBoard) return;
     onSelectVehicle(selectedId);
     onClose();
   };
@@ -304,6 +309,7 @@ export const HangarModal: React.FC<HangarModalProps> = ({
               }}
             >
               <VehicleViewer3D
+                onLoadState={(id, state) => setReadyId(state === 'ready' ? id : null)}
                 vehicleId={selectedId}
                 activeHotspotId={activeHotspotId}
                 scaleMode={scaleMode}
@@ -608,30 +614,31 @@ export const HangarModal: React.FC<HangarModalProps> = ({
             <div style={{ marginTop: 'auto', paddingTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
               <button
                 data-testid="hangar-board-btn"
+                disabled={!canBoard}
                 onClick={handleBoard}
                 style={{
                   width: '100%',
                   padding: '13px 0',
-                  background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                  background: canBoard ? 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)' : '#263445',
                   color: '#ffffff',
                   border: 'none',
                   borderRadius: 12,
                   fontWeight: 700,
                   fontSize: 14,
-                  cursor: 'pointer',
+                  cursor: canBoard ? 'pointer' : 'not-allowed',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: 8,
-                  boxShadow: '0 4px 20px rgba(2, 132, 199, 0.45)',
+                  boxShadow: canBoard ? '0 4px 20px rgba(2, 132, 199, 0.45)' : 'none',
                   transition: 'transform 0.15s, box-shadow 0.15s',
                 }}
               >
                 <Rocket size={16} />
-                <span>搭乘这艘飞船出征伴飞 (Board & Fly)</span>
+                <span>{canBoard ? '搭乘这艘飞船出征伴飞 (Board & Fly)' : '模型就绪后可开始伴飞'}</span>
               </button>
 
-              {currentVehicleId && onClearVehicle && (
+              {(currentVehicleId || pendingVehicleId) && onClearVehicle && (
                 <button
                   data-testid="hangar-clear-vehicle-btn"
                   onClick={() => {
@@ -656,7 +663,7 @@ export const HangarModal: React.FC<HangarModalProps> = ({
                   }}
                 >
                   <X size={15} />
-                  <span>结束伴飞 · 移除航天器 (Clear Vehicle)</span>
+                  <span>{pendingVehicleId ? '取消伴飞准备' : '结束伴飞 · 移除航天器 (Clear Vehicle)'}</span>
                 </button>
               )}
             </div>

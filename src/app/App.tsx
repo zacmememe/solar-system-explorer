@@ -110,6 +110,7 @@ export const App: React.FC = () => {
         onWebGLInfo: (info) => setWebglInfo(info),
         onCelestialLabels: (labels) => setCelestialLabels(labels),
         onObservationModeChange: (mode) => setObservationMode(mode),
+        onVehicleLoadError: message => showToast(message),
         onContextState: (state) => {
           if (state === 'lost') {
             showToast('⚠️ 显卡 WebGL 上下文中断，系统正在全力保护与恢复...');
@@ -211,10 +212,13 @@ export const App: React.FC = () => {
   };
 
   const handleSelectVehicle = (id: VehicleId) => {
-    if (!engineRef.current?.setVehicle(id)) return;
-    engineRef.current?.setViewCameraMode('VEHICLE_FORMATION');
-    const vDef = VEHICLE_CATALOG[id];
-    showToast(`🚀 已登船：${vDef.name}，正在伴飞！`, true);
+    const engine = engineRef.current;
+    if (!engine?.setVehicle(id, () => {
+      if (engineRef.current !== engine) return;
+      showToast(`🚀 已登船：${VEHICLE_CATALOG[id].name}，正在伴飞！`, true);
+    })) return;
+    engine.setViewCameraMode('VEHICLE_FORMATION');
+    showToast('正在准备伴飞…');
   };
 
   const handleCameraModeChange = (mode: ViewCameraMode) => {
@@ -638,6 +642,7 @@ export const App: React.FC = () => {
       {showHangar && vehicleAvailable && (
         <HangarModal
           currentVehicleId={currentVehicleId}
+          pendingVehicleId={vehicle?.pendingId ?? null}
           onSelectVehicle={handleSelectVehicle}
           onClearVehicle={handleClearVehicle}
           onClose={() => setShowHangar(false)}

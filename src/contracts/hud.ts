@@ -42,5 +42,5 @@ export interface HudFrame {
   readonly landing?: HudLandingFrame;
   readonly surface?: HudSurfaceObservation | null;
   /** Authoritative availability and effective display mode, including surface restrictions. */
-  readonly vehicle?: { readonly allowed: boolean; readonly id: VehicleId | null; readonly mode: ViewCameraMode };
+  readonly vehicle?: { readonly allowed: boolean; readonly id: VehicleId | null; readonly pendingId?: VehicleId | null; readonly mode: ViewCameraMode };
 }

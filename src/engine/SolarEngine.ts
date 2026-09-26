@@ -128,6 +128,7 @@ export interface SolarEngineCallbacks {
   onContextState?: (state: 'lost' | 'restored') => void;
   onCelestialLabels?: (labels: CelestialLabelItem[]) => void;
   onObservationModeChange?: (mode: ObservationMode) => void;
+  onVehicleLoadError?: (message: string) => void;
 }
 
 function safeDisposeMaterial(mat: THREE.Material | THREE.Material[]): void {
@@ -265,6 +266,7 @@ export class SolarEngine {
 
   // 航天器伴飞系统
   private currentVehicleId: VehicleId | null = null;
+  private vehicleDisposed = false;
   /** F-VEHICLE-FOREGROUND-01：载具挂展示 layer，由 DepthSliceRenderer 末段独立 pass 绘制 */
   private vehicleGroup: THREE.Group = (() => {
     const g = new THREE.Group();
@@ -3233,14 +3235,15 @@ export class SolarEngine {
     if (this.vehicleLightingMode !== this.getViewCameraMode()) this.updateLightingState();
   }
 
-  public setVehicle(id: VehicleId | null): boolean {
+  public setVehicle(id: VehicleId | null, onReady?: () => void): boolean {
+    if (this.vehicleDisposed) return false;
     if (id && !this.canUseVehicles()) return false;
-    this.replaceVehicle(id);
+    this.replaceVehicle(id, onReady);
     return true;
   }
 
   /** Internal space-bookmark restore may prepare a hidden model during its arrival transition. */
-  private replaceVehicle(id: VehicleId | null): void {
+  private replaceVehicle(id: VehicleId | null, onReady?: () => void): void {
     const gen = ++this.vehicleLoadGeneration;
 
     if (this.currentVehicleMesh) {
@@ -3250,33 +3253,47 @@ export class SolarEngine {
     }
 
     this.currentVehicleId = id;
+    this.vehicleGroup.visible = false;
     if (!id) {
       this.vehicleGroup.visible = false;
       this.viewCameraMode = 'PLANET_OBSERVE';
       return;
     }
 
-    // Hangar preview owns VehicleLoader's legacy global generation. The main
-    // scene has its own generation and checks it below; do not compare the two.
+    const isCurrent = () => !this.vehicleDisposed && gen === this.vehicleLoadGeneration && this.currentVehicleId === id;
     VehicleLoader.loadVehicle(id).then((group) => {
+      // Never touch a dead engine, including its camera/controller state.
+      if (!isCurrent()) { VehicleLoader.disposeVehicleObject(group); return; }
       this.syncVehicleContext();
-      if (gen !== this.vehicleLoadGeneration || this.currentVehicleId !== id) {
+      if (!isCurrent()) {
         if (group) {
           VehicleLoader.disposeVehicleObject(group);
         }
         return;
       }
-      if (!group) return;
+      if (!group) throw new Error('航天器模型未能加载，请重试');
 
       this.currentVehicleMesh = group;
       // F-VEHICLE-FOREGROUND-01：模型全部节点迁到展示 layer（世界 pass 屏蔽）
       group.traverse((o) => o.layers.set(VEHICLE_DISPLAY_LAYER));
       this.vehicleGroup.add(group);
+      onReady?.();
+    }).catch(() => {
+      if (!isCurrent()) return;
+      this.syncVehicleContext();
+      if (!isCurrent()) return;
+      this.replaceVehicle(null);
+      this.updateLightingState();
+      this.callbacks?.onVehicleLoadError?.('航天器未能加载，请在机库中重试');
     });
   }
 
   public getCurrentVehicle(): VehicleId | null {
-    return this.currentVehicleId;
+    return this.currentVehicleMesh ? this.currentVehicleId : null;
+  }
+
+  public getPendingVehicle(): VehicleId | null {
+    return this.currentVehicleMesh ? null : this.currentVehicleId;
   }
 
   public setViewCameraMode(mode: ViewCameraMode): void {
@@ -3286,7 +3303,7 @@ export class SolarEngine {
   }
 
   public getViewCameraMode(): ViewCameraMode {
-    return this.canUseVehicles() ? this.viewCameraMode : 'PLANET_OBSERVE';
+    return this.currentVehicleMesh && this.canUseVehicles() ? this.viewCameraMode : 'PLANET_OBSERVE';
   }
 
   public getRendererCanvas(): HTMLCanvasElement {
@@ -3412,7 +3429,7 @@ export class SolarEngine {
       observerPosition: [this.camera.position.x, this.camera.position.y, this.camera.position.z],
       bodies,
       surface,
-      vehicle: { allowed: this.canUseVehicles(), id: this.currentVehicleId, mode: this.getViewCameraMode() },
+      vehicle: { allowed: this.canUseVehicles(), id: this.getCurrentVehicle(), pendingId: this.getPendingVehicle(), mode: this.getViewCameraMode() },
       landing: {
         telemetry: this.landingController.getTelemetry(),
         availability: this.getLandingAvailability(),
@@ -4284,7 +4301,7 @@ export class SolarEngine {
       simulation: {isPaused:this.isPaused,timeScale:this.timeScale},
       cameraMode: camSnap.mode==='OVERVIEW' ? 'OVERVIEW' : 'ORBIT_TARGET',
       viewCameraMode: surfaceStation ? 'PLANET_OBSERVE' : this.getViewCameraMode(),
-      vehicleId: surfaceStation ? null : this.currentVehicleId,
+      vehicleId: surfaceStation ? null : this.getCurrentVehicle(),
       layers: {
         showClouds: this.showClouds,
         showAtmosphere: this.showAtmosphere,
@@ -4412,6 +4429,8 @@ export class SolarEngine {
 
 
   public dispose(): void {
+    this.vehicleDisposed = true;
+    this.replaceVehicle(null);
     this.navigationRevision++;
     this.isRunning = false;
     cancelAnimationFrame(this.animFrameId);
@@ -4428,16 +4447,6 @@ export class SolarEngine {
     this.canvas.removeEventListener('webglcontextrestored', this.onContextRestored);
 
     this.assetManager.disposeAll();
-
-    if (this.currentVehicleMesh) {
-      this.currentVehicleMesh.traverse((obj) => {
-        if ((obj as THREE.Mesh).isMesh) {
-          const mesh = obj as THREE.Mesh;
-          mesh.geometry.dispose();
-          safeDisposeMaterial(mesh.material);
-        }
-      });
-    }
 
     if (this.skyboxMesh) {
       this.skyboxMesh.geometry.dispose();

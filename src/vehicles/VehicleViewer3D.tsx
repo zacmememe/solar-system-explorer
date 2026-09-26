@@ -7,7 +7,7 @@
  * 4. 真实米制对比网格与可切换的中性工坊光/在轨日光对比。
  */
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import type { VehicleId } from '../contracts/vehicle';
 import { VEHICLE_CATALOG } from './VehicleCatalog';
@@ -18,6 +18,7 @@ export interface VehicleViewer3DProps {
   activeHotspotId?: string | null;
   scaleMode?: 'framed' | 'metric';
   lightingMode?: 'studio' | 'orbit';
+  onLoadState?: (id: VehicleId, state: 'loading' | 'ready' | 'error') => void;
 }
 
 export const VehicleViewer3D: React.FC<VehicleViewer3DProps> = ({
@@ -25,9 +26,15 @@ export const VehicleViewer3D: React.FC<VehicleViewer3DProps> = ({
   activeHotspotId,
   scaleMode = 'framed',
   lightingMode = 'studio',
+  onLoadState,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const animRef = useRef<number>(0);
+  const [loadResult, setLoadResult] = useState<{ id: VehicleId; state: 'loading' | 'ready' | 'error' }>({ id: vehicleId, state: 'loading' });
+  const loadState = loadResult.id === vehicleId ? loadResult.state : 'loading';
+  const [retry, setRetry] = useState(0);
+  const onLoadStateRef = useRef(onLoadState);
+  onLoadStateRef.current = onLoadState;
 
   // 内部持久状态引用
   const stateRef = useRef({
@@ -199,6 +206,10 @@ export const VehicleViewer3D: React.FC<VehicleViewer3DProps> = ({
       const lerpAlpha = 1.0 - Math.exp(-6.0 * deltaSec);
       camera.position.lerp(stateRef.current.targetCamPos, lerpAlpha);
       camera.lookAt(stateRef.current.targetLookAt);
+      // Native GLB units vary. Cover the whole model throughout the framing
+      // transition instead of cutting large assets with a fixed far=500 plane.
+      const far = Math.max(500, camera.position.length() + stateRef.current.maxDim * 2);
+      if (Math.abs(camera.far - far) > 0.01) { camera.far = far; camera.updateProjectionMatrix(); }
 
       if (gridHelperRef.current) {
         gridHelperRef.current.visible = stateRef.current.scaleMode === 'metric';
@@ -243,6 +254,16 @@ export const VehicleViewer3D: React.FC<VehicleViewer3DProps> = ({
         VehicleLoader.disposeVehicleObject(currentMeshRef.current);
         currentMeshRef.current = null;
       }
+      gridHelper.geometry.dispose();
+      const gridMaterials = Array.isArray(gridHelper.material) ? gridHelper.material : [gridHelper.material];
+      gridMaterials.forEach(material => material.dispose());
+      hotspotMarker.geometry.dispose();
+      hotspotMarker.material.dispose();
+      sceneRef.current = null;
+      vehicleGroupRef.current = null;
+      gridHelperRef.current = null;
+      hotspotMarkerRef.current = null;
+      lightsRef.current = null;
       renderer.dispose();
       if (renderer.domElement.parentElement) {
         renderer.domElement.parentElement.removeChild(renderer.domElement);
@@ -255,16 +276,24 @@ export const VehicleViewer3D: React.FC<VehicleViewer3DProps> = ({
     const vehicleGroup = vehicleGroupRef.current;
     if (!vehicleGroup) return;
 
-    const gen = VehicleLoader.nextGeneration();
+    let cancelled = false;
+    const publish = (state: 'loading' | 'ready' | 'error') => {
+      setLoadResult({ id: vehicleId, state });
+      onLoadStateRef.current?.(vehicleId, state);
+    };
+    publish('loading');
+    // Do not display the previous model under the newly selected vehicle's name.
+    VehicleLoader.disposeVehicleObject(currentMeshRef.current);
+    currentMeshRef.current = null;
 
-    VehicleLoader.loadVehicle(vehicleId, gen).then((newModel) => {
-      // 检查代际是否依然有效
-      if (gen !== VehicleLoader.getCurrentGeneration() || !newModel) {
+    VehicleLoader.loadVehicle(vehicleId).then((newModel) => {
+      if (cancelled) {
         if (newModel) {
           VehicleLoader.disposeVehicleObject(newModel);
         }
         return;
       }
+      if (!newModel) { publish('error'); return; }
 
       // 释放并移除旧模型
       if (currentMeshRef.current) {
@@ -298,8 +327,12 @@ export const VehicleViewer3D: React.FC<VehicleViewer3DProps> = ({
         const size = newModel.userData.size as THREE.Vector3;
         gridHelperRef.current.position.y = -size.y * 0.5 - 0.2;
       }
+      publish('ready');
+    }).catch(() => {
+      if (!cancelled) publish('error');
     });
-  }, [vehicleId]);
+    return () => { cancelled = true; };
+  }, [vehicleId, retry]);
 
   // 4. 热点高亮更新响应
   useEffect(() => {
@@ -325,6 +358,8 @@ export const VehicleViewer3D: React.FC<VehicleViewer3DProps> = ({
     <div
       ref={mountRef}
       data-testid="hangar-3d-viewport"
+      data-load-state={loadState}
+      aria-busy={loadState === 'loading'}
       style={{
         width: '100%',
         height: '100%',
@@ -334,6 +369,11 @@ export const VehicleViewer3D: React.FC<VehicleViewer3DProps> = ({
         touchAction: 'none',
       }}
       title="鼠标按住拖拽可 360° 自由旋转飞船"
-    />
+    >
+      {loadState !== 'ready' && <div role={loadState === 'error' ? 'alert' : 'status'} style={{ position: 'absolute', inset: 0, zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 14, background: 'rgba(10,16,29,.85)', color: '#cbd5e1', fontSize: 14 }}>
+        <span>{loadState === 'loading' ? '正在加载航天器…' : '模型或贴图未能加载，请重试'}</span>
+        {loadState === 'error' && <button data-testid="hangar-model-retry" onClick={() => setRetry(value => value + 1)} style={{ padding: '8px 18px', borderRadius: 8, border: '1px solid #38bdf8', background: '#12354b', color: '#e0f2fe', cursor: 'pointer' }}>重新加载</button>}
+      </div>}
+    </div>
   );
 };

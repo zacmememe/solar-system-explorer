@@ -15,6 +15,12 @@ let goldFoilTexCache: THREE.Texture | null = null;
 let hullPanelTexCache: THREE.Texture | null = null;
 let darkCarbonTexCache: THREE.Texture | null = null;
 
+/** Cached procedural textures outlive individual hangar/scene models. */
+export function isSharedVehicleTexture(texture: THREE.Texture): boolean {
+  return texture === solarPanelTexCache || texture === goldFoilTexCache
+    || texture === hullPanelTexCache || texture === darkCarbonTexCache;
+}
+
 function createFallbackTexture(r: number, g: number, b: number): THREE.Texture {
   const data = new Uint8Array([r, g, b, 255]);
   const tex = new THREE.DataTexture(data, 1, 1);
@@ -291,4 +297,3 @@ export function getDarkCarbonTexture(): THREE.Texture {
   darkCarbonTexCache = tex;
   return tex;
 }
-
