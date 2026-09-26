@@ -23,3 +23,5 @@ OBJ头记2026-01-31、PCK10→PCK11及已移除COM–COF offset。顶点单位km
 建议正式实现：保存原资产哈希和许可；离线将OBJ与逐面反照率转换成紧凑本地资产；逐面反照率通过属性或明确索引实现，不编造RGB探测器照片；记录全量校验、无纹理回退、法线/接缝/面绕序；正常UI验证火卫一远近/拖动/日夜/母星遮挡/快速切换。禁止从原形状直接假设包围半径仍正确。
 
 备选土卫七：[PDS形状](https://sbnarchive.psi.edu/pds4/cassini/saturn_satellite_shape_models_V1_0/data/hyperion_30k_plt.tab)约2.2MB、14636顶点/29268面，[说明文档](https://sbnarchive.psi.edu/pds4/cassini/saturn_satellite_shape_models_V1_0/document/hyperion_document.pdf)。匹配纹理和混沌自转的具体时刻约定未解决，不与火卫一混为同一批已就绪资产。
+
+2026-09-26续查：JHU/APL条款仍未明确授予外部v004再分发权；本轮先完成有明确公共领域许可的土卫三Cassini PIA14931。来源、坐标矛盾处理、渲染接入和验证见 [本轮报告](../mars-materials-body-assets-report.md)。火卫一未入库。
