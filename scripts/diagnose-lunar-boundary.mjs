@@ -76,13 +76,16 @@ try {
     await shot('07-ground-view-relative');
     // On a fixed production build, reintroduce the former world subtraction.
     // This makes the causal comparison reproducible after the fix is committed.
-    await page.evaluate(()=>{
+    report.worldSubtractionApplied=await page.evaluate(()=>{
       const d=window.__groundMaterial;
       if(d.fragment.includes('inverseTransformDirection(vViewPosition, viewMatrix)')) {
         d.mat.vertexShader=d.vertex.replace('vViewPosition = -viewPos.xyz;','vViewPosition = (modelMatrix * vec4(position, 1.0)).xyz;');
         d.mat.fragmentShader=d.fragment.replace('inverseTransformDirection(vViewPosition, viewMatrix)','normalize(cameraPosition - vViewPosition)');
+        if(d.mat.vertexShader===d.vertex||d.mat.fragmentShader===d.fragment)throw new Error('Old-view diagnostic replacement did not apply');
         d.mat.needsUpdate=true;
+        return true;
       }
+      return false; // legacy production build: the old path was already present
     });
     await shot('08-ground-world-subtraction');
     await page.evaluate(()=>{const d=window.__groundMaterial;d.mat.vertexShader=d.vertex;d.mat.fragmentShader=d.fragment;d.mat.needsUpdate=true;delete window.__groundMaterial;});
