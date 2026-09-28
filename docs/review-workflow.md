@@ -1,5 +1,7 @@
 # 太阳系漫游：执行、审查与阶段交付
 
+2026-09-28 当前模式已改为 [zcode/Anti 双轨执行](parallel-zcode-anti-18.md)：两边额度已恢复，各用独立worktree；zcode/GLM-5.3不依赖视觉，Anti/Gemini-3.8-Flash直接视觉复核与实现。该文覆盖下文旧单作者/Anti暂停的临时安排，独立批准与生产候选闸门保留。Pro读取固定候选，入口见 [审查上下文](pro-review-18-context.md)。
+
 仓库：https://github.com/zacmememe/solar-system-explorer 。本地 `main` 跟踪 `origin/main`。
 
 > 变更记录：2026-09-23 按 `docs/collaboration-bootstrap-2026-09-23/`（solar-coordination-v1）合并新分工与连续工作规则，替换原"日常一轮"（Pro→Anti 单循环）描述；公开链接审查、材料导出与本机 GitHub CLI 章节保持有效。原 Pro 审查包仍可在 `docs/review-prompt.md` 流程中使用。

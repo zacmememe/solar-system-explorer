@@ -2,6 +2,8 @@
 
 仓库：[zacmememe/solar-system-explorer](https://github.com/zacmememe/solar-system-explorer)。
 
+2026-09-28 接力：先读 [Pro 固定版本与进展](docs/pro-review-18-context.md)、[zcode/Anti 双轨工作约定](docs/parallel-zcode-anti-18.md)。产品深审固定 `23e1271c23cc3144632c2bcd55d29991c0e5489a`，不要用较旧的默认 main 代替。给 Pro 的两段指示：[先深审方向](docs/pro-review-18-prompt.md)、[再拆分并行任务](docs/pro-parallel-18-prompt.md)。
+
 使用 React、TypeScript、Three.js 和 Vite 构建的浏览器太阳系探索项目。包含行星与卫星观察、镜头转场、时间控制、航天器展示、书签和探索明信片，以及六个站点的真实地形着陆闭环（月面陶拉斯—利特罗/哈德利月溪/静海基地，火星耶泽罗/维多利亚/盖尔）——着陆与地表观察消费真实 DTM（NAC 2–5m / HiRISE 2m）与 LOLA/MOLA 区域地形，遥测标注高程溯源与准入状态。
 
 普通观星采用以当前行星系统为基准的统一线性尺度，远方天体与本系统保持模型中的方向、视大小和前后关系；“全景”采用便于导航的示意比例，切换系统的转场也属于导航展示。轨道仍是解析近似，不代表精确星历。观测来源贴图与程序生成示意应分别标明，资产出处见 `sources/production-assets.json`。

@@ -1,5 +1,7 @@
 # zcode / GLM-5.3 Flash 接力指引
 
+**2026-09-28更新：本文保留技术案例，当前分工以 [双轨执行约定](parallel-zcode-anti-18.md) 为准。** 用户指定zcode/GLM-5.3不依赖视觉，Anti/Gemini-3.8-Flash负责直接视觉；两边已可并行。Z11继续按本文第4节技术要求调查，F-SURFACE-CONTACT-12改由Anti主导，调查/隔离原型不等Z11整轮结束。不要从本文旧main命令或旧HUD15分支开始；从本轮交接HEAD的独立worktree开始，准确SHA读queue。
+
 ## 1. 现在从哪里继续
 
 **当前布局：用户已选 A，HUD17 接入。** 先读 `docs/hud-classic-a-17.md` 和唯一 queue，从包含 HUD17 的交付 HEAD 继续。左时间，右对象/阶段主读数，中央图与下沿操作；保留轻透视、留白和阶段真实读数。不要回退到 HUD15 的右侧拥挤排布，也不要再要求用户选 A/B/C。下面 HUD15 与旧主线 SHA 是历史记录，不能作为新任务盲切的起点。实现自测与用户体验接受分别记录。
@@ -93,7 +95,10 @@
 Windows可直接用的首任务命令（在项目根目录，先登记作者与分支；每次使用新目录）：
 
 ```powershell
-git switch -c codex/startup-responsiveness-11 main
+# 已进入本轮给zcode准备的独立worktree；分支/base先按唯一queue核对。
+git status --short
+git branch --show-current
+git rev-parse HEAD
 npm test
 npm run build
 $env:EVIDENCE_DIR = 'D:/solar-evidence/startup-responsiveness-11/baseline-01'
