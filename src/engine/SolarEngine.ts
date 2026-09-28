@@ -339,7 +339,11 @@ export class SolarEngine {
    */
   private ensureMarsSiteAssets(siteId: string): void {
     const stack = this.marsSiteStacks.get(siteId);
-    if (!stack || stack.loadStarted) return;
+    if (!stack) return;
+    // F-STARTUP-RESPONSIVENESS-11：失败态允许重入——同页"再次选择/再次尝试"产生
+    // 新请求（Z18-04）；loading/ready 幂等防重复启动。建栈中途抛错由
+    // buildMarsSiteStack 回滚 loadStarted，同样走此重入。
+    if (stack.loadStarted && stack.dtm.state !== 'failed') return;
     stack.loadStarted = true;
     const urls = SolarEngine.MARS_SITE_ASSET_URLS[siteId] ?? {};
     Promise.all([
@@ -348,6 +352,7 @@ export class SolarEngine {
     ])
       .then(() => this.buildMarsSiteStack(stack))
       .catch((err: unknown) => {
+        stack.loadStarted = false; // 允许后续重试
         console.error(`[SolarEngine] 火星站点 ${siteId} DTM 装载失败，真实地表网格保持隐藏:`, err);
       });
   }
@@ -355,11 +360,12 @@ export class SolarEngine {
   /**
    * S5-3：幂等预取月面站点资产（DTM+L1）并懒建栈。默认站在引擎初始化时调用
    * （保持原有行为）；其他站在可用性解析命中该站时触发。失败仅告警——栈保持
-   * 未建/隐藏，不伪造地形。
+   * 未建/隐藏，不伪造地形；失败后允许同页重试（F-STARTUP-RESPONSIVENESS-11）。
    */
   private ensureMoonSiteAssets(siteId: string): void {
     const stack = this.moonSiteStacks.get(siteId);
-    if (!stack || stack.loadStarted) return;
+    if (!stack) return;
+    if (stack.loadStarted && stack.raster.state !== 'failed') return;
     stack.loadStarted = true;
     const urls = SolarEngine.MOON_SITE_ASSET_URLS[siteId] ?? {};
     Promise.all([
@@ -368,6 +374,7 @@ export class SolarEngine {
     ])
       .then(() => this.buildMoonSiteStack(stack))
       .catch((err: unknown) => {
+        stack.loadStarted = false; // 允许后续重试
         console.error(`[SolarEngine] 月面站点 ${siteId} DTM 装载失败，真实地表网格保持隐藏:`, err);
       });
   }
@@ -383,7 +390,6 @@ export class SolarEngine {
     if (!satMesh || stack.built || !stack.raster.isReady) return;
     const site = LANDING_SITES[stack.siteId];
     if (!site) return;
-    stack.built = true;
     const heightProvider = TerrainHeightProvider.getInstance();
     const rasterSource = stack.raster;
     const lola = stack.lola;
@@ -675,10 +681,42 @@ export class SolarEngine {
           });
         }
       }
+      // F-STARTUP-RESPONSIVENESS-11：built 尾置——全部装配成功才成立，不再在
+      // 构建开头预置 true（旧语义下中途抛错既显示 built 又永久不可重试）。
+      stack.built = true;
       if (stack.siteId === this.activeMoonSiteId) this.refreshActiveMoonStackRefs(stack);
+    } catch (err) {
+      // 半装配回滚：清空本站独占资源后允许 ensure* 重入重建（共享材质不 dispose）
+      this.resetMoonSiteStackPartial(stack);
+      stack.loadStarted = false;
+      console.error(`[SolarEngine] 月面站点 ${stack.siteId} 表面栈构建失败（可重试）:`, err);
     } finally {
       heightProvider.setActiveMoonSite(prevActiveSite);
     }
+  }
+
+  /** F-STARTUP-RESPONSIVENESS-11：半装配站栈回滚（仅 dispose 本站独占资源） */
+  private resetMoonSiteStackPartial(stack: MoonSiteStack): void {
+    // 挖孔球若已装到本体且属本站，先换回整球（无孔可露：站未建不激活）
+    if (this.moonMesh && stack.holedGeometry && this.moonMesh.geometry === stack.holedGeometry) {
+      this.moonMesh.geometry = new THREE.SphereGeometry(this.moonBaseRadius, 128, 64);
+    }
+    for (const child of [...stack.group.children]) {
+      (child as THREE.Mesh).geometry?.dispose();
+      stack.group.remove(child);
+    }
+    stack.valleyMaterial?.dispose();
+    for (const m of stack.lolaMaterials) m.dispose();
+    stack.patchMaterial?.dispose();
+    stack.collarMaterial?.dispose();
+    stack.valleyMaterial = undefined;
+    stack.valleyMesh = undefined;
+    stack.patchMesh = undefined;
+    stack.patchMaterial = undefined;
+    stack.capMesh = undefined;
+    stack.lolaMaterials = [];
+    stack.collarMaterial = null;
+    if (stack.holedGeometry) { stack.holedGeometry.dispose(); stack.holedGeometry = null; }
   }
 
   /** S5-3：激活站引用刷新（animate 渐显门控/WAC 换装消费的引擎字段指向激活栈） */
@@ -722,7 +760,6 @@ export class SolarEngine {
     if (!satMesh || stack.built || !stack.dtm.isReady) return;
     const site = LANDING_SITES[stack.siteId];
     if (!site) return;
-    stack.built = true;
     const heightProvider = TerrainHeightProvider.getInstance();
     const dtm = stack.dtm;
     const mola = stack.mola;
@@ -949,10 +986,39 @@ export class SolarEngine {
           stack.group.add(marsPatchMesh);
         }
       }
+      // F-STARTUP-RESPONSIVENESS-11：built 尾置（同月面——装配成功才成立）
+      stack.built = true;
       if (stack.siteId === this.activeMarsSiteId) this.refreshActiveMarsStackRefs(stack);
+    } catch (err) {
+      this.resetMarsSiteStackPartial(stack);
+      stack.loadStarted = false;
+      console.error(`[SolarEngine] 火星站点 ${stack.siteId} 表面栈构建失败（可重试）:`, err);
     } finally {
       heightProvider.setActiveMarsSite(prevActiveSite);
     }
+  }
+
+  /** F-STARTUP-RESPONSIVENESS-11：半装配火星站栈回滚（镜像月面；仅独占资源） */
+  private resetMarsSiteStackPartial(stack: MarsSiteStack): void {
+    if (this.marsMesh && stack.holedGeometry && this.marsMesh.geometry === stack.holedGeometry) {
+      this.marsMesh.geometry = new THREE.SphereGeometry(this.marsBaseRadius, 128, 64);
+    }
+    for (const child of [...stack.group.children]) {
+      (child as THREE.Mesh).geometry?.dispose();
+      stack.group.remove(child);
+    }
+    stack.terrainMaterial?.dispose();
+    for (const m of stack.l1Materials) m.dispose();
+    stack.patchMaterial?.dispose();
+    stack.collarMaterial?.dispose();
+    stack.terrainMaterial = undefined;
+    stack.terrainMesh = undefined;
+    stack.patchMesh = undefined;
+    stack.patchMaterial = undefined;
+    stack.capMesh = undefined;
+    stack.l1Materials = [];
+    stack.collarMaterial = null;
+    if (stack.holedGeometry) { stack.holedGeometry.dispose(); stack.holedGeometry = null; }
   }
 
   /** S5-6：激活站引用刷新（animate 渐显门控/雾/曝光消费的引擎字段指向激活栈） */
@@ -2562,12 +2628,14 @@ export class SolarEngine {
       return;
     }
     if (prep.phase === 'capture') {
-      // 资源门槛（按天体路由的 DTM ready + 站点 measured-dem）——就绪前不捕获不开始
+      // 资源门槛（按站点路由的 DTM ready + 站点 measured-dem）——就绪前不捕获不开始。
+      // F-STARTUP-RESPONSIVENESS-11：月球分支改按目标站点栅格判断（原 hp.isRasterReady
+      // 读默认站——默认站失败会连坐其他站准备，Z18-01）；栈未注册时 fail-closed。
       const site = this.activeLandingSite;
       const hp = TerrainHeightProvider.getInstance();
       const dataReady = this.activeLandingBodyId === 'mars'
         ? (this.marsSiteStacks.get(site.id)?.dtm ?? JezeroTerrainSource.getInstance()).isReady // S5-6：按站点路由
-        : hp.isRasterReady;
+        : (this.moonSiteStacks.get(site.id)?.raster.isReady ?? false);
       if (!dataReady || hp.getHeightSample(this.activeLandingBodyId, site.centerLat, site.centerLon).fidelity !== 'measured-dem') {
         return;
       }
