@@ -142,8 +142,11 @@ export class RasterTerrainSource {
 
   public async load(baseUrl: string = RasterTerrainSource.DEFAULT_BASE_URL): Promise<void> {
     if (this.loadPromise) return this.loadPromise;
+    // F-STARTUP-RESPONSIVENESS-11：失败不缓存 rejected promise——旧错误不得永久
+    // 锁死同页重试（Z18-04）。loadPromise=null 允许下一次 load 发起新请求（新代际）。
     this.loadPromise = this.doLoad(baseUrl).catch((err: unknown) => {
       this.loadError = String(err instanceof Error ? err.message : err);
+      this.loadPromise = null;
       throw err;
     });
     return this.loadPromise;
@@ -181,6 +184,8 @@ export class RasterTerrainSource {
   }
 
   private async doLoad(baseUrl: string): Promise<void> {
+    // 重试成功时清旧失败标记（state getter 以 loadError 优先判 failed）
+    this.loadError = null;
     const [metaRes, heightRes, validRes, orthoRes] = await Promise.all([
       fetch(`${baseUrl}/metadata.json`),
       fetch(`${baseUrl}/height.f32`),

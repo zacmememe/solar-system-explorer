@@ -67,6 +67,14 @@ export class JezeroTerrainSource {
     return !!(this.meta && this.heights && this.valid);
   }
 
+  /** F-STARTUP-RESPONSIVENESS-11：与 RasterTerrainSource 同口径的装载状态机 */
+  public get state(): 'idle' | 'loading' | 'ready' | 'failed' {
+    if (this.loadError) return 'failed';
+    if (this.isReady) return 'ready';
+    if (this.loadPromise) return 'loading';
+    return 'idle';
+  }
+
   public get error(): string | null {
     return this.loadError;
   }
@@ -96,14 +104,18 @@ export class JezeroTerrainSource {
 
   public async load(baseUrl: string = JezeroTerrainSource.BASE_URL): Promise<void> {
     if (this.loadPromise) return this.loadPromise;
+    // F-STARTUP-RESPONSIVENESS-11：失败不缓存 rejected promise（同页重试=新请求，Z18-04）
     this.loadPromise = this.doLoad(baseUrl).catch((err: unknown) => {
       this.loadError = err instanceof Error ? err.message : String(err);
+      this.loadPromise = null;
       throw err;
     });
     return this.loadPromise;
   }
 
   private async doLoad(baseUrl: string): Promise<void> {
+    // 重试成功时清旧失败标记
+    this.loadError = null;
     const meta: JezeroMeta = await (await fetch(`${baseUrl}/metadata.json`)).json();
     const hBuf = await (await fetch(`${baseUrl}/height.f32`)).arrayBuffer();
     const vBuf = await (await fetch(`${baseUrl}/valid.u8`)).arrayBuffer();
