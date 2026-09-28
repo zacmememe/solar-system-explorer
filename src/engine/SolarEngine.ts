@@ -269,6 +269,8 @@ export class SolarEngine {
 
   // 航天器伴飞系统
   private currentVehicleId: VehicleId | null = null;
+  private pendingMoonTextureTasks: Array<() => void> = [];
+  private moonTexturePumpFrameId = 0;
   private vehicleDisposed = false;
   /** F-VEHICLE-FOREGROUND-01：载具挂展示 layer，由 DepthSliceRenderer 末段独立 pass 绘制 */
   private vehicleGroup: THREE.Group = (() => {
@@ -1838,82 +1840,16 @@ export class SolarEngine {
       'proteus',
     ];
 
-    for (const satId of allMoonIds) {
-      const satNode = this.bodyNodes.get(satId);
-      if (!satNode) continue;
-      const observedAsset = ({io:'io-usgs-galileo-1k',mimas:'mimas-cassini-pia17214-4k',enceladus:'enceladus-cassini-pia18435-4k',tethys:'tethys-cassini-pia14931-4k'} as Record<string,string>)[satId];
-      if (observedAsset) {
-        // Keep the neutral loading material on failure; never masquerade a procedural map as observation.
-        this.assetManager.loadTexture(observedAsset, token, () => true).then(tex => {
-          if (!tex) return;
-          tex.wrapS = THREE.RepeatWrapping;
-          tex.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
-          tex.offset.x = satId === 'enceladus' ? 0.5 : 0;
-          if (satId === 'io') {
-            this.ioMaterial = createIoMaterial(tex);
-            this.ioMaterial.uniforms.teachingLight.value = this.teachingLight ? 1 : 0;
-            safeDisposeMaterial(satNode.mesh.material);
-            satNode.mesh.material = this.ioMaterial;
-          } else {
-            const mat = satNode.mesh.material as THREE.MeshStandardMaterial;
-            mat.color.set(0xffffff); mat.map = tex; mat.roughness = 0.92; mat.metalness = 0;
-            mat.needsUpdate = true;
-          }
-        }).catch(e => console.error('[Texture] '+satId+' load failed:', e));
-        continue;
-      }
-      const tex = getMoonTextureByBodyId(satId);
-      if (!tex) continue;
+    // F-STARTUP-RESPONSIVENESS-11（G2）：23 颗卫星程序纹理同步生成是启动期
+    // 主线程长任务主体（G0 归因：fbm3D/noise3D/特征函数合计 ~5s+）。生成代码
+    // 零改动，仅把调用移出构造关键路径：构造期各卫星保持中性材质，首帧后
+    // 逐颗生成+换装（每帧 1 颗，rAF 对齐，dispose 即停）。等价性由
+    // scripts/verify-texture-equivalence-11.mjs 逐纹理 data 哈希前后对照保证。
+    this.pendingMoonTextureTasks = allMoonIds.map((id) => () => this.installMoonSurfaceTexture(id, token));
+    this.pumpMoonTextureTasks();
 
-      if (satId === 'phobos') {
-        this.phobosMaterial = createAsteroidMoonMaterial(tex, 'phobos');
-        this.phobosMaterial.uniforms.teachingLight.value = this.teachingLight ? 1.0 : 0.0;
-        safeDisposeMaterial(satNode.mesh.material);
-        satNode.mesh.material = this.phobosMaterial;
-      } else if (satId === 'deimos') {
-        this.deimosMaterial = createAsteroidMoonMaterial(tex, 'deimos');
-        this.deimosMaterial.uniforms.teachingLight.value = this.teachingLight ? 1.0 : 0.0;
-        safeDisposeMaterial(satNode.mesh.material);
-        satNode.mesh.material = this.deimosMaterial;
-      } else if (satId === 'io') {
-        this.ioMaterial = createIoMaterial(tex);
-        this.ioMaterial.uniforms.teachingLight.value = this.teachingLight ? 1.0 : 0.0;
-        safeDisposeMaterial(satNode.mesh.material);
-        satNode.mesh.material = this.ioMaterial;
-      } else if (satId === 'europa') {
-        this.europaMaterial = createEuropaMaterial(tex);
-        this.europaMaterial.uniforms.teachingLight.value = this.teachingLight ? 1.0 : 0.0;
-        safeDisposeMaterial(satNode.mesh.material);
-        satNode.mesh.material = this.europaMaterial;
-      } else if (satId === 'ganymede') {
-        this.ganymedeMaterial = createGanymedeMaterial(tex);
-        this.ganymedeMaterial.uniforms.teachingLight.value = this.teachingLight ? 1.0 : 0.0;
-        safeDisposeMaterial(satNode.mesh.material);
-        satNode.mesh.material = this.ganymedeMaterial;
-      } else if (satId === 'callisto') {
-        this.callistoMaterial = createCallistoMaterial(tex);
-        this.callistoMaterial.uniforms.teachingLight.value = this.teachingLight ? 1.0 : 0.0;
-        safeDisposeMaterial(satNode.mesh.material);
-        satNode.mesh.material = this.callistoMaterial;
-      } else {
-        const mat = satNode.mesh.material as THREE.MeshStandardMaterial;
-        mat.color.set(0xffffff);
-        mat.map = tex;
-        mat.roughness = satId === 'enceladus' ? 0.35 : 0.88;
-        mat.metalness = 0.02;
-        mat.needsUpdate = true;
-      }
-    }
-
-    // 土卫六专属：可见光浓厚橘黄光化学烟雾大气层
-    const titanNode = this.bodyNodes.get('titan');
-    if (titanNode && titanNode.cloudMesh) {
-      const atmMat = titanNode.cloudMesh.material as THREE.MeshStandardMaterial;
-      atmMat.color.set(0xffffff);
-      atmMat.map = getTitanHazeTexture();
-      atmMat.roughness = 0.95;
-      atmMat.needsUpdate = true;
-    }
+    // 土卫六烟雾纹理同为程序生成（G2：随卫星纹理队列逐帧安装）
+    this.pendingMoonTextureTasks.push(() => this.installTitanHazeTexture());
 
     // 5. 金星（浓厚硫酸大气多重散射与麦哲伦雷达穿透专属材质）
     Promise.all([
@@ -4499,11 +4435,101 @@ export class SolarEngine {
   }
 
 
+
+  /** F-STARTUP-RESPONSIVENESS-11（G2）：安装单颗卫星表面纹理（原构造期循环体原样搬移） */
+  private installMoonSurfaceTexture(satId: string, token: number): void {
+    const satNode = this.bodyNodes.get(satId);
+    if (!satNode) return;
+      const observedAsset = ({io:'io-usgs-galileo-1k',mimas:'mimas-cassini-pia17214-4k',enceladus:'enceladus-cassini-pia18435-4k',tethys:'tethys-cassini-pia14931-4k'} as Record<string,string>)[satId];
+      if (observedAsset) {
+        // Keep the neutral loading material on failure; never masquerade a procedural map as observation.
+        this.assetManager.loadTexture(observedAsset, token, () => true).then(tex => {
+          if (!tex) return;
+          tex.wrapS = THREE.RepeatWrapping;
+          tex.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
+          tex.offset.x = satId === 'enceladus' ? 0.5 : 0;
+          if (satId === 'io') {
+            this.ioMaterial = createIoMaterial(tex);
+            this.ioMaterial.uniforms.teachingLight.value = this.teachingLight ? 1 : 0;
+            safeDisposeMaterial(satNode.mesh.material);
+            satNode.mesh.material = this.ioMaterial;
+          } else {
+            const mat = satNode.mesh.material as THREE.MeshStandardMaterial;
+            mat.color.set(0xffffff); mat.map = tex; mat.roughness = 0.92; mat.metalness = 0;
+            mat.needsUpdate = true;
+          }
+        }).catch(e => console.error('[Texture] '+satId+' load failed:', e));
+        return;
+      }
+      const tex = getMoonTextureByBodyId(satId);
+      if (!tex) return;
+
+      if (satId === 'phobos') {
+        this.phobosMaterial = createAsteroidMoonMaterial(tex, 'phobos');
+        this.phobosMaterial.uniforms.teachingLight.value = this.teachingLight ? 1.0 : 0.0;
+        safeDisposeMaterial(satNode.mesh.material);
+        satNode.mesh.material = this.phobosMaterial;
+      } else if (satId === 'deimos') {
+        this.deimosMaterial = createAsteroidMoonMaterial(tex, 'deimos');
+        this.deimosMaterial.uniforms.teachingLight.value = this.teachingLight ? 1.0 : 0.0;
+        safeDisposeMaterial(satNode.mesh.material);
+        satNode.mesh.material = this.deimosMaterial;
+      } else if (satId === 'io') {
+        this.ioMaterial = createIoMaterial(tex);
+        this.ioMaterial.uniforms.teachingLight.value = this.teachingLight ? 1.0 : 0.0;
+        safeDisposeMaterial(satNode.mesh.material);
+        satNode.mesh.material = this.ioMaterial;
+      } else if (satId === 'europa') {
+        this.europaMaterial = createEuropaMaterial(tex);
+        this.europaMaterial.uniforms.teachingLight.value = this.teachingLight ? 1.0 : 0.0;
+        safeDisposeMaterial(satNode.mesh.material);
+        satNode.mesh.material = this.europaMaterial;
+      } else if (satId === 'ganymede') {
+        this.ganymedeMaterial = createGanymedeMaterial(tex);
+        this.ganymedeMaterial.uniforms.teachingLight.value = this.teachingLight ? 1.0 : 0.0;
+        safeDisposeMaterial(satNode.mesh.material);
+        satNode.mesh.material = this.ganymedeMaterial;
+      } else if (satId === 'callisto') {
+        this.callistoMaterial = createCallistoMaterial(tex);
+        this.callistoMaterial.uniforms.teachingLight.value = this.teachingLight ? 1.0 : 0.0;
+        safeDisposeMaterial(satNode.mesh.material);
+        satNode.mesh.material = this.callistoMaterial;
+      } else {
+        const mat = satNode.mesh.material as THREE.MeshStandardMaterial;
+        mat.color.set(0xffffff);
+        mat.map = tex;
+        mat.roughness = satId === 'enceladus' ? 0.35 : 0.88;
+        mat.metalness = 0.02;
+        mat.needsUpdate = true;
+      }
+  }
+
+  /** F-STARTUP-RESPONSIVENESS-11（G2）：土卫六光化学烟雾大气纹理安装（原构造段原样搬移） */
+  private installTitanHazeTexture(): void {
+    const titanNode = this.bodyNodes.get('titan');
+    if (titanNode && titanNode.cloudMesh) {
+      const atmMat = titanNode.cloudMesh.material as THREE.MeshStandardMaterial;
+      atmMat.color.set(0xffffff);
+      atmMat.map = getTitanHazeTexture();
+      atmMat.roughness = 0.95;
+      atmMat.needsUpdate = true;
+    }
+  }
+
+  /** F-STARTUP-RESPONSIVENESS-11（G2）：每帧安装 1 个延迟纹理任务，dispose 即停 */
+  private pumpMoonTextureTasks(): void {
+    if (!this.isRunning || !this.pendingMoonTextureTasks.length) return;
+    const task = this.pendingMoonTextureTasks.shift();
+    try { task?.(); } catch (e) { console.error('[Texture] 延迟纹理安装失败（跳过）:', e); }
+    this.moonTexturePumpFrameId = requestAnimationFrame(() => this.pumpMoonTextureTasks());
+  }
+
   public dispose(): void {
     this.vehicleDisposed = true;
     this.replaceVehicle(null);
     this.navigationRevision++;
     this.isRunning = false;
+    cancelAnimationFrame(this.moonTexturePumpFrameId);
     cancelAnimationFrame(this.animFrameId);
     window.removeEventListener('resize', this.onResize);
     this.canvas.removeEventListener('pointerdown', this.onPointerDown);
